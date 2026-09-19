@@ -39,14 +39,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ClerkProvider>
           <TooltipProvider>
             <SyncLocalUser />
-            <header className="flex items-center justify-end gap-3 border-b border-border/20 bg-background px-6 py-4">
-              <Show when="signed-out">
-                <SignInButton />
-                <SignUpButton />
-              </Show>
-              <Show when="signed-in">
-                <UserButton />
-              </Show>
+            <header className="flex items-center justify-between gap-3 border-b border-border/20 bg-background px-6 py-4">
+              <a href="/" className="font-display text-lg text-foreground">
+                Puja Planner
+              </a>
+              <div className="flex items-center gap-3">
+                <Show when="signed-out">
+                  <SignInButton />
+                  <SignUpButton />
+                </Show>
+                <Show when="signed-in">
+                  <UserButton />
+                </Show>
+              </div>
             </header>
             {children}
           </TooltipProvider>

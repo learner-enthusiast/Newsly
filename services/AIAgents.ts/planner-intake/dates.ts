@@ -51,3 +51,33 @@ export function visitDatesWithinFestival(
       compareIsoDate(date, festivalDates.end) <= 0,
   );
 }
+
+export function listIsoDatesInclusive(start: string, end: string) {
+  if (compareIsoDate(start, end) > 0) {
+    return [];
+  }
+
+  const dates: string[] = [];
+  const current = new Date(`${start}T00:00:00`);
+
+  if (Number.isNaN(current.getTime())) {
+    return dates;
+  }
+
+  while (dates.length <= 366) {
+    const iso = isoFromCalendarDay({
+      year: current.getFullYear(),
+      month: current.getMonth() + 1,
+      day: current.getDate(),
+    });
+    dates.push(iso);
+
+    if (compareIsoDate(iso, end) >= 0) {
+      break;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { strictOtherPreferencesSchema } from "@/services/planner/strictOpenAiSchema";
 
 export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
   message: "Date must be YYYY-MM-DD",
@@ -30,11 +31,18 @@ export const planningRequestSchema = z.object({
   otherPreferences: z.record(z.string(), z.unknown()),
 });
 
+export const plannerIntakeInputPromptSchema = z.object({
+  type: z.string().min(1),
+  field: z.string().min(1),
+  options: z.array(z.unknown()).optional(),
+});
+
 export const plannerIntakeNeedsInputSchema = z.object({
   status: z.literal("needs_input"),
   message: z.string().min(1),
   request: planningRequestSchema,
   missing: z.array(z.string()),
+  input: plannerIntakeInputPromptSchema.optional(),
 });
 
 export const plannerIntakeReadySchema = z.object({
@@ -64,7 +72,7 @@ export const extractedIntakeSchema = z.object({
   foodPreferences: z.array(z.string()),
   crowdPreference: z.string().nullable(),
   walkingTolerance: z.string().nullable(),
-  otherPreferences: z.record(z.string(), z.unknown()),
+  otherPreferences: strictOtherPreferencesSchema,
   festivalAmbiguous: z.boolean(),
   cityAmbiguous: z.boolean(),
 });
@@ -83,6 +91,9 @@ export const visitDateResolutionSchema = z.object({
 
 export type FestivalDates = z.output<typeof festivalDatesSchema>;
 export type PlanningRequest = z.output<typeof planningRequestSchema>;
+export type PlannerIntakeInputPrompt = z.output<
+  typeof plannerIntakeInputPromptSchema
+>;
 export type PlannerIntakeResult = z.output<typeof plannerIntakeResultSchema>;
 export type ExtractedIntake = z.output<typeof extractedIntakeSchema>;
 export type FestivalOccurrenceExtraction = z.output<

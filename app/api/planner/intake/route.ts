@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedUser } from "@/lib/auth";
+import { createReadyPlan } from "@/services/planner/createReadyPlan";
 import {
   planningRequestSchema,
   runPlannerIntakeAgent,
 } from "@/services/AIAgents.ts/researchagent";
 
+const conversationMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string(),
+});
+
 const intakeBodySchema = z.object({
   message: z.string().min(1, "message is required"),
   previousRequest: planningRequestSchema.optional().nullable(),
+  conversation: z.array(conversationMessageSchema).optional(),
 });
 
 export async function POST(request: Request) {
@@ -31,5 +38,25 @@ export async function POST(request: Request) {
     previousRequest: body.previousRequest,
   });
 
-  return NextResponse.json(result);
+  console.info(
+    JSON.stringify({
+      scope: "planner.intake",
+      status: result.status,
+      userId: user.id,
+      missing: result.status === "needs_input" ? result.missing : undefined,
+    }),
+  );
+
+  if (result.status === "needs_input") {
+    return NextResponse.json(result);
+  }
+
+  const created = await createReadyPlan({
+    userId: user.id,
+    request: result.request,
+    message: body.message,
+    conversation: body.conversation,
+  });
+
+  return NextResponse.json(created);
 }

@@ -1,6 +1,7 @@
 import {
   festivalHasEnded,
   inclusiveDayCount,
+  listIsoDatesInclusive,
   todayFromClock,
   visitDatesWithinFestival,
 } from "./dates";
@@ -11,11 +12,13 @@ import {
   resolveVisitDates,
 } from "./extract";
 import { searchFestivalOccurrence } from "./searchFestivalOccurrence";
+import { preferenceEntriesToRecord } from "@/services/planner/strictOpenAiSchema";
 import {
   emptyPlanningRequest,
   plannerIntakeResultSchema,
   type FestivalDates,
   type PlanningRequest,
+  type PlannerIntakeInputPrompt,
   type PlannerIntakeResult,
 } from "./schema";
 
@@ -53,9 +56,26 @@ function toPlanningRequest(
       : base.foodPreferences,
     crowdPreference: extracted.crowdPreference ?? base.crowdPreference,
     walkingTolerance: extracted.walkingTolerance ?? base.walkingTolerance,
-    otherPreferences: Object.keys(extracted.otherPreferences).length
-      ? extracted.otherPreferences
+    otherPreferences: extracted.otherPreferences.length
+      ? preferenceEntriesToRecord(extracted.otherPreferences)
       : base.otherPreferences,
+  };
+}
+
+function visitDatesInput(
+  request: PlanningRequest,
+): PlannerIntakeInputPrompt | undefined {
+  if (!request.festivalDates) {
+    return undefined;
+  }
+
+  return {
+    type: "date_select",
+    field: "visitDates",
+    options: listIsoDatesInclusive(
+      request.festivalDates.start,
+      request.festivalDates.end,
+    ),
   };
 }
 
@@ -63,12 +83,14 @@ function needsInput(
   request: PlanningRequest,
   missing: string[],
   message: string,
+  input?: PlannerIntakeInputPrompt,
 ): PlannerIntakeResult {
   return plannerIntakeResultSchema.parse({
     status: "needs_input",
     message,
     request,
     missing,
+    input,
   });
 }
 
@@ -79,28 +101,22 @@ function ready(request: PlanningRequest): PlannerIntakeResult {
   });
 }
 
-function missingCoreFields(
+function collectCoreMissing(
   request: PlanningRequest,
   festival: string | null,
   extracted: { festivalAmbiguous: boolean; cityAmbiguous: boolean },
-): PlannerIntakeResult | null {
+): string[] {
+  const missing: string[] = [];
+
   if (extracted.festivalAmbiguous || !festival) {
-    return needsInput(
-      request,
-      ["festival"],
-      "Which festival should I plan?",
-    );
+    missing.push("festival");
   }
 
   if (extracted.cityAmbiguous || !request.city) {
-    return needsInput(
-      { ...request, festival, canonicalFestival: festival },
-      ["city"],
-      `Which city should I plan ${festival} in?`,
-    );
+    missing.push("city");
   }
 
-  return null;
+  return missing;
 }
 
 function applyVisitDates(
@@ -120,34 +136,123 @@ function applyVisitDates(
   };
 }
 
-function validateReadyRequest(request: PlanningRequest): PlannerIntakeResult {
+function describeMissingField(
+  field: string,
+  request: PlanningRequest,
+): string {
+  switch (field) {
+    case "festival":
+      return "which festival you want to plan";
+    case "city":
+      return request.festival
+        ? `which city to plan ${request.festival} in`
+        : "which city to plan in";
+    case "festivalDates":
+      return `official ${request.festival} dates for ${request.city} in ${request.year} (start and end, YYYY-MM-DD)`;
+    case "visitDates":
+      if (request.festivalDates) {
+        return `which dates you want to visit during ${request.festivalDates.start} to ${request.festivalDates.end}`;
+      }
+      return "which dates you want to visit (YYYY-MM-DD)";
+    case "durationDays":
+      return "how many days you want to visit, or specific visit dates";
+    default:
+      return field;
+  }
+}
+
+function buildMissingMessage(missing: string[], request: PlanningRequest) {
+  const unique = [...new Set(missing)];
+  const parts = unique.map((field) => describeMissingField(field, request));
+
+  if (parts.length === 1) {
+    return `Please tell me ${parts[0]}.`;
+  }
+
+  return `I still need a few details: ${parts
+    .map((part, index) => `${index + 1}) ${part}`)
+    .join("; ")}.`;
+}
+
+function collectSchedulingMissing(request: PlanningRequest): string[] {
+  const missing: string[] = [];
+
   if (request.festivalDates && request.visitDates?.length) {
     if (!visitDatesWithinFestival(request.visitDates, request.festivalDates)) {
-      return needsInput(
-        request,
-        ["visitDates"],
-        `${request.festival} in ${request.city} is ${request.festivalDates.start} to ${request.festivalDates.end}. Your visit dates fall outside that period. Which dates within the festival would you like?`,
-      );
+      return ["visitDates"];
     }
   }
 
-  if (!request.durationDays && !request.visitDates?.length) {
-    return needsInput(
-      request,
-      ["durationDays", "visitDates"],
-      "How many days would you like to visit, or which dates would you like to go?",
-    );
-  }
-
   if (!request.festivalDates) {
-    return needsInput(
-      request,
-      ["festivalDates"],
-      `I could not verify official ${request.festival} dates for ${request.city} in ${request.year}. Can you confirm the festival dates?`,
-    );
+    missing.push("festivalDates");
   }
 
-  return ready(request);
+  const hasVisitDates = Boolean(request.visitDates?.length);
+  const hasDuration = Boolean(request.durationDays);
+
+  if (!hasVisitDates && !hasDuration) {
+    missing.push("durationDays", "visitDates");
+  } else if (request.festivalDates && !hasVisitDates) {
+    missing.push("visitDates");
+  }
+
+  return [...new Set(missing)];
+}
+
+function validateReadyRequest(request: PlanningRequest): PlannerIntakeResult {
+  const missing = collectSchedulingMissing(request);
+
+  if (missing.length === 0) {
+    return ready(request);
+  }
+
+  let message = buildMissingMessage(missing, request);
+
+  if (
+    missing.includes("visitDates") &&
+    request.festivalDates &&
+    request.visitDates?.length &&
+    !visitDatesWithinFestival(request.visitDates, request.festivalDates)
+  ) {
+    message = `${request.festival} in ${request.city} runs ${request.festivalDates.start} to ${request.festivalDates.end}. Your visit dates fall outside that window — please pick dates within the festival.`;
+  }
+
+  return needsInput(
+    request,
+    missing,
+    message,
+    missing.includes("visitDates") ? visitDatesInput(request) : undefined,
+  );
+}
+
+function sameOccurrenceTarget(
+  previous: PlanningRequest,
+  festival: string,
+  city: string,
+) {
+  const previousFestival = previous.canonicalFestival ?? previous.festival;
+  return previousFestival === festival && previous.city === city;
+}
+
+function canSkipRepeatOccurrenceResearch(params: {
+  previous?: PlanningRequest | null;
+  request: PlanningRequest;
+  festival: string;
+  extracted: { yearWasExplicit: boolean; year: number | null };
+}) {
+  if (!params.previous?.year || params.previous.festivalDates) {
+    return false;
+  }
+
+  if (params.extracted.yearWasExplicit && params.extracted.year !== params.previous.year) {
+    return false;
+  }
+
+  if (!params.request.city) {
+    return false;
+  }
+
+  return sameOccurrenceTarget(params.previous, params.festival, params.request.city);
 }
 
 async function researchOccurrence(params: {
@@ -233,14 +338,27 @@ export async function runPlannerIntakeAgent(
   });
   const request = toPlanningRequest(extracted, input.previousRequest);
   const festival = request.canonicalFestival ?? request.festival;
-  const coreMissing = missingCoreFields(request, festival, extracted);
+  const coreMissing = collectCoreMissing(request, festival, extracted);
 
-  if (coreMissing) {
-    return coreMissing;
+  if (coreMissing.length > 0) {
+    const mergedRequest =
+      festival && !coreMissing.includes("festival")
+        ? { ...request, festival, canonicalFestival: festival }
+        : request;
+
+    return needsInput(
+      mergedRequest,
+      coreMissing,
+      buildMissingMessage(coreMissing, mergedRequest),
+    );
   }
 
   if (!festival || !request.city) {
-    return needsInput(request, ["festival", "city"], "Which festival and city should I plan?");
+    return needsInput(
+      request,
+      ["festival", "city"],
+      buildMissingMessage(["festival", "city"], request),
+    );
   }
 
   let year: number;
@@ -255,6 +373,17 @@ export async function runPlannerIntakeAgent(
 
   try {
     if (canReusePreviousOccurrence && previous.year && previous.festivalDates) {
+      year = previous.year;
+      festivalDates = previous.festivalDates;
+    } else if (
+      canSkipRepeatOccurrenceResearch({
+        previous,
+        request,
+        festival,
+        extracted,
+      }) &&
+      previous?.year
+    ) {
       year = previous.year;
       festivalDates = previous.festivalDates;
     } else {
@@ -286,13 +415,14 @@ export async function runPlannerIntakeAgent(
     festivalDates,
   };
 
-  const withVisitDates = applyVisitDates(
-    resolvedRequest,
-    await resolveVisitDates({
-      year,
-      visitDateMentions: extracted.visitDates,
-    }),
-  );
+  const resolvedVisitDates = extracted.visitDates?.length
+    ? await resolveVisitDates({
+        year,
+        visitDateMentions: extracted.visitDates,
+      })
+    : [];
+
+  const withVisitDates = applyVisitDates(resolvedRequest, resolvedVisitDates);
 
   return validateReadyRequest(withVisitDates);
 }
