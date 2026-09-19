@@ -1,0 +1,11 @@
+// Add more .prisma files in this folder (e.g. user.prisma, post.prisma).
+// Prisma loads every file here automatically — no imports needed.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
