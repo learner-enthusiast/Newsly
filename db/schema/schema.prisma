@@ -9,3 +9,25 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model User {
+  id                    String    @id @default(cuid())
+  clerkId               String    @unique
+  email                 String    @unique
+  firstName             String?
+  lastName              String?
+  username              String?
+  imageUrl              String?
+  hasImage              Boolean   @default(false)
+  primaryEmailAddressId String?
+  lastSignInAt          DateTime?
+  lastActiveAt          DateTime?
+  banned                Boolean   @default(false)
+  locked                Boolean   @default(false)
+  twoFactorEnabled      Boolean   @default(false)
+  locale                String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("users")
+}

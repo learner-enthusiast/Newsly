@@ -7,6 +7,7 @@ import {
 } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SyncLocalUser } from "./sync-local-user";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <ClerkProvider>
+          <SyncLocalUser />
           <header className="flex items-center justify-end gap-3 border-b border-black/8 px-6 py-3 dark:border-white/15">
             <Show when="signed-out">
               <SignInButton />
