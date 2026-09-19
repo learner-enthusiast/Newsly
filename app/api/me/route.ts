@@ -27,7 +27,7 @@ export async function PUT(request: Request) {
   const { userId, response } = await requireClerkId();
 
   if (!userId) {
-    return response;
+    return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const existing = await getAuthenticatedUser();
@@ -44,7 +44,7 @@ export async function PATCH(request: Request) {
   const { userId, response } = await requireClerkId();
 
   if (!userId) {
-    return response;
+    return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const existing = await getAuthenticatedUser();
@@ -61,7 +61,7 @@ export async function DELETE() {
   const { userId, response } = await requireClerkId();
 
   if (!userId) {
-    return response;
+    return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const user = await deleteUser(userId);
