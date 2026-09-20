@@ -22,6 +22,16 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         brand:
           "h-12 gap-2 rounded-full border-transparent bg-foreground px-7 font-brand text-lg text-white hover:bg-foreground/90 has-data-[icon=inline-end]:pr-6 has-data-[icon=inline-start]:pl-6 [&_svg:not([class*='size-'])]:size-5",
+        "brand-accent":
+          "h-12 gap-2 rounded-full border-transparent bg-accent px-7 font-brand text-lg text-accent-foreground hover:bg-[color-mix(in_srgb,var(--accent),var(--foreground)_10%)] has-data-[icon=inline-end]:pr-6 has-data-[icon=inline-start]:pl-6 [&_svg:not([class*='size-'])]:size-5",
+        sketch:
+          "editorial-border h-auto min-h-10 rounded-full bg-foreground px-5 py-2.5 font-brand text-sm font-normal tracking-wide text-white uppercase hover:bg-foreground/90",
+        "sketch-outline":
+          "editorial-border h-auto min-h-10 rounded-full bg-background px-5 py-2.5 font-brand text-sm font-normal tracking-wide text-foreground uppercase hover:bg-muted/45",
+        "sketch-chip":
+          "editorial-border h-auto min-h-9 rounded-md bg-card px-4 py-2 font-brand text-xs font-normal tracking-wider text-foreground uppercase hover:bg-muted/40",
+        "sketch-chip-active":
+          "editorial-border h-auto min-h-9 rounded-md bg-accent/40 px-4 py-2 font-brand text-xs font-normal tracking-wider text-foreground uppercase ring-1 ring-accent/55",
       },
       size: {
         default:

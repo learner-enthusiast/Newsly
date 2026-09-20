@@ -8,7 +8,7 @@ export default async function PlanPage({ params }: PlanPageProps) {
   const { planId } = await params;
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+    <main className="landing-section flex w-full flex-1 flex-col py-8 md:py-10">
       <PlanView planId={planId} />
     </main>
   );

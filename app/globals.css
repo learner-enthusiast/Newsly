@@ -270,4 +270,793 @@
       stroke-dashoffset: 0;
     }
   }
+
+  .landing-section {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: 1.5rem;
+  }
+
+  .section-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .hero-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: clamp(2.25rem, 5vw, 3.75rem);
+    letter-spacing: -0.02em;
+    line-height: 1.08;
+  }
+
+  .search-pill {
+    border: 1.5px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: 9999px;
+    background: var(--card);
+    padding: 0.65rem 0.65rem 0.65rem 1.25rem;
+    box-shadow: var(--elevation-paper);
+  }
+
+  .search-pill-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    padding-inline: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-align: left;
+  }
+
+  .search-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .search-pill-input {
+    min-width: 0;
+    flex: 1 1 12rem;
+    border: 0;
+    background: transparent;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.9375rem;
+    color: var(--foreground);
+    outline: none;
+  }
+
+  .search-pill-input::placeholder {
+    color: color-mix(in srgb, var(--muted-foreground) 85%, transparent);
+  }
+
+  .flow-track {
+    font-family: var(--font-brand);
+    font-weight: 700;
+    font-size: 0.8125rem;
+    letter-spacing: 0.06em;
+    color: var(--muted-foreground);
+  }
+
+  .feature-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .feature-card-title {
+    margin-bottom: 0.35rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .how-step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .how-step-arrow {
+    position: absolute;
+    top: 2.25rem;
+    left: -0.75rem;
+    font-family: var(--font-brand);
+    font-size: 1.25rem;
+    color: color-mix(in srgb, var(--muted-foreground) 65%, transparent);
+  }
+
+  .sketch-placeholder {
+    border: 1.5px dashed color-mix(in srgb, var(--border) 75%, transparent);
+    border-radius: 2px 14px 3px 12px / 12px 3px 14px 2px;
+    background: color-mix(in srgb, var(--muted) 55%, transparent);
+  }
+
+  .sketch-placeholder-xs {
+    min-height: 2.5rem;
+  }
+
+  .sketch-placeholder-sm {
+    min-height: 5.5rem;
+  }
+
+  .sketch-placeholder-md {
+    min-height: 7rem;
+  }
+
+  .sketch-placeholder-lg {
+    min-height: 9rem;
+  }
+
+  .sketch-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .plan-showcase-card {
+    border: 1.5px solid var(--border);
+    border-radius: 2px 18px 4px 16px / 14px 4px 18px 3px;
+    background: var(--card);
+    box-shadow: var(--elevation-paper);
+  }
+
+  .showcase-note {
+    color: color-mix(in srgb, var(--foreground) 88%, transparent);
+    line-height: 1.35;
+    transform: rotate(-4deg);
+  }
+
+  .showcase-timeline-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .showcase-timeline-rail {
+    position: absolute;
+    top: 2.75rem;
+    left: 1.25rem;
+    width: 1px;
+    height: calc(100% + 0.5rem);
+    background: color-mix(in srgb, var(--border) 60%, transparent);
+  }
+
+  .footer-cta {
+    position: relative;
+    background: var(--foreground);
+    color: var(--primary-foreground);
+  }
+
+  .footer-cta-wave {
+    position: absolute;
+    inset-inline: 0;
+    top: -1px;
+    height: 1.25rem;
+    transform: translateY(-100%);
+    background: var(--foreground);
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 48' preserveAspectRatio='none'%3E%3Cpath fill='%23000' d='M0 48V24c80-16 160-16 240 0s160 16 240 0 160-16 240 0 160 16 240 0 160-16 240 0V48H0z'/%3E%3C/svg%3E");
+    mask-size: 100% 100%;
+    mask-repeat: no-repeat;
+  }
+
+  .marker-highlight-pill {
+    display: inline-block;
+    background-color: color-mix(in srgb, var(--accent) 72%, transparent);
+    box-decoration-break: clone;
+    padding: 0.12em 0.45em;
+    border-radius: 3px 10px 2px 9px / 8px 2px 10px 3px;
+    line-height: 1.25;
+  }
+
+  .marker-highlight-pill-emphasis {
+    background-color: color-mix(in srgb, var(--accent) 88%, transparent);
+    padding-inline: 0.55em;
+  }
+
+  .intake-stepper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem 1.25rem;
+    font-family: var(--font-brand);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .intake-stepper-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .intake-thread {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+
+  .intake-prompt {
+    display: flex;
+    gap: 0.65rem;
+    align-items: flex-start;
+  }
+
+  .intake-diya {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
+    font-size: 1.125rem;
+    line-height: 1;
+  }
+
+  .intake-prompt-text {
+    font-family: var(--font-display);
+    font-size: clamp(1.35rem, 2.5vw, 1.75rem);
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  .intake-user-pill {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  .intake-choice-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-left: 1.85rem;
+  }
+
+  .intake-sketch-field {
+    border: 2px solid var(--border);
+    border-radius: 2px 16px 4px 14px / 14px 4px 16px 2px;
+    background: var(--card);
+    font-family: var(--font-brand);
+    font-size: 1rem;
+    line-height: 1.45;
+    box-shadow: var(--elevation-paper);
+  }
+
+  .intake-destination-search {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.65rem;
+    padding-left: 1.85rem;
+  }
+
+  .intake-destination-search-input {
+    min-width: min(100%, 16rem);
+    flex: 1 1 16rem;
+    padding: 0.65rem 1rem;
+    outline: none;
+  }
+
+  .intake-destination-search-input::placeholder {
+    color: color-mix(in srgb, var(--muted-foreground) 85%, transparent);
+  }
+
+  .intake-destination-search-input:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--ring) 55%, transparent);
+    outline-offset: 2px;
+  }
+
+  .intake-illustration-panel {
+    position: relative;
+    min-height: 22rem;
+    border: 1.5px dashed color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: 2px 18px 4px 16px / 14px 4px 18px 3px;
+    background: color-mix(in srgb, var(--muted) 35%, transparent);
+  }
+
+  .intake-illustration-caption {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    max-width: 11rem;
+    font-family: var(--font-brand);
+    font-size: 1.05rem;
+    line-height: 1.35;
+    text-align: right;
+    transform: rotate(-3deg);
+  }
+
+  .intake-illustration-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 22rem;
+    padding: 1.5rem;
+  }
+
+  .sketch-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: center;
+  }
+
+  .sketch-loader-page {
+    width: 100%;
+    padding: 3rem 1.5rem;
+  }
+
+  .sketch-loader-panel {
+    width: min(100%, 22rem);
+    padding: 1.5rem 1.25rem;
+    border: 2px solid var(--foreground);
+    border-radius: 2px 18px 4px 16px / 14px 4px 18px 3px;
+    background: color-mix(in srgb, var(--card) 92%, var(--muted));
+    box-shadow: var(--elevation-paper);
+  }
+
+  .sketch-loader-visual {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 4.25rem;
+    height: 4.25rem;
+  }
+
+  .sketch-loader-orbit {
+    position: absolute;
+    inset: 0;
+    border: 2.5px solid var(--foreground);
+    border-top-color: color-mix(in srgb, var(--accent) 85%, var(--foreground));
+    border-radius: 46% 54% 42% 58% / 55% 44% 56% 45%;
+    animation: sketch-loader-spin 1.15s linear infinite;
+  }
+
+  .sketch-loader-core {
+    font-size: 1.35rem;
+    line-height: 1;
+    animation: sketch-loader-pulse 1.4s ease-in-out infinite;
+  }
+
+  .sketch-loader-label {
+    max-width: 16rem;
+    font-family: var(--font-brand);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--foreground);
+  }
+
+  .sketch-loader-track {
+    width: min(100%, 11rem);
+    height: 0.35rem;
+    overflow: hidden;
+    border: 1.5px solid color-mix(in srgb, var(--foreground) 75%, transparent);
+    border-radius: 9999px;
+    background: var(--muted);
+  }
+
+  .sketch-loader-track-fill {
+    display: block;
+    width: 42%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      var(--foreground),
+      color-mix(in srgb, var(--accent) 70%, var(--foreground))
+    );
+    border-radius: inherit;
+    animation: sketch-loader-slide 1.1s ease-in-out infinite;
+  }
+
+  .sketch-loader-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 1.5rem;
+    background: color-mix(in srgb, var(--background) 78%, transparent);
+    backdrop-filter: blur(1px);
+  }
+
+  .intake-thread-pending {
+    pointer-events: none;
+    opacity: 0.38;
+    filter: saturate(0.85);
+  }
+
+  @keyframes sketch-loader-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes sketch-loader-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.06);
+      opacity: 0.88;
+    }
+  }
+
+  @keyframes sketch-loader-slide {
+    0% {
+      transform: translateX(-120%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sketch-loader-orbit,
+    .sketch-loader-core,
+    .sketch-loader-track-fill {
+      animation: none;
+    }
+
+    .sketch-loader-track-fill {
+      width: 100%;
+      transform: none;
+    }
+  }
+
+  .plan-hero-grid {
+    display: grid;
+    gap: 2rem;
+    align-items: start;
+  }
+
+  @media (min-width: 960px) {
+    .plan-hero-grid {
+      grid-template-columns: minmax(0, 1.1fr) minmax(240px, 360px);
+    }
+  }
+
+  .plan-meta-line {
+    margin-top: 0.35rem;
+    font-size: 0.9375rem;
+    font-style: italic;
+    color: var(--muted-foreground);
+  }
+
+  .plan-section-kicker {
+    margin-bottom: 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .plan-weather-panel,
+  .plan-about {
+    padding: 1.25rem 1.35rem;
+    background: var(--card);
+    box-shadow: var(--elevation-paper);
+  }
+
+  .plan-weather-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  }
+
+  .plan-weather-card {
+    padding: 0.85rem 0.75rem;
+    border: 1.5px solid color-mix(in srgb, var(--border) 80%, transparent);
+    border-radius: 2px 12px 3px 10px / 10px 3px 12px 2px;
+    background: color-mix(in srgb, var(--muted) 35%, var(--card));
+  }
+
+  .plan-weather-day {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .plan-weather-date {
+    margin-top: 0.15rem;
+    font-size: 0.8125rem;
+    color: var(--muted-foreground);
+  }
+
+  .plan-weather-copy {
+    margin-top: 0.35rem;
+    font-size: 0.875rem;
+    line-height: 1.35;
+  }
+
+  .plan-day-tab {
+    border: 0;
+    background: transparent;
+    padding: 0.15rem 0.25rem;
+    font-family: var(--font-brand);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    cursor: pointer;
+  }
+
+  .plan-day-tab-active {
+    color: var(--foreground);
+  }
+
+  .plan-day-heading {
+    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .plan-itinerary-grid {
+    display: grid;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  @media (min-width: 1024px) {
+    .plan-itinerary-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+    }
+  }
+
+  .plan-stop-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .plan-stop-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .plan-stop-card {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem 1.1rem;
+    background: var(--card);
+    box-shadow: var(--elevation-paper);
+  }
+
+  .plan-stop-arrow {
+    margin: 0.15rem 0;
+    font-family: var(--font-brand);
+    font-size: 1.35rem;
+    line-height: 1;
+    color: var(--foreground);
+  }
+
+  .plan-stop-index {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+
+  .plan-stop-type {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .plan-stop-title {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .plan-stop-rating {
+    margin-left: auto;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .plan-map-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--card);
+    box-shadow: var(--elevation-paper);
+    min-height: 18rem;
+  }
+
+  .plan-route-link {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .plan-actions-panel {
+    padding-top: 0.5rem;
+    border-top: 1.5px solid color-mix(in srgb, var(--border) 65%, transparent);
+  }
+
+  .plan-illustration-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 12rem;
+    padding: 1.25rem;
+    border: 1.5px dashed color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: 2px 16px 4px 14px / 14px 4px 16px 2px;
+    background: color-mix(in srgb, var(--muted) 40%, transparent);
+    font-family: var(--font-brand);
+    font-size: 0.875rem;
+    color: var(--muted-foreground);
+    text-align: center;
+  }
+
+  .plan-hero-art {
+    min-height: 16rem;
+  }
+
+  .plan-map-art {
+    min-height: 14rem;
+    flex: 1;
+  }
+
+  .plan-illustration-image {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .day-editor-grid {
+    display: grid;
+    gap: 1.25rem;
+    align-items: start;
+  }
+
+  @media (min-width: 1100px) {
+    .day-editor-grid {
+      grid-template-columns: minmax(0, 280px) minmax(0, 1fr) minmax(240px, 300px);
+    }
+  }
+
+  .plan-day-list-card {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.85rem 1rem;
+    background: var(--card);
+    cursor: grab;
+    box-shadow: var(--elevation-paper);
+    transition: background-color 0.15s ease;
+  }
+
+  .plan-day-list-card:active {
+    cursor: grabbing;
+  }
+
+  .plan-day-list-card-active {
+    background: color-mix(in srgb, var(--accent) 22%, var(--card));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+
+  .plan-day-drag-handle {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: -0.08em;
+    color: var(--muted-foreground);
+  }
+
+  .plan-day-detail {
+    min-height: 14rem;
+    padding: 1.25rem;
+    background: var(--card);
+    box-shadow: var(--elevation-paper);
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .plan-day-search-result {
+    background: var(--card);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .plan-day-search-result:hover {
+    background: color-mix(in srgb, var(--muted) 45%, var(--card));
+  }
+
+  .plan-stop-meta-grid {
+    display: grid;
+    gap: 0.65rem 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    font-size: 0.8125rem;
+  }
+
+  .plan-stop-meta-grid dt {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+  }
+
+  .plan-stop-meta-grid dd {
+    margin: 0.15rem 0 0;
+  }
+
+  .plan-stop-meta-grid-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem 0.75rem;
+  }
+
+  .plan-stop-dialog-body {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 1rem 2.75rem 1rem 1rem;
+  }
+
+  .plan-stop-dialog-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .plan-stop-dialog-media {
+    flex: 0 0 auto;
+    width: 7.25rem;
+  }
+
+  .plan-stop-dialog-thumb {
+    display: block;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    border: 1.5px solid var(--border);
+    border-radius: 2px 10px 3px 9px / 9px 3px 10px 2px;
+    object-fit: cover;
+    object-position: center;
+    background: var(--muted);
+    box-shadow: var(--elevation-paper);
+  }
+
+  .plan-stop-dialog-thumb-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-brand);
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    background: color-mix(in srgb, var(--muted) 50%, transparent);
+  }
+
+  @media (min-width: 480px) {
+    .plan-stop-dialog-media {
+      width: 8.5rem;
+    }
+  }
 }

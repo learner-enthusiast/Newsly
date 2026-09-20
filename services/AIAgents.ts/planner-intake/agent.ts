@@ -198,7 +198,70 @@ function collectSchedulingMissing(request: PlanningRequest): string[] {
     missing.push("visitDates");
   }
 
+  if (
+    request.durationDays &&
+    request.visitDates?.length &&
+    request.visitDates.length !== request.durationDays
+  ) {
+    missing.push("visitDates");
+  }
+
   return [...new Set(missing)];
+}
+
+function buildSchedulingMessage(missing: string[], request: PlanningRequest) {
+  const needsDuration = missing.includes("durationDays");
+  const needsVisit = missing.includes("visitDates");
+
+  if (
+    request.festivalDates &&
+    request.festivalDates.start === request.festivalDates.end &&
+    (needsDuration || needsVisit)
+  ) {
+    return `This plan is for one day on ${request.festivalDates.start}. Should I continue with that date?`;
+  }
+
+  if (
+    needsDuration &&
+    needsVisit &&
+    request.festivalDates
+  ) {
+    return `How many days do you want to visit, and which dates work during ${request.festivalDates.start} to ${request.festivalDates.end}?`;
+  }
+
+  if (
+    needsVisit &&
+    request.festivalDates &&
+    request.durationDays &&
+    request.visitDates?.length &&
+    request.visitDates.length !== request.durationDays
+  ) {
+    return `Please pick exactly ${request.durationDays} day${request.durationDays === 1 ? "" : "s"} to visit during ${request.festivalDates.start} to ${request.festivalDates.end}.`;
+  }
+
+  if (needsVisit && request.festivalDates && request.durationDays) {
+    return `Pick ${request.durationDays} day${request.durationDays === 1 ? "" : "s"} to visit during ${request.festivalDates.start} to ${request.festivalDates.end}.`;
+  }
+
+  return buildMissingMessage(missing, request);
+}
+
+function schedulingInput(
+  request: PlanningRequest,
+  missing: string[],
+): PlannerIntakeInputPrompt | undefined {
+  if (!request.festivalDates) {
+    return undefined;
+  }
+
+  if (
+    missing.includes("visitDates") ||
+    missing.includes("durationDays")
+  ) {
+    return visitDatesInput(request);
+  }
+
+  return undefined;
 }
 
 function validateReadyRequest(request: PlanningRequest): PlannerIntakeResult {
@@ -208,7 +271,7 @@ function validateReadyRequest(request: PlanningRequest): PlannerIntakeResult {
     return ready(request);
   }
 
-  let message = buildMissingMessage(missing, request);
+  let message = buildSchedulingMessage(missing, request);
 
   if (
     missing.includes("visitDates") &&
@@ -223,7 +286,7 @@ function validateReadyRequest(request: PlanningRequest): PlannerIntakeResult {
     request,
     missing,
     message,
-    missing.includes("visitDates") ? visitDatesInput(request) : undefined,
+    schedulingInput(request, missing),
   );
 }
 

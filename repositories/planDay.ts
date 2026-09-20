@@ -38,3 +38,22 @@ export async function getPlanDaysByPlanId(planId: string) {
     orderBy: { dayNumber: "asc" },
   });
 }
+
+export async function getPlanDayById(id: string) {
+  return prisma.planDay.findUnique({
+    where: { id: idSchema.parse(id) },
+    include: {
+      plan: {
+        select: {
+          id: true,
+          userId: true,
+          city: true,
+          country: true,
+          festivalName: true,
+          title: true,
+          year: true,
+        },
+      },
+    },
+  });
+}

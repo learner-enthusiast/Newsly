@@ -45,6 +45,44 @@ export async function createPlan(input: PlanCreateInput) {
   });
 }
 
+const planListSelect = {
+  id: true,
+  slug: true,
+  title: true,
+  description: true,
+  festivalName: true,
+  city: true,
+  country: true,
+  year: true,
+  status: true,
+  visibility: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+export type PlanListRecord = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  festivalName: string;
+  city: string;
+  country: string;
+  year: number;
+  status: z.infer<typeof planStatusSchema>;
+  visibility: z.infer<typeof planVisibilitySchema>;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export async function listPlansByUserId(userId: string): Promise<PlanListRecord[]> {
+  return prisma.plan.findMany({
+    where: { userId: userIdSchema.parse(userId) },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    select: planListSelect,
+  });
+}
+
 export async function getPlanById(id: string) {
   return prisma.plan.findUnique({
     where: { id: idSchema.parse(id) },
