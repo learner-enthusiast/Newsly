@@ -22,6 +22,8 @@ import {
   type PlannerIntakeResult,
 } from "./schema";
 
+export { defaultModel, model } from "./model";
+
 export type PlannerIntakeInput = {
   message: string;
   previousRequest?: PlanningRequest | null;

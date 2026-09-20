@@ -6,6 +6,8 @@ import {
   type FoodResearchResult,
 } from "./schema";
 
+export { defaultModel, model } from "./model";
+
 export async function runFoodResearchAgent(
   input: FoodResearchInput,
 ): Promise<FoodResearchResult> {

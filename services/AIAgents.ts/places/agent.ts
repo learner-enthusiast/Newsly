@@ -6,6 +6,8 @@ import {
   type PlaceResearchResult,
 } from "./schema";
 
+export { defaultModel, model } from "./model";
+
 export async function runPlaceResearchAgent(
   input: PlaceResearchInput,
 ): Promise<PlaceResearchResult> {

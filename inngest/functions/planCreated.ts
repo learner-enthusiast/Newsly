@@ -1,3 +1,39 @@
+/**
+ * Plan generation pipeline (Inngest).
+ *
+ * Trigger: `planner/plan.created` with `{ planId }`, sent from
+ * `services/planner/createReadyPlan.ts` right after intake is READY.
+ * The HTTP intake route returns immediately; all heavy work runs here.
+ *
+ * Architecture rules for this file:
+ * - Use `repositories/*` and `services/*` only — do not import Prisma here.
+ * - Call Serp through `serpService.*.fn`, not `serpClient` directly.
+ * - Each independently retriable unit is its own `step.run(...)` so Inngest
+ *   can retry failed steps without redoing successful ones.
+ * - Maps/Serp data is the source of truth for place IDs and coordinates;
+ *   LLM agents only enrich text fields and must not invent locations or dates.
+ *
+ * Failure handling:
+ * - Controlled failures (no verified dates, no places): mark run + plan failed,
+ *   return `{ ok: false }` without throwing — avoids pointless retries.
+ * - Unexpected errors: Inngest retries (see `retries`), then `onFailure` marks
+ *   the research run and plan as failed.
+ *
+ * Idempotency:
+ * - Plan already `ready` → early exit.
+ * - Completed research run with existing plan days → skip pipeline, set ready.
+ * - Research sources/places/days use dedupe helpers in repositories/services.
+ *
+ * Registered in: `app/api/inngest/route.ts`
+ *
+ * Step order (each name matches `step.run` in Inngest UI):
+ * 1. load-plan → 2. ensure-research-run → (mark-ready-existing if resuming)
+ * → 3. mark-processing → 4–6. search-festival-* → 7. scrape-festival-urls
+ * → 8. persist-research-sources → 9. festival-facts-agent
+ * → 10–12. discover/upsert pandals (+ place agent) → 13–15. discover/upsert food
+ * → 16. require-places → 17. persist-weather → 18. cluster-day-routes
+ * → 19. itinerary-copy-agent → 20. persist-plan-days-items → 21. complete-plan
+ */
 import { NonRetriableError } from "inngest";
 import { inngestClient } from "@/clients/inngestClient";
 import { PLAN_CREATED_EVENT, planCreatedEvent } from "@/inngest/events";
@@ -47,6 +83,7 @@ import {
 } from "@/services/planner/research/sources";
 import { serpService } from "@/services/serpService";
 
+/** Structured logs for the Inngest dashboard and server logs (never log API keys). */
 function logStep(step: string, data: Record<string, unknown>) {
   console.info(
     JSON.stringify({
@@ -63,6 +100,7 @@ function publicErrorMessage(error: unknown) {
   return raw.replace(/api[_-]?key=[^&\s]+/gi, "api_key=redacted");
 }
 
+/** `plans.requestData` from intake; fall back to plan title fields if JSON is stale. */
 function parsePlanningRequest(
   requestData: unknown,
   plan: { festivalName: string; city: string; year: number },
@@ -80,6 +118,7 @@ function parsePlanningRequest(
   };
 }
 
+/** Build LLM context from persisted research_sources (snippet or scraped markdown). */
 function researchedContentFromSources(
   sources: Array<{
     url: string;
@@ -133,6 +172,7 @@ function failureMessage(event: { data?: unknown }, fallback: string) {
     : fallback;
 }
 
+/** Controlled failure path: persist error on the run and surface failed status to the UI. */
 async function markPlanFailed(planId: string, researchRunId: string, error: string) {
   await failResearchRun(researchRunId, error);
   await updatePlanStatus(planId, "failed");
@@ -143,7 +183,9 @@ export const planCreated = inngestClient.createFunction(
     id: "planner-plan-created",
     triggers: { event: planCreatedEvent },
     retries: 3,
+    // Only one active generation per planId; duplicate events are skipped.
     singleton: { key: "event.data.planId", mode: "skip" },
+    // Runs after all step retries are exhausted for uncaught errors.
     onFailure: async ({ event }) => {
       const planId = planIdFromFailureEvent(event);
       if (!planId) {
@@ -169,6 +211,7 @@ export const planCreated = inngestClient.createFunction(
   async ({ event, step }) => {
     const planId = event.data.planId;
 
+    // --- Phase 1: Load plan and short-circuit if already done ---
     const loaded = await step.run("load-plan", async () => {
       const plan = await getPlanById(planId);
       if (!plan) {
@@ -210,6 +253,7 @@ export const planCreated = inngestClient.createFunction(
     const year = loaded.year;
     const preferredArea = request.preferredAreas[0];
 
+    // --- Phase 2: One initial_generation research_run per plan (retry-safe) ---
     const research = await step.run("ensure-research-run", async () => {
       const existing = await findInitialGenerationByPlanId(planId);
       const run =
@@ -278,6 +322,7 @@ export const planCreated = inngestClient.createFunction(
       return { ok: true };
     });
 
+    // --- Phase 3: Festival web research (Google via Serp + optional Firecrawl) ---
     const festivalSearch = await step.run("search-festival-facts", async () => {
       const result = await serpService.searchFestivalFacts.fn({
         festival,
@@ -331,6 +376,7 @@ export const planCreated = inngestClient.createFunction(
         markdown: string | null;
       }> = [];
 
+      // Per-URL scrape failures are logged and skipped; other URLs still run.
       for (const item of selected) {
         try {
           const result = await scrapeMarkdown(item.url);
@@ -415,6 +461,7 @@ export const planCreated = inngestClient.createFunction(
       return { ok: true };
     });
 
+    // --- Phase 4: Festival dates from evidence (no invented dates) ---
     const festivalFacts = await step.run("festival-facts-agent", async () => {
       const sources = await getSourcesByRunId(researchRunId);
       const content = researchedContentFromSources(sources);
@@ -472,6 +519,7 @@ export const planCreated = inngestClient.createFunction(
       return { ok: false, planId, reason: festivalFacts.reason };
     }
 
+    // --- Phase 5: Places — Maps discovery is canonical; agents add descriptions only ---
     const pandalDiscovery = await step.run("discover-pandals", async () => {
       const result = await serpService.discoverPujaPlaces.fn({
         city,
@@ -608,6 +656,7 @@ export const planCreated = inngestClient.createFunction(
       return { places };
     });
 
+    // Dedupe by place id (same venue can appear in both pandal and food searches).
     const allPlaces: CanonicalPlace[] = [
       ...pandalPlaces.places,
       ...foodPlaces.places,
@@ -640,6 +689,7 @@ export const planCreated = inngestClient.createFunction(
       return { ok: false, planId, reason: placesReady.reason };
     }
 
+    // --- Phase 6: Weather, deterministic day routes, LLM copy, persist, ready ---
     await step.run("persist-weather", async () => {
       const date =
         request.visitDates?.[0] ?? festivalFacts.startDate ?? undefined;
@@ -668,6 +718,7 @@ export const planCreated = inngestClient.createFunction(
       }
     });
 
+    // Visit days and stop order come from requestData + clustering — not from the LLM.
     const routes = await step.run("cluster-day-routes", async () => {
       const candidates = buildDayRouteCandidates({
         request,
@@ -686,6 +737,7 @@ export const planCreated = inngestClient.createFunction(
       return { days: candidates };
     });
 
+    // Itinerary agent only writes titles/descriptions for days already built above.
     const copy = await step.run("itinerary-copy-agent", async () => {
       try {
         const result = await runItineraryCopyAgent({
@@ -728,6 +780,7 @@ export const planCreated = inngestClient.createFunction(
       }
     });
 
+    // Idempotent: skips creating items if days already have items for this plan.
     await step.run("persist-plan-days-items", async () => {
       const copyByDay = new Map(copy.days.map((day) => [day.dayNumber, day]));
       const persisted = await persistPlanDaysAndItems({
@@ -755,6 +808,7 @@ export const planCreated = inngestClient.createFunction(
     });
 
     await step.run("complete-plan", async () => {
+      // UI polls GET /api/plans/[planId] until status becomes `ready`.
       await completeResearchRun(researchRunId, {
         placeCount: allPlaces.length,
         dayCount: routes.days.length,

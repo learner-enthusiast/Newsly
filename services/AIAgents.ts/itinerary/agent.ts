@@ -5,6 +5,8 @@ import {
   type ItineraryCopyResult,
 } from "./schema";
 
+export { defaultModel, model } from "./model";
+
 export async function runItineraryCopyAgent(
   input: ItineraryCopyInput,
 ): Promise<ItineraryCopyResult> {

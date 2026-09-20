@@ -1,4 +1,5 @@
 import { aiClient } from "@/clients/AIClient";
+import { model } from "./model";
 import { PLACE_RESEARCH_SYSTEM_PROMPT } from "./prompt";
 import {
   placeResearchResultSchema,
@@ -9,6 +10,7 @@ export async function extractResearchedPlaces(input: PlaceResearchInput) {
   const location = input.area ? `${input.area}, ${input.city}` : input.city;
 
   return aiClient.generate({
+    model,
     system: PLACE_RESEARCH_SYSTEM_PROMPT,
     prompt: `Extract verified places/pandals in ${location}${input.festival ? ` for ${input.festival}` : ""}. Do not invent coordinates, ratings, or IDs.`,
     extraContext: {

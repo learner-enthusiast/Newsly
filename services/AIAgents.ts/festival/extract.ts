@@ -1,4 +1,5 @@
 import { aiClient } from "@/clients/AIClient";
+import { model } from "./model";
 import { FESTIVAL_FACTS_SYSTEM_PROMPT } from "./prompt";
 import {
   festivalFactsSchema,
@@ -7,6 +8,7 @@ import {
 
 export async function extractFestivalFacts(input: FestivalFactsInput) {
   return aiClient.generate({
+    model,
     system: FESTIVAL_FACTS_SYSTEM_PROMPT,
     prompt: `Extract festival facts for ${input.festival} in ${input.city} in ${input.year}. Unknown fields must be null. Do not invent dates.`,
     extraContext: {

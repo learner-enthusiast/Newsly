@@ -1,5 +1,5 @@
 import { aiClient } from "@/clients/AIClient";
-import { plannerIntakeModel } from "./model";
+import { model } from "./model";
 import {
   INTAKE_SYSTEM_PROMPT,
   OCCURRENCE_SYSTEM_PROMPT,
@@ -18,7 +18,7 @@ export async function extractPlanningRequest(params: {
   previousRequest?: PlanningRequest | null;
 }): Promise<ExtractedIntake> {
   return aiClient.generate({
-    model: plannerIntakeModel(),
+    model,
     system: INTAKE_SYSTEM_PROMPT,
     prompt: params.message,
     extraContext: {
@@ -38,7 +38,7 @@ export async function extractFestivalOccurrence(params: {
   evidence: unknown;
 }) {
   return aiClient.generate({
-    model: plannerIntakeModel(),
+    model,
     system: OCCURRENCE_SYSTEM_PROMPT,
     prompt: `Extract the official occurrence dates for ${params.festival} in ${params.city} in ${params.year}.`,
     extraContext: {
@@ -62,7 +62,7 @@ export async function resolveVisitDates(params: {
   }
 
   const resolved = await aiClient.generate({
-    model: plannerIntakeModel(),
+    model,
     system: VISIT_DATE_SYSTEM_PROMPT,
     prompt: `Convert these visit date mentions to ISO dates for year ${params.year}.`,
     extraContext: {

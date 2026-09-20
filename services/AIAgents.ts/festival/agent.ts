@@ -22,6 +22,8 @@ function nullInvalidDateRange(facts: FestivalFacts): FestivalFacts {
   };
 }
 
+export { defaultModel, model } from "./model";
+
 export async function runFestivalFactsAgent(
   input: FestivalFactsInput,
 ): Promise<FestivalFacts> {
