@@ -10,7 +10,7 @@ export async function extractItineraryCopy(input: ItineraryCopyInput) {
   return aiClient.generate({
     model,
     system: ITINERARY_COPY_SYSTEM_PROMPT,
-    prompt: `Write titles and descriptions for the already-chosen ${input.festival} days in ${input.city} ${input.year}. Do not add places.`,
+    prompt: `Write the day titles, day descriptions, and per-stop notes for the already-planned ${input.festival} days in ${input.city} ${input.year}. Explain the route and the timing. Do not add places.`,
     extraContext: {
       festival: input.festival,
       city: input.city,
@@ -19,7 +19,7 @@ export async function extractItineraryCopy(input: ItineraryCopyInput) {
     },
     schemaName: "ItineraryCopy",
     schemaDescription:
-      "Per-day titles and descriptions for already chosen place groupings.",
+      "Per-day titles, descriptions, and per-stop notes for an already-built route.",
     output: itineraryCopyResultSchema,
   });
 }

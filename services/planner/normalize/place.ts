@@ -1,21 +1,21 @@
 import { z } from "zod";
 import { serpService } from "@/services/serpService";
+import { deriveAreaLabel } from "@/services/planner/normalize/areaLabel";
+import {
+  classifyPlaceType,
+  mapRawPlaceType,
+  placeTypeSchema,
+  type DiscoveryIntent,
+} from "@/services/planner/normalize/placeType";
 
-export const placeTypeSchema = z.enum([
-  "pandal",
-  "temple",
-  "food",
-  "restaurant",
-  "cafe",
-  "parking",
-  "restroom",
-  "atm",
-  "pharmacy",
-  "event",
-  "other",
-]);
-
-export const foodPlaceTypeSchema = z.enum(["food", "restaurant", "cafe"]);
+export {
+  foodPlaceTypeSchema,
+  placeTypeSchema,
+} from "@/services/planner/normalize/placeType";
+export type {
+  FoodPlaceType,
+  PlaceType,
+} from "@/services/planner/normalize/placeType";
 
 export const normalizedPlaceSchema = z.object({
   name: z.string().min(1),
@@ -36,8 +36,6 @@ export const normalizedPlaceSchema = z.object({
   sourceIds: z.array(z.string()),
 });
 
-export type PlaceType = z.output<typeof placeTypeSchema>;
-export type FoodPlaceType = z.output<typeof foodPlaceTypeSchema>;
 export type NormalizedPlace = z.output<typeof normalizedPlaceSchema>;
 
 export type SerpMapsPlace = {
@@ -55,51 +53,49 @@ export type SerpMapsPlace = {
   operating_hours?: unknown;
 };
 
-const TYPE_HINTS: Array<{ match: string; type: PlaceType }> = [
-  { match: "pandal", type: "pandal" },
-  { match: "temple", type: "temple" },
-  { match: "cafe", type: "cafe" },
-  { match: "coffee", type: "cafe" },
-  { match: "restaurant", type: "restaurant" },
-  { match: "food", type: "food" },
-  { match: "stall", type: "food" },
-  { match: "parking", type: "parking" },
-  { match: "toilet", type: "restroom" },
-  { match: "restroom", type: "restroom" },
-  { match: "atm", type: "atm" },
-  { match: "pharmacy", type: "pharmacy" },
-  { match: "chemist", type: "pharmacy" },
-  { match: "event", type: "event" },
-];
+/** Provider category only. Prefer `classifyPlaceType` for itinerary places. */
+export const mapSerpPlaceType = mapRawPlaceType;
 
-export function mapSerpPlaceType(rawType: string | null | undefined): PlaceType | null {
-  if (!rawType?.trim()) {
-    return null;
-  }
-
-  const lowered = rawType.toLowerCase();
-  return TYPE_HINTS.find(({ match }) => lowered.includes(match))?.type ?? "other";
-}
-
+/**
+ * Provider result → application place.
+ *
+ * The domain type comes from `classifyPlaceType`, which weighs the researched
+ * festival context above the raw Google Maps category, and the area label is
+ * derived from the address when the caller has no explicit area.
+ */
 export function mapsResultToInternalPlace(
   place: SerpMapsPlace,
   extras: {
     city?: string | null;
     area?: string | null;
     sourceIds?: string[];
+    festivalTokens?: string[];
+    discoveryIntent?: DiscoveryIntent;
+    /** Researched text that mentions this venue, used for classification. */
+    evidence?: string | null;
   } = {},
 ): NormalizedPlace {
   const partial = serpService.normalizeMapsPlace.fn(place);
   const latitude = partial.latitude ?? null;
   const longitude = partial.longitude ?? null;
   const hasPair = latitude != null && longitude != null;
+  const address = partial.address ?? null;
+
+  const classification = classifyPlaceType({
+    name: partial.name,
+    rawType: partial.type ?? null,
+    description: partial.description ?? null,
+    evidence: extras.evidence ?? null,
+    festivalTokens: extras.festivalTokens,
+    discoveryIntent: extras.discoveryIntent,
+  });
 
   return normalizedPlaceSchema.parse({
     name: partial.name,
-    type: mapSerpPlaceType(partial.type),
-    address: partial.address ?? null,
+    type: classification.type,
+    address,
     city: extras.city ?? null,
-    area: extras.area ?? null,
+    area: extras.area ?? deriveAreaLabel(address, extras.city),
     latitude: hasPair ? latitude : null,
     longitude: hasPair ? longitude : null,
     googlePlaceId: place.place_id ?? null,
@@ -113,6 +109,7 @@ export function mapsResultToInternalPlace(
       source: partial.source,
       serpType: partial.type ?? null,
       externalId: partial.externalId || null,
+      classification: classification.reasons,
     },
     sourceIds: extras.sourceIds ?? [],
   });

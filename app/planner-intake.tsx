@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import HomePage from "@/components/HomePage";
 
 type ConversationMessage = {
   role: "user" | "assistant";
@@ -37,7 +38,9 @@ function dateOptions(needsInput: NeedsInputResponse | null) {
     return [];
   }
 
-  return options.filter((option): option is string => typeof option === "string");
+  return options.filter(
+    (option): option is string => typeof option === "string",
+  );
 }
 
 export function PlannerIntake() {
@@ -45,9 +48,8 @@ export function PlannerIntake() {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
-  const [previousRequest, setPreviousRequest] = useState<PlanningRequest | null>(
-    null,
-  );
+  const [previousRequest, setPreviousRequest] =
+    useState<PlanningRequest | null>(null);
   const [needsInput, setNeedsInput] = useState<NeedsInputResponse | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,11 +118,7 @@ export function PlannerIntake() {
   }
 
   if (!isSignedIn) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Sign in from the header to plan a festival trip.
-      </p>
-    );
+    return <HomePage />;
   }
 
   const options = dateOptions(needsInput);
@@ -184,7 +182,10 @@ export function PlannerIntake() {
           }
         />
         <div className="flex items-center gap-3">
-          <Button type="submit" disabled={pending || message.trim().length === 0}>
+          <Button
+            type="submit"
+            disabled={pending || message.trim().length === 0}
+          >
             {pending ? "Sending..." : submitLabel}
           </Button>
           {pending && (

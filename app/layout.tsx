@@ -1,13 +1,10 @@
-import {
-  ClerkProvider,
-  Show,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-} from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
+  fontBrand,
   fontDisplay,
   fontHandwritten,
   fontMono,
@@ -32,28 +29,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         fontSans.variable,
         fontDisplay.variable,
         fontHandwritten.variable,
+        fontBrand.variable,
         fontMono.variable,
       )}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="flex min-h-full flex-col bg-background text-foreground">
         <ClerkProvider>
           <TooltipProvider>
             <SyncLocalUser />
-            <header className="flex items-center justify-between gap-3 border-b border-border/20 bg-background px-6 py-4">
-              <a href="/" className="font-display text-lg text-foreground">
-                Puja Planner
-              </a>
-              <div className="flex items-center gap-3">
-                <Show when="signed-out">
-                  <SignInButton />
-                  <SignUpButton />
-                </Show>
-                <Show when="signed-in">
-                  <UserButton />
-                </Show>
-              </div>
-            </header>
-            {children}
+            <SiteHeader />
+            <div className="flex flex-1 flex-col">{children}</div>
+            <SiteFooter />
           </TooltipProvider>
         </ClerkProvider>
       </body>

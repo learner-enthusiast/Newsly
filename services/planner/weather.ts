@@ -7,6 +7,11 @@ export const weatherDaySchema = z.object({
   temperatureMax: z.number().nullable(),
   rainProbability: z.number().min(0).max(100).nullable(),
   condition: z.string().nullable(),
+  /**
+   * False when no forecast exists for that date (typically too far out).
+   * The day is still listed with null values — it is never dropped.
+   */
+  forecastAvailable: z.boolean().default(true),
 });
 
 export const weatherSnapshotSchema = z.object({
@@ -93,24 +98,32 @@ function mapForecastDay(value: unknown, fallbackDate: string | null): WeatherDay
     record.temperature ?? record.temperatures ?? record.temp,
   );
 
+  const condition =
+    typeof record.weather === "string"
+      ? record.weather
+      : typeof record.condition === "string"
+        ? record.condition
+        : typeof record.summary === "string"
+          ? record.summary
+          : null;
+  const rainProbability = parsePercent(
+    record.precipitation ??
+      record.rain ??
+      record.rainProbability ??
+      record.chance_of_rain,
+  );
+
   return weatherDaySchema.parse({
     date: parseIsoDate(record.date ?? record.datetime) ?? fallbackDate,
     temperatureMin: temps.temperatureMin,
     temperatureMax: temps.temperatureMax,
-    rainProbability: parsePercent(
-      record.precipitation ??
-        record.rain ??
-        record.rainProbability ??
-        record.chance_of_rain,
-    ),
-    condition:
-      typeof record.weather === "string"
-        ? record.weather
-        : typeof record.condition === "string"
-          ? record.condition
-          : typeof record.summary === "string"
-            ? record.summary
-            : null,
+    rainProbability,
+    condition,
+    forecastAvailable:
+      temps.temperatureMin != null ||
+      temps.temperatureMax != null ||
+      rainProbability != null ||
+      condition != null,
   });
 }
 
@@ -163,6 +176,75 @@ export function mapSerpWeather(
     location,
     fetchedAt: (options.fetchedAt ?? new Date()).toISOString(),
     days: meaningfulDays,
+  });
+}
+
+function unavailableDay(date: string): WeatherDay {
+  return weatherDaySchema.parse({
+    date,
+    temperatureMin: null,
+    temperatureMax: null,
+    rainProbability: null,
+    condition: null,
+    forecastAvailable: false,
+  });
+}
+
+/**
+ * Forces the snapshot into exactly one entry per requested visit date, in the
+ * requested order.
+ *
+ * A provider that answers with a single "representative" day, or with a
+ * 7-day forecast, or with nothing at all for a far-future date, can no longer
+ * change how many days a plan has. Dates with no forecast keep null values and
+ * `forecastAvailable: false` instead of being silently dropped.
+ */
+export function alignWeatherToVisitDates(
+  days: WeatherDay[],
+  visitDates: string[],
+): WeatherDay[] {
+  const byDate = new Map<string, WeatherDay>();
+
+  for (const day of days) {
+    if (day.date && !byDate.has(day.date)) {
+      byDate.set(day.date, day);
+    }
+  }
+
+  return visitDates.map((date) => {
+    const match = byDate.get(date);
+    if (!match) {
+      return unavailableDay(date);
+    }
+
+    return weatherDaySchema.parse({
+      ...match,
+      date,
+      forecastAvailable:
+        match.temperatureMin != null ||
+        match.temperatureMax != null ||
+        match.rainProbability != null ||
+        match.condition != null,
+    });
+  });
+}
+
+/** Combines per-date lookups into one snapshot covering every visit date. */
+export function buildWeatherPlan(params: {
+  location: string | null;
+  visitDates: string[];
+  snapshots: WeatherSnapshot[];
+  fetchedAt?: Date;
+}): WeatherSnapshot {
+  const days = params.snapshots.flatMap((snapshot) => snapshot.days);
+
+  return weatherSnapshotSchema.parse({
+    location:
+      params.location ??
+      params.snapshots.find((snapshot) => snapshot.location)?.location ??
+      null,
+    fetchedAt: (params.fetchedAt ?? new Date()).toISOString(),
+    days: alignWeatherToVisitDates(days, params.visitDates),
   });
 }
 

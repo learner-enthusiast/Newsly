@@ -3,19 +3,17 @@ import { upsertPlace } from "@/repositories/place";
 import {
   mapsResultToInternalPlace,
   type NormalizedPlace,
-  type PlaceType,
   type SerpMapsPlace,
 } from "@/services/planner/normalize/place";
+import {
+  placeTypeToPlanItemType,
+  type DiscoveryIntent,
+  type PlaceType,
+  type PlanItemType,
+} from "@/services/planner/normalize/placeType";
 
-export type PlanItemType =
-  | "pandal"
-  | "food"
-  | "restaurant"
-  | "cafe"
-  | "parking"
-  | "restroom"
-  | "event"
-  | "custom";
+export { placeTypeToPlanItemType };
+export type { PlanItemType };
 
 export type CanonicalPlace = {
   id: string;
@@ -152,6 +150,33 @@ function canUpsertPlace(place: NormalizedPlace) {
   );
 }
 
+/**
+ * The agent may only upgrade a generic provider category into a researched
+ * festival type. It can never turn a food venue into a pandal, or overwrite a
+ * category the maps result already states confidently.
+ */
+function resolveType(
+  mapsType: PlaceType | null,
+  agentType: PlaceType | null,
+): PlaceType | null {
+  if (!agentType) {
+    return mapsType;
+  }
+
+  if (!mapsType || mapsType === "other") {
+    return agentType;
+  }
+
+  if (
+    agentType === "pandal" &&
+    (mapsType === "temple" || mapsType === "event")
+  ) {
+    return "pandal";
+  }
+
+  return mapsType;
+}
+
 function overlayAgentFields(
   mapsPlace: NormalizedPlace,
   agentPlaces: NormalizedPlace[],
@@ -179,7 +204,7 @@ function overlayAgentFields(
     ...mapsPlace,
     description: mapsPlace.description ?? match.description,
     area: mapsPlace.area ?? match.area,
-    type: mapsPlace.type ?? match.type,
+    type: resolveType(mapsPlace.type, match.type),
   };
 }
 
@@ -235,23 +260,31 @@ export function placeSnapshot(place: CanonicalPlace) {
   };
 }
 
-export function placeTypeToPlanItemType(
-  type: PlaceType,
-): Exclude<PlanItemType, "custom"> | null {
-  switch (type) {
-    case "pandal":
-    case "food":
-    case "restaurant":
-    case "cafe":
-    case "parking":
-    case "restroom":
-    case "event":
-      return type;
-    case "temple":
-      return "event";
-    default:
-      return null;
+/**
+ * Pulls the sentence(s) around a venue name out of the research corpus so the
+ * classifier can see, for example, "... Gauri Bari Sarbojanin Durga Puja
+ * pandal ..." before deciding the place is a pandal rather than a temple.
+ */
+export function evidenceForPlace(
+  name: string,
+  corpus: string,
+  window = 240,
+): string | null {
+  const needle = name.trim().toLowerCase();
+  if (needle.length < 4 || !corpus) {
+    return null;
   }
+
+  const haystack = corpus.toLowerCase();
+  const index = haystack.indexOf(needle);
+  if (index === -1) {
+    return null;
+  }
+
+  return corpus
+    .slice(Math.max(0, index - window), index + needle.length + window)
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function mapsContentForAgent(places: MapsPlaceRecord[]) {
@@ -271,6 +304,11 @@ export async function upsertMapsPlaces(params: {
   area?: string | null;
   fallbackType: PlaceType;
   sourceId: string | null;
+  /** Discriminating festival words, e.g. ["durga"] for Durga Puja. */
+  festivalTokens?: string[];
+  discoveryIntent?: DiscoveryIntent;
+  /** Concatenated research text used as classification evidence. */
+  researchCorpus?: string;
 }): Promise<CanonicalPlace[]> {
   const upserted: CanonicalPlace[] = [];
 
@@ -280,6 +318,11 @@ export async function upsertMapsPlaces(params: {
         city: params.city,
         area: params.area ?? null,
         sourceIds: params.sourceId ? [params.sourceId] : [],
+        festivalTokens: params.festivalTokens,
+        discoveryIntent: params.discoveryIntent,
+        evidence: params.researchCorpus
+          ? evidenceForPlace(mapsPlace.title, params.researchCorpus)
+          : null,
       }),
       params.agentPlaces,
     );

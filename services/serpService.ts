@@ -119,6 +119,36 @@ async function searchFestivalEvents({ festival, city, year }: FestivalQuery) {
   });
 }
 
+/**
+ * Local knowledge about how people actually group festival stops: hopping
+ * routes, neighbourhood guides, "best pandals in <area>" lists.
+ */
+async function searchLocalRouteGuides({ festival, city, year }: FestivalQuery) {
+  return serpClient.search({
+    engine: "google",
+    q: `${festival} ${city} ${year} pandal hopping route guide best pandals area wise list`,
+    location: city,
+    ...DEFAULT_SEARCH_OPTIONS,
+    num: 10,
+  });
+}
+
+/** Maps discovery for the requested festival — not hardcoded to Durga Puja. */
+async function discoverFestivalPlaces({
+  festival,
+  city,
+  area,
+  limit = 20,
+}: Omit<DiscoverPlacesQuery, "category"> & { festival: string }) {
+  return serpClient.search({
+    engine: "google_maps",
+    type: "search",
+    q: `${festival} pandal ${locationText(city, area)}`,
+    ...DEFAULT_SEARCH_OPTIONS,
+    num: Math.min(limit, 20),
+  });
+}
+
 async function discoverPujaPlaces({
   city,
   area,
@@ -240,6 +270,16 @@ export const serpService = {
   searchFestivalEvents: {
     description: "Search Google for festival events in a city and year.",
     fn: searchFestivalEvents,
+  },
+  searchLocalRouteGuides: {
+    description:
+      "Search Google for local pandal-hopping routes, area guides, and community route suggestions.",
+    fn: searchLocalRouteGuides,
+  },
+  discoverFestivalPlaces: {
+    description:
+      "Find festival venues (pandals, mandaps, festival grounds) on Google Maps for any festival.",
+    fn: discoverFestivalPlaces,
   },
   discoverPujaPlaces: {
     description: "Find Durga Puja pandals on Google Maps for a city or area.",

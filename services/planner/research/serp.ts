@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { serpService } from "@/services/serpService";
-import { mapSerpWeather } from "@/services/planner/weather";
+import {
+  buildWeatherPlan,
+  mapSerpWeather,
+  type WeatherSnapshot,
+} from "@/services/planner/weather";
 
 const festivalQuerySchema = z.object({
   festival: z.string().min(1),
@@ -54,6 +58,43 @@ export async function getWeatherSnapshot(params: z.input<typeof weatherQuerySche
   return mapSerpWeather(result, {
     location: parsed.city,
     date: parsed.date,
+  });
+}
+
+const weatherPlanSchema = z.object({
+  city: z.string().min(1),
+  visitDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).min(1),
+});
+
+/**
+ * One lookup per visit date, aligned into exactly one entry per date.
+ * A failed or empty lookup yields an explicit "no forecast" day rather than a
+ * missing day, so `weather.days` always matches the itinerary.
+ */
+export async function getWeatherPlan(
+  params: z.input<typeof weatherPlanSchema>,
+  fetchWeather: (
+    query: z.output<typeof weatherQuerySchema>,
+  ) => Promise<unknown> = searchWeather,
+) {
+  const parsed = weatherPlanSchema.parse(params);
+  const snapshots: WeatherSnapshot[] = [];
+
+  for (const date of parsed.visitDates) {
+    try {
+      const result = await fetchWeather({ city: parsed.city, date });
+      snapshots.push(
+        mapSerpWeather(result, { location: parsed.city, date }),
+      );
+    } catch {
+      // Keep going: alignment fills this date with an unavailable forecast.
+    }
+  }
+
+  return buildWeatherPlan({
+    location: parsed.city,
+    visitDates: parsed.visitDates,
+    snapshots,
   });
 }
 

@@ -6,6 +6,7 @@ export async function getPlanPagePayload(plan: {
   slug: string;
   status: string;
   title: string;
+  description: string | null;
   festivalName: string;
   city: string;
   country: string;
@@ -26,6 +27,7 @@ export async function getPlanPagePayload(plan: {
     slug: plan.slug,
     status: plan.status,
     title: plan.title,
+    description: plan.description,
     festivalName: plan.festivalName,
     city: plan.city,
     country: plan.country,

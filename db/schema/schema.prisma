@@ -126,27 +126,53 @@ model User {
 }
 
 model Plan {
+
   id           String         @id @default(uuid()) @db.Uuid
+
   userId       String
+
+  festivalId   String?        @db.Uuid
+
   slug         String
+
   title        String
+
   description  String?
+
   festivalName String
+
   city         String
+
   country      String
+
   year         Int
+
   status       PlanStatus
+
   visibility   PlanVisibility
+
   requestData  Json?
+
   weather      Json?
+
   createdAt    DateTime       @default(now())
+
   updatedAt    DateTime       @updatedAt
+
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  festival     FestivalKnowledge? @relation(fields: [festivalId], references: [id], onDelete: SetNull)
+
   messages     PlanMessage[]
+
   days         PlanDay[]
+
   researchRuns ResearchRun[]
 
   @@unique([userId, slug])
+
+  @@index([festivalId])
+
   @@map("plans")
 }
 
@@ -273,4 +299,32 @@ model PlaceSource {
 
   @@id([placeId, sourceId])
   @@map("place_sources")
+}
+
+/// Stable festival reference for agents (culture, areas, search vocabulary, planning).
+/// Not live research output — see `places`, `research_sources`, `plan_items`.
+model FestivalKnowledge {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  slug             String   @unique
+  description      String   @db.Text
+  historicalFacts  Json?
+  culturalContext  Json?
+  planningProfile  Json?
+  cities           Json?
+  searchTaxonomy   Json?
+  rituals          Json?
+  terminology      Json?
+  dateInformation  Json?
+  transportProfile Json?
+  crowdProfile     Json?
+  foodProfile      Json?
+  researchRules    Json?
+  sources          Json?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  plans            Plan[]
+
+  @@map("festival_knowledge")
 }

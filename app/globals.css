@@ -41,6 +41,7 @@
   --font-heading: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-dm-serif), ui-serif, Georgia, serif;
   --font-handwritten: var(--font-caveat), ui-serif, cursive;
+  --font-brand: var(--font-kalam), cursive;
   --shadow-paper: var(--elevation-paper);
   --shadow-editorial: var(--elevation-editorial);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -201,6 +202,11 @@
     line-height: 1.2;
   }
 
+  .font-brand {
+    font-family: var(--font-brand);
+    font-weight: 700;
+  }
+
   .marker-highlight {
     background-color: color-mix(in srgb, var(--accent) 82%, transparent);
     box-decoration-break: clone;
@@ -217,5 +223,51 @@
   .text-body {
     font-family: var(--font-sans);
     line-height: 1.65;
+  }
+
+  .highlight {
+    position: relative;
+    display: inline-block;
+    white-space: nowrap;
+  }
+
+  .highlight-text {
+    position: relative;
+    z-index: 1;
+  }
+
+  .highlight-stroke {
+    position: absolute;
+    left: -4%;
+    bottom: -8px;
+    width: 108%;
+    height: 0.55em;
+    z-index: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .highlight-stroke path {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw-highlight 0.8s ease-out forwards;
+  }
+
+  @keyframes draw-highlight {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .highlight-stroke path {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
   }
 }

@@ -78,6 +78,23 @@ export async function updatePlanStatus(
   });
 }
 
+export async function updatePlanDescription(
+  id: string,
+  input: { title?: string; description: string },
+) {
+  const data = z
+    .object({
+      title: z.string().min(1).optional(),
+      description: z.string().min(1, "description is required"),
+    })
+    .parse(input);
+
+  return prisma.plan.update({
+    where: { id: idSchema.parse(id) },
+    data,
+  });
+}
+
 export async function updatePlanRequestData(id: string, requestData: unknown) {
   return prisma.plan.update({
     where: { id: idSchema.parse(id) },

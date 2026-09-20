@@ -10,6 +10,9 @@ type PlanItem = {
   placeId: string | null;
   titleOverride: string | null;
   descriptionOverride: string | null;
+  startTime: string | null;
+  durationMinutes: number | null;
+  notes: string | null;
   snapshot: unknown;
 };
 
@@ -19,7 +22,18 @@ type PlanDay = {
   date: string | null;
   title: string;
   description: string | null;
+  startTime: string | null;
+  endTime: string | null;
   items: PlanItem[];
+};
+
+type WeatherDay = {
+  date: string | null;
+  condition: string | null;
+  temperatureMin: number | null;
+  temperatureMax: number | null;
+  rainProbability: number | null;
+  forecastAvailable?: boolean;
 };
 
 type PlanPayload = {
@@ -27,10 +41,12 @@ type PlanPayload = {
   slug: string;
   status: string;
   title: string;
+  description: string | null;
   festivalName: string;
   city: string;
   country: string;
   year: number;
+  weather: { days?: WeatherDay[] } | null;
   days: PlanDay[];
 };
 
@@ -55,6 +71,38 @@ function itemSubtitle(item: PlanItem) {
     snapshotField(item.snapshot, "address") ??
     item.descriptionOverride
   );
+}
+
+/** `@db.Time` values arrive as ISO strings; show only the clock part. */
+function clock(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/(\d{2}:\d{2})/);
+  return match ? match[1] : null;
+}
+
+function weatherLine(weather: PlanPayload["weather"], date: string | null) {
+  const day = weather?.days?.find(
+    (entry) => entry.date && date && entry.date === date.slice(0, 10),
+  );
+
+  if (!day) {
+    return null;
+  }
+
+  if (day.forecastAvailable === false) {
+    return "Forecast not available yet";
+  }
+
+  return [
+    day.condition,
+    day.temperatureMax != null ? `${day.temperatureMax}°` : null,
+    day.rainProbability != null ? `${day.rainProbability}% rain` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function statusVariant(status: string) {
@@ -165,6 +213,16 @@ export function PlanView({ planId }: { planId: string }) {
         <p className="text-xs text-muted-foreground">/{plan.slug}</p>
       </div>
 
+      {plan.description && (
+        <div className="flex flex-col gap-2 rounded-lg bg-card p-4 shadow-paper ring-1 ring-border/15">
+          {plan.description.split(/\n{2,}/).map((paragraph, index) => (
+            <p key={index} className="text-sm leading-relaxed text-foreground">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+      )}
+
       {(plan.status === "processing" || plan.status === "draft") && (
         <p className="text-base text-foreground">Creating your plan...</p>
       )}
@@ -194,6 +252,16 @@ export function PlanView({ planId }: { planId: string }) {
                   Day {day.dayNumber}
                   {day.date ? ` · ${day.date.slice(0, 10)}` : ""} — {day.title}
                 </h2>
+                <p className="text-xs text-muted-foreground">
+                  {[
+                    clock(day.startTime) && clock(day.endTime)
+                      ? `${clock(day.startTime)}–${clock(day.endTime)}`
+                      : null,
+                    weatherLine(plan.weather, day.date),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
                 {day.description && (
                   <p className="text-sm text-muted-foreground">
                     {day.description}
@@ -204,17 +272,24 @@ export function PlanView({ planId }: { planId: string }) {
               {day.items.length > 0 ? (
                 <ol className="flex flex-col gap-2">
                   {day.items.map((item) => (
-                    <li key={item.id} className="flex items-baseline gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {item.position + 1}.
-                      </span>
-                      <span className="text-sm text-foreground">
-                        {itemTitle(item)}
-                      </span>
-                      <Badge variant="outline">{item.type}</Badge>
-                      {itemSubtitle(item) && (
+                    <li key={item.id} className="flex flex-col gap-0.5">
+                      <div className="flex items-baseline gap-2">
                         <span className="text-xs text-muted-foreground">
-                          {itemSubtitle(item)}
+                          {clock(item.startTime) ?? `${item.position + 1}.`}
+                        </span>
+                        <span className="text-sm text-foreground">
+                          {itemTitle(item)}
+                        </span>
+                        <Badge variant="outline">{item.type}</Badge>
+                        {itemSubtitle(item) && (
+                          <span className="text-xs text-muted-foreground">
+                            {itemSubtitle(item)}
+                          </span>
+                        )}
+                      </div>
+                      {item.notes && (
+                        <span className="pl-10 text-xs text-muted-foreground">
+                          {item.notes}
                         </span>
                       )}
                     </li>
