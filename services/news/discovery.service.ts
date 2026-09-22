@@ -4,7 +4,6 @@ import {
   discoveryRequestSchema,
   type DiscoveryRequest,
 } from "@/domain/news/schemas/discovery";
-import type { StageResult } from "@/domain/news/types/pipeline";
 import {
   defaultNewsServiceDeps,
   type NewsServiceDeps,
@@ -59,38 +58,16 @@ export function createDiscoveryService(deps: NewsServiceDeps) {
       );
     },
 
-    /** Inngest: mark run started and hand off to document ingestion stage. */
-    async handleDiscoveryRequested(discoveryRunId: string): Promise<StageResult> {
-      const run = await deps.repos.discoveryRun.getDiscoveryRunById(
-        discoveryRunId,
-      );
-      if (!run) {
-        return { ok: false, discoveryRunId, reason: "discovery_run_not_found" };
-      }
-
-      if (run.status === "PENDING") {
-        await deps.repos.discoveryRun.updateDiscoveryRunStatus(
-          discoveryRunId,
-          "RUNNING",
-          { startedAt: new Date() },
-        );
-      }
-
-      await deps.events.send(NEWS_EVENTS.DOCUMENTS_INGEST_REQUESTED, {
-        discoveryRunId,
-      });
-
-      return { ok: true, discoveryRunId };
-    },
-
-    async markDiscoveryCompleted(discoveryRunId: string) {
+    /** Full pipeline finished — does not re-emit discovery phase events. */
+    async markDiscoveryRunCompleted(discoveryRunId: string) {
       await deps.repos.discoveryRun.updateDiscoveryRunStatus(
         discoveryRunId,
         "COMPLETED",
         { completedAt: new Date() },
       );
-      await deps.events.send(NEWS_EVENTS.DISCOVERY_COMPLETED, {
-        discoveryRunId,
+      await deps.repos.discoveryRun.mergeDiscoveryRunMetadata(discoveryRunId, {
+        pipelineStage: "ranking_final",
+        pipelineStageUpdatedAt: new Date().toISOString(),
       });
     },
 
@@ -104,6 +81,11 @@ export function createDiscoveryService(deps: NewsServiceDeps) {
         "FAILED",
         { completedAt: new Date() },
       );
+      await deps.repos.discoveryRun.mergeDiscoveryRunMetadata(discoveryRunId, {
+        failureReason: reason,
+        failureStage: stage,
+        pipelineStageUpdatedAt: new Date().toISOString(),
+      });
       await deps.events.send(NEWS_EVENTS.DISCOVERY_FAILED, {
         discoveryRunId,
         reason,

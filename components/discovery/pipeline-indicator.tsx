@@ -7,7 +7,7 @@ import {
 } from "@/domain/news/pipeline-metadata";
 import type { PipelineStage } from "@/domain/news/types/pipeline";
 
-const STAGE_LABELS: Record<PipelineStage, string> = {
+const STAGE_LABELS: Partial<Record<PipelineStage, string>> = {
   discovery: "Discovery",
   document_ingest: "Documents",
   document_understand: "Understanding",
@@ -29,6 +29,18 @@ const DISPLAY_STAGES = [
   "ranking_primary",
   "ranking_final",
 ] as const;
+
+const STAGE_ORDER: PipelineStage[] = [
+  "discovery",
+  "document_ingest",
+  "document_understand",
+  "event_process",
+  "evidence_process",
+  "ranking_primary",
+  "ranking_independent",
+  "ranking_coverage",
+  "ranking_final",
+];
 
 type DisplayStage = (typeof DISPLAY_STAGES)[number];
 
@@ -72,13 +84,13 @@ function stageStates(input: {
   }
 
   // RUNNING — only mark stages complete when metadata says so.
-  if (meta.pipelineStage) {
-    const current = displayStageIndex(meta.pipelineStage);
+  if (meta.pipelineStage && STAGE_ORDER.includes(meta.pipelineStage)) {
+    const activeDisplayIndex = displayStageIndex(meta.pipelineStage);
     return DISPLAY_STAGES.map((_, index) => {
-      if (index < current) {
+      if (index < activeDisplayIndex) {
         return "complete";
       }
-      if (index === current) {
+      if (index === activeDisplayIndex) {
         return "active";
       }
       return "pending";

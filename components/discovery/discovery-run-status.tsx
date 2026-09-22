@@ -132,6 +132,32 @@ export function DiscoveryRunStatus({ runId }: { runId: string }) {
           </p>
         )}
 
+        {run.metadata &&
+        typeof run.metadata === "object" &&
+        !Array.isArray(run.metadata) &&
+        "discovery" in (run.metadata as Record<string, unknown>) ? (
+          <dl className="grid gap-2 rounded-md border border-border/60 bg-muted/20 p-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-muted-foreground">Search tasks</dt>
+              <dd className="font-medium">
+                {String(
+                  (run.metadata as { discovery?: { plannedTasks?: number } })
+                    .discovery?.plannedTasks ?? "—",
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Raw results</dt>
+              <dd className="font-medium">
+                {String(
+                  (run.metadata as { discovery?: { rawResultsPersisted?: number } })
+                    .discovery?.rawResultsPersisted ?? "—",
+                )}
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+
         <DiscoveryPipelineIndicator
           status={run.status}
           metadata={run.metadata}

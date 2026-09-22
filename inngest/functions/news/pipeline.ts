@@ -1,6 +1,10 @@
 import { inngestClient } from "@/clients/inngestClient";
 import { NEWS_EVENTS } from "@/domain/news/events";
 import { discoveryService } from "@/services/news/discovery.service";
+import {
+  discoveryEngineService,
+  type ExecuteSearchTaskResult,
+} from "@/services/news/discovery/discovery-engine.service";
 import { documentIngestionService } from "@/services/news/document-ingestion.service";
 import { documentUnderstandingService } from "@/services/news/document-understanding.service";
 import { eventService } from "@/services/news/event.service";
@@ -12,31 +16,108 @@ import {
   parseRankingRunEvent,
 } from "@/inngest/functions/news/helpers";
 import { getRankingRunById } from "@/repositories/news/ranking";
+import {
+  getDiscoveryRunById,
+  mergeDiscoveryRunMetadata,
+} from "@/repositories/news/discovery-run";
+import { pipelineEventPublisher } from "@/infrastructure/inngest/pipeline-event-publisher";
 
 const { createFunction } = inngestClient;
 
 export const newsDiscoveryRequested = createFunction(
   {
     id: "news-discovery-requested",
-    retries: 3,
+    retries: 2,
     triggers: [{ event: NEWS_EVENTS.DISCOVERY_REQUESTED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    const result = await step.run("discovery-start", async () =>
-      discoveryService.handleDiscoveryRequested(discoveryRunId),
+    const plan = await step.run("discovery-plan", async () =>
+      discoveryEngineService.buildPlan(discoveryRunId),
     );
 
-    if (!result.ok) {
-      await step.run("discovery-failed", async () =>
+    if (!plan.ok) {
+      await step.run("discovery-plan-failed", async () =>
+        failDiscoveryFromStep(discoveryRunId, plan.reason, "discovery_plan"),
+      );
+      return;
+    }
+
+    const running = await step.run("discovery-mark-running", async () =>
+      discoveryEngineService.markRunning(discoveryRunId),
+    );
+
+    if (!running.ok) {
+      await step.run("discovery-running-failed", async () =>
+        failDiscoveryFromStep(discoveryRunId, running.reason, "discovery_start"),
+      );
+      return;
+    }
+
+    const taskResults: ExecuteSearchTaskResult[] = [];
+    for (const task of plan.tasks) {
+      const result = await step.run(
+        `discovery-search-${task.executionKey}`,
+        async () => discoveryEngineService.executePlannedSearch(task),
+      );
+      taskResults.push(result);
+    }
+
+    const finalized = await step.run("discovery-finalize", async () =>
+      discoveryEngineService.finalizeDiscovery(
+        discoveryRunId,
+        taskResults,
+        plan.tasks.length,
+      ),
+    );
+
+    if (!finalized.ok) {
+      await step.run("discovery-finalize-failed", async () =>
         failDiscoveryFromStep(
           discoveryRunId,
-          result.reason,
-          "discovery_requested",
+          finalized.reason,
+          "discovery_finalize",
         ),
       );
     }
+  },
+);
+
+export const newsDiscoveryCompleted = createFunction(
+  {
+    id: "news-discovery-completed",
+    retries: 3,
+    triggers: [{ event: NEWS_EVENTS.DISCOVERY_COMPLETED }],
+  },
+  async ({ event, step }) => {
+    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
+
+    await step.run("enqueue-document-ingest", async () => {
+      const discoveryRun = await getDiscoveryRunById(discoveryRunId);
+      if (!discoveryRun) {
+        return;
+      }
+
+      const metadata =
+        discoveryRun.metadata &&
+        typeof discoveryRun.metadata === "object" &&
+        !Array.isArray(discoveryRun.metadata)
+          ? (discoveryRun.metadata as Record<string, unknown>)
+          : {};
+
+      if (metadata.documentIngestEnqueued === true) {
+        return;
+      }
+
+      await mergeDiscoveryRunMetadata(discoveryRunId, {
+        documentIngestEnqueued: true,
+      });
+
+      await pipelineEventPublisher.send(NEWS_EVENTS.DOCUMENTS_INGEST_REQUESTED, {
+        discoveryRunId,
+      });
+    });
   },
 );
 
@@ -243,7 +324,7 @@ export const newsRankingFinalRequested = createFunction(
     await step.run("discovery-complete", async () => {
       const ranking = await getRankingRunById(rankingRunId);
       if (ranking) {
-        await discoveryService.markDiscoveryCompleted(ranking.discoveryRunId);
+        await discoveryService.markDiscoveryRunCompleted(ranking.discoveryRunId);
       }
     });
   },
@@ -251,6 +332,7 @@ export const newsRankingFinalRequested = createFunction(
 
 export const newsPipelineFunctions = [
   newsDiscoveryRequested,
+  newsDiscoveryCompleted,
   newsDocumentsIngestRequested,
   newsDocumentsUnderstandRequested,
   newsEventsProcessRequested,

@@ -64,3 +64,24 @@ export async function linkRawSearchResultToDocument(
     data: { documentId },
   });
 }
+
+export async function rawSearchResultExists(
+  searchExecutionId: string,
+  url: string,
+) {
+  const existing = await prisma.rawSearchResult.findFirst({
+    where: { searchExecutionId, url },
+    select: { id: true },
+  });
+  return Boolean(existing);
+}
+
+export async function countRawSearchResultsForDiscoveryRun(
+  discoveryRunId: string,
+) {
+  return prisma.rawSearchResult.count({
+    where: {
+      searchExecution: { discoveryRunId },
+    },
+  });
+}

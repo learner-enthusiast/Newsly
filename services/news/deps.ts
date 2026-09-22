@@ -3,6 +3,7 @@ import type { PipelineEventPublisher } from "@/domain/news/pipeline-event-publis
 import type { DocumentScraper } from "@/providers/document-scraper";
 import type { EmbeddingProvider } from "@/providers/embedding-provider";
 import type { LLMProvider } from "@/providers/llm-provider";
+import { createNewsSearchProviderFactory } from "@/providers/search/create-search-provider-factory";
 import type { SearchProviderFactory } from "@/providers/search-provider";
 import * as discoveryRunRepository from "@/repositories/news/discovery-run";
 import * as searchExecutionRepository from "@/repositories/news/search-execution";
@@ -70,7 +71,7 @@ export const defaultNewsServiceDeps: NewsServiceDeps = {
   repos: defaultNewsRepositories,
   events: pipelineEventPublisher,
   providers: {
-    search: null,
+    search: createNewsSearchProviderFactory(),
     scraper: null,
     embedding: null,
     llm: null,

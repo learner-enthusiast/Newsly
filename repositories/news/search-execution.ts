@@ -41,13 +41,38 @@ export async function updateSearchExecutionStatus(
   id: string,
   status: SearchStatus,
   timestamps?: { startedAt?: Date; completedAt?: Date },
+  metadataPatch?: Record<string, unknown>,
 ) {
+  const existing = await prisma.searchExecution.findUnique({ where: { id } });
+  const mergedMetadata =
+    metadataPatch && existing?.metadata && typeof existing.metadata === "object"
+      ? { ...(existing.metadata as Record<string, unknown>), ...metadataPatch }
+      : metadataPatch;
+
   return prisma.searchExecution.update({
     where: { id },
     data: {
       status,
       startedAt: timestamps?.startedAt,
       completedAt: timestamps?.completedAt,
+      ...(mergedMetadata
+        ? { metadata: toNullableJson(mergedMetadata) }
+        : {}),
+    },
+  });
+}
+
+export async function findSearchExecutionByExecutionKey(
+  discoveryRunId: string,
+  executionKey: string,
+) {
+  return prisma.searchExecution.findFirst({
+    where: {
+      discoveryRunId,
+      metadata: {
+        path: ["executionKey"],
+        equals: executionKey,
+      },
     },
   });
 }

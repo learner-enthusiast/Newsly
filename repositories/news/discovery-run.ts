@@ -64,3 +64,19 @@ export async function patchDiscoveryRunMetadata(
     data: { metadata },
   });
 }
+
+export async function mergeDiscoveryRunMetadata(
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  const run = await getDiscoveryRunById(id);
+  const current =
+    run?.metadata && typeof run.metadata === "object" && !Array.isArray(run.metadata)
+      ? (run.metadata as Record<string, unknown>)
+      : {};
+
+  return patchDiscoveryRunMetadata(id, {
+    ...current,
+    ...patch,
+  } as Prisma.InputJsonValue);
+}

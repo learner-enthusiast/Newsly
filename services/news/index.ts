@@ -4,6 +4,10 @@ export {
   type DiscoveryService,
 } from "@/services/news/discovery.service";
 export {
+  createDiscoveryEngineService,
+  discoveryEngineService,
+} from "@/services/news/discovery/discovery-engine.service";
+export {
   createDocumentIngestionService,
   documentIngestionService,
 } from "@/services/news/document-ingestion.service";
