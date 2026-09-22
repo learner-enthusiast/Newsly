@@ -15,6 +15,15 @@ export async function findEntityByNormalizedName(normalizedName: string) {
   });
 }
 
+export async function findEntityByTypeAndNormalizedName(
+  entityType: EntityType,
+  normalizedName: string,
+) {
+  return prisma.entity.findFirst({
+    where: { entityType, normalizedName },
+  });
+}
+
 export async function createEntity(input: CreateEntityInput) {
   return prisma.entity.create({
     data: {

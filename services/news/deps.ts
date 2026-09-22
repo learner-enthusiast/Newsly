@@ -2,6 +2,7 @@ import { pipelineEventPublisher } from "@/infrastructure/inngest/pipeline-event-
 import type { PipelineEventPublisher } from "@/domain/news/pipeline-event-publisher";
 import type { DocumentScraper } from "@/providers/document-scraper";
 import type { EmbeddingProvider } from "@/providers/embedding-provider";
+import { aiClientLlmProvider } from "@/providers/ai-client-llm-provider";
 import type { LLMProvider } from "@/providers/llm-provider";
 import { firecrawlDocumentScraper } from "@/providers/firecrawl-document-scraper";
 import { createNewsSearchProviderFactory } from "@/providers/search/create-search-provider-factory";
@@ -75,6 +76,6 @@ export const defaultNewsServiceDeps: NewsServiceDeps = {
     search: createNewsSearchProviderFactory(),
     scraper: firecrawlDocumentScraper,
     embedding: null,
-    llm: null,
+    llm: aiClientLlmProvider,
   },
 };

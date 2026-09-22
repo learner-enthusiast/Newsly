@@ -44,6 +44,43 @@ export async function listDocumentsForDiscoveryRun(discoveryRunId: string) {
   });
 }
 
+export async function listDocumentsForUnderstanding(discoveryRunId: string) {
+  return prisma.document.findMany({
+    where: {
+      scrapeStatus: "COMPLETED",
+      rawSearchResults: {
+        some: {
+          searchExecution: { discoveryRunId },
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function mergeDocumentMetadata(
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  const existing = await getDocumentById(id);
+  const current =
+    existing?.metadata &&
+    typeof existing.metadata === "object" &&
+    !Array.isArray(existing.metadata)
+      ? (existing.metadata as Record<string, unknown>)
+      : {};
+
+  return prisma.document.update({
+    where: { id },
+    data: {
+      metadata: toNullableJson({
+        ...current,
+        ...patch,
+      }),
+    },
+  });
+}
+
 export async function updateDocumentScrapeStatus(
   id: string,
   scrapeStatus: ScrapeStatus,

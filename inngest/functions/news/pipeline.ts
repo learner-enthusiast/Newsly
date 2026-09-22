@@ -19,6 +19,7 @@ import {
 import { getRankingRunById } from "@/repositories/news/ranking";
 import { pipelineEventPublisher } from "@/infrastructure/inngest/pipeline-event-publisher";
 import type { IngestBatchResult } from "@/services/news/document-ingestion.service";
+import type { UnderstandDocumentResult } from "@/services/news/document-understanding.service";
 
 const { createFunction } = inngestClient;
 
@@ -141,43 +142,82 @@ export const newsDiscoveryCompleted = createFunction(
 export const newsDocumentsIngested = createFunction(
   {
     id: "news-documents-ingested",
-    retries: 3,
+    retries: 2,
     triggers: [{ event: NEWS_EVENTS.DOCUMENTS_INGESTED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    await step.run("enqueue-document-understand", async () => {
-      await pipelineEventPublisher.send(
-        NEWS_EVENTS.DOCUMENTS_UNDERSTAND_REQUESTED,
-        { discoveryRunId },
-      );
-    });
-  },
-);
-
-export const newsDocumentsUnderstandRequested = createFunction(
-  {
-    id: "news-documents-understand-requested",
-    retries: 3,
-    triggers: [{ event: NEWS_EVENTS.DOCUMENTS_UNDERSTAND_REQUESTED }],
-  },
-  async ({ event, step }) => {
-    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
-
-    const result = await step.run("document-understand", async () =>
-      documentUnderstandingService.runUnderstandStage(discoveryRunId),
+    const plan = await step.run("document-understand-plan", async () =>
+      documentUnderstandingService.buildUnderstandPlan(discoveryRunId),
     );
 
-    if (!result.ok) {
-      await step.run("understand-failed", async () =>
+    if (!plan.ok) {
+      await step.run("document-understand-plan-failed", async () =>
         failDiscoveryFromStep(
           discoveryRunId,
-          result.reason,
+          plan.reason,
+          "document_understand",
+        ),
+      );
+      return;
+    }
+
+    await step.run("document-understand-mark-running", async () =>
+      documentUnderstandingService.markUnderstandRunning(discoveryRunId),
+    );
+
+    const batches = documentUnderstandingService.chunkDocumentIds(
+      plan.documentIds,
+    );
+    const understandResults: UnderstandDocumentResult[] = [];
+
+    for (const batch of batches) {
+      const batchStepKey = createHash("sha256")
+        .update(batch.slice().sort().join("|"))
+        .digest("hex")
+        .slice(0, 24);
+
+      const results = await step.run(
+        `document-understand-${batchStepKey}`,
+        async () => documentUnderstandingService.understandBatch(batch),
+      );
+      understandResults.push(...results);
+    }
+
+    const finalized = await step.run("document-understand-finalize", async () =>
+      documentUnderstandingService.finalizeUnderstanding(
+        discoveryRunId,
+        understandResults,
+      ),
+    );
+
+    if (!finalized.ok) {
+      await step.run("document-understand-finalize-failed", async () =>
+        failDiscoveryFromStep(
+          discoveryRunId,
+          finalized.reason,
           "document_understand",
         ),
       );
     }
+  },
+);
+
+export const newsDocumentsUnderstood = createFunction(
+  {
+    id: "news-documents-understood",
+    retries: 3,
+    triggers: [{ event: NEWS_EVENTS.DOCUMENTS_UNDERSTOOD }],
+  },
+  async ({ event, step }) => {
+    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
+
+    await step.run("enqueue-event-process", async () => {
+      await pipelineEventPublisher.send(NEWS_EVENTS.EVENTS_PROCESS_REQUESTED, {
+        discoveryRunId,
+      });
+    });
   },
 );
 
@@ -348,7 +388,7 @@ export const newsPipelineFunctions = [
   newsDiscoveryRequested,
   newsDiscoveryCompleted,
   newsDocumentsIngested,
-  newsDocumentsUnderstandRequested,
+  newsDocumentsUnderstood,
   newsEventsProcessRequested,
   newsEvidenceProcessRequested,
   newsRankingPrimaryRequested,
