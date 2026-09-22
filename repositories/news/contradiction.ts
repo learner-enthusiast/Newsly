@@ -40,3 +40,35 @@ export async function createContradiction(input: {
     },
   });
 }
+
+export async function listContradictionsForClaimIds(claimIds: string[]) {
+  if (claimIds.length === 0) {
+    return [];
+  }
+  return prisma.contradiction.findMany({
+    where: {
+      OR: [
+        { claimAId: { in: claimIds } },
+        { claimBId: { in: claimIds } },
+      ],
+    },
+  });
+}
+
+const SEVERITY_RANK: Record<ContradictionSeverity, number> = {
+  LOW: 1,
+  MEDIUM: 2,
+  HIGH: 3,
+  CRITICAL: 4,
+};
+
+export function maxContradictionSeverity(
+  rows: Array<{ severity: ContradictionSeverity }>,
+): ContradictionSeverity | undefined {
+  if (rows.length === 0) {
+    return undefined;
+  }
+  return rows.reduce((max, row) =>
+    SEVERITY_RANK[row.severity] > SEVERITY_RANK[max.severity] ? row : max,
+  ).severity;
+}

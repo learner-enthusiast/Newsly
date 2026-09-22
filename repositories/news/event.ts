@@ -106,6 +106,33 @@ export async function linkEventDocument(input: {
   });
 }
 
+export async function getEventEvidenceGraph(eventId: string) {
+  return prisma.event.findUnique({
+    where: { id: eventId },
+    include: {
+      eventEntities: { include: { entity: true } },
+      eventClaims: {
+        include: {
+          claim: {
+            include: {
+              document: { include: { source: true } },
+              claimEntities: { include: { entity: true } },
+            },
+          },
+        },
+      },
+      eventDocuments: {
+        include: {
+          document: { include: { source: true } },
+        },
+      },
+      eventNarratives: {
+        include: { narrative: true },
+      },
+    },
+  });
+}
+
 export async function listEventsForDiscoveryRun(discoveryRunId: string) {
   return prisma.event.findMany({
     where: {

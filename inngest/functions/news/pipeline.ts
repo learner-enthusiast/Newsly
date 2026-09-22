@@ -10,7 +10,8 @@ import { documentIngestionService } from "@/services/news/document-ingestion.ser
 import { documentUnderstandingService } from "@/services/news/document-understanding.service";
 import { eventIntelligenceService } from "@/services/news/event-intelligence.service";
 import type { ProcessDocumentEventsResult } from "@/services/news/event-intelligence.service";
-import { verificationService } from "@/services/news/verification.service";
+import { evidenceIntelligenceService } from "@/services/news/evidence-intelligence.service";
+import type { ProcessEventEvidenceResult } from "@/services/news/evidence-intelligence.service";
 import { rankingService } from "@/services/news/ranking.service";
 import {
   failDiscoveryFromStep,
@@ -267,42 +268,75 @@ export const newsDocumentsUnderstood = createFunction(
 export const newsEventsProcessed = createFunction(
   {
     id: "news-events-processed",
-    retries: 3,
+    retries: 2,
     triggers: [{ event: NEWS_EVENTS.EVENTS_PROCESSED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    await step.run("enqueue-evidence-process", async () => {
-      await pipelineEventPublisher.send(NEWS_EVENTS.EVIDENCE_PROCESS_REQUESTED, {
-        discoveryRunId,
-      });
-    });
-  },
-);
-
-export const newsEvidenceProcessRequested = createFunction(
-  {
-    id: "news-evidence-process-requested",
-    retries: 3,
-    triggers: [{ event: NEWS_EVENTS.EVIDENCE_PROCESS_REQUESTED }],
-  },
-  async ({ event, step }) => {
-    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
-
-    const result = await step.run("evidence-process", async () =>
-      verificationService.runEvidenceProcessStage(discoveryRunId),
+    const plan = await step.run("evidence-process-plan", async () =>
+      evidenceIntelligenceService.buildEvidenceProcessPlan(discoveryRunId),
     );
 
-    if (!result.ok) {
-      await step.run("evidence-failed", async () =>
+    if (!plan.ok) {
+      await step.run("evidence-process-plan-failed", async () =>
         failDiscoveryFromStep(
           discoveryRunId,
-          result.reason,
+          plan.reason,
+          "evidence_process",
+        ),
+      );
+      return;
+    }
+
+    await step.run("evidence-process-mark-running", async () =>
+      evidenceIntelligenceService.markEvidenceProcessRunning(discoveryRunId),
+    );
+
+    const evidenceResults: ProcessEventEvidenceResult[] = [];
+    for (const eventId of plan.eventIds) {
+      const result = await step.run(`evidence-process-event-${eventId}`, async () =>
+        evidenceIntelligenceService.processEventEvidence(
+          discoveryRunId,
+          eventId,
+        ),
+      );
+      evidenceResults.push(result);
+    }
+
+    const finalized = await step.run("evidence-process-finalize", async () =>
+      evidenceIntelligenceService.finalizeEvidenceProcess(
+        discoveryRunId,
+        evidenceResults,
+      ),
+    );
+
+    if (!finalized.ok) {
+      await step.run("evidence-process-finalize-failed", async () =>
+        failDiscoveryFromStep(
+          discoveryRunId,
+          finalized.reason,
           "evidence_process",
         ),
       );
     }
+  },
+);
+
+export const newsEvidenceProcessed = createFunction(
+  {
+    id: "news-evidence-processed",
+    retries: 3,
+    triggers: [{ event: NEWS_EVENTS.EVIDENCE_PROCESSED }],
+  },
+  async ({ event, step }) => {
+    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
+
+    await step.run("enqueue-ranking-primary", async () => {
+      await pipelineEventPublisher.send(NEWS_EVENTS.RANKING_PRIMARY_REQUESTED, {
+        discoveryRunId,
+      });
+    });
   },
 );
 
@@ -429,7 +463,7 @@ export const newsPipelineFunctions = [
   newsDocumentsIngested,
   newsDocumentsUnderstood,
   newsEventsProcessed,
-  newsEvidenceProcessRequested,
+  newsEvidenceProcessed,
   newsRankingPrimaryRequested,
   newsRankingIndependentRequested,
   newsRankingCoverageRequested,
