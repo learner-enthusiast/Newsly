@@ -14,7 +14,12 @@ import { evidenceIntelligenceService } from "@/services/news/evidence-intelligen
 import type { ProcessEventEvidenceResult } from "@/services/news/evidence-intelligence.service";
 import { rankingIntelligenceService } from "@/services/news/ranking-intelligence.service";
 import type { RegionRankingResult } from "@/services/news/ranking-intelligence.service";
-import { rankingService } from "@/services/news/ranking.service";
+import { finalRankingService } from "@/services/news/final-ranking.service";
+import {
+  appendPipelineObservability,
+  runWithPipelineObservability,
+} from "@/services/news/pipeline-observability";
+import { defaultNewsServiceDeps } from "@/services/news/deps";
 import {
   failDiscoveryFromStep,
   parseDiscoveryRunEvent,
@@ -84,11 +89,11 @@ export const newsDiscoveryRequested = createFunction(
   },
 );
 
-export const newsDiscoveryCompleted = createFunction(
+export const newsDiscoverySourcesCompleted = createFunction(
   {
-    id: "news-discovery-completed",
+    id: "news-discovery-sources-completed",
     retries: 2,
-    triggers: [{ event: NEWS_EVENTS.DISCOVERY_COMPLETED }],
+    triggers: [{ event: NEWS_EVENTS.DISCOVERY_SOURCES_COMPLETED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
@@ -431,53 +436,85 @@ export const newsEvidenceProcessed = createFunction(
 export const newsRankingCoverageCompleted = createFunction(
   {
     id: "news-ranking-coverage-completed",
-    retries: 1,
+    retries: 2,
     triggers: [{ event: NEWS_EVENTS.RANKING_COVERAGE_COMPLETED }],
-  },
-  async () => {
-    // Final Top-N selection is a separate stage — not run here.
-  },
-);
-
-export const newsRankingFinalRequested = createFunction(
-  {
-    id: "news-ranking-final-requested",
-    retries: 3,
-    triggers: [{ event: NEWS_EVENTS.RANKING_FINAL_REQUESTED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    const result = await step.run("ranking-final", async () =>
-      rankingService.runFinalRankingStage(discoveryRunId),
+    const finalResult = await step.run("ranking-final", async () =>
+      runWithPipelineObservability(defaultNewsServiceDeps, {
+        discoveryRunId,
+        stage: "ranking_final",
+        run: () =>
+          finalRankingService.runFinalRankingForDiscoveryRun(discoveryRunId),
+        countKeys: (result) => ({
+          regions: result.ok && result.regions ? result.regions.length : 0,
+          topStories:
+            result.ok && result.regions
+              ? result.regions.reduce((sum, row) => sum + row.topCount, 0)
+              : 0,
+        }),
+      }),
     );
 
-    if (!result.ok) {
-      await step.run("ranking-final-failed", async () =>
-        failDiscoveryFromStep(
+    if (!finalResult.ok) {
+      await step.run("ranking-final-failed", async () => {
+        await appendPipelineObservability(defaultNewsServiceDeps, {
           discoveryRunId,
-          result.reason,
+          stage: "ranking_final",
+          status: "failed",
+          error: finalResult.reason,
+        });
+        await failDiscoveryFromStep(
+          discoveryRunId,
+          finalResult.reason,
           "ranking_final",
-        ),
-      );
+        );
+      });
       return;
     }
 
     await step.run("discovery-complete", async () => {
-      await discoveryService.markDiscoveryRunCompleted(discoveryRunId);
+      await runWithPipelineObservability(defaultNewsServiceDeps, {
+        discoveryRunId,
+        stage: "discovery_complete",
+        run: async () => {
+          await discoveryService.markDiscoveryRunCompleted(discoveryRunId);
+          return { completed: true };
+        },
+      });
+    });
+  },
+);
+
+export const newsDiscoveryPipelineCompleted = createFunction(
+  {
+    id: "news-discovery-pipeline-completed",
+    retries: 1,
+    triggers: [{ event: NEWS_EVENTS.DISCOVERY_COMPLETED }],
+  },
+  async ({ event, step }) => {
+    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
+    await step.run("pipeline-completed-observability", async () => {
+      await appendPipelineObservability(defaultNewsServiceDeps, {
+        discoveryRunId,
+        stage: "pipeline_complete",
+        status: "completed",
+      });
     });
   },
 );
 
 export const newsPipelineFunctions = [
   newsDiscoveryRequested,
-  newsDiscoveryCompleted,
+  newsDiscoverySourcesCompleted,
   newsDocumentsIngested,
   newsDocumentsUnderstood,
   newsEventsProcessed,
   newsEvidenceProcessed,
   newsRankingCoverageCompleted,
-  newsRankingFinalRequested,
+  newsDiscoveryPipelineCompleted,
 ] as const;
 
 inngestClient.register(newsPipelineFunctions);

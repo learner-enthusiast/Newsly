@@ -68,6 +68,26 @@ export async function mergeCoverageGapRunMetadata(
   });
 }
 
+export async function listEvaluatedGapEventIdsForDiscoveryRun(
+  discoveryRunId: string,
+  region: Region,
+) {
+  const rows = await prisma.coverageGapCandidate.findMany({
+    where: {
+      status: "EVALUATED",
+      eventId: { not: null },
+      coverageGapRun: {
+        discoveryRunId,
+        region,
+      },
+    },
+    select: { eventId: true },
+  });
+  return rows
+    .map((row) => row.eventId)
+    .filter((id): id is string => typeof id === "string");
+}
+
 export async function createCoverageGapCandidate(input: {
   coverageGapRunId: string;
   rawSearchResultId?: string;

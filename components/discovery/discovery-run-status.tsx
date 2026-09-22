@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -162,6 +164,12 @@ export function DiscoveryRunStatus({ runId }: { runId: string }) {
           status={run.status}
           metadata={run.metadata}
         />
+
+        {run.status === "COMPLETED" ? (
+          <Button render={<Link href={`/dashboard/discovery/${runId}`} />}>
+            View Top 5 results
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   );

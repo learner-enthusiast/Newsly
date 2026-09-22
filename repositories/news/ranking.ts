@@ -201,6 +201,36 @@ export async function createRankingDisagreement(input: {
   });
 }
 
+export async function listRankingRunsForDiscovery(discoveryRunId: string) {
+  return prisma.rankingRun.findMany({
+    where: { discoveryRunId },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function listTopStorySelectionsForRankingRun(rankingRunId: string) {
+  return prisma.topStorySelection.findMany({
+    where: { rankingRunId },
+    orderBy: { rank: "asc" },
+  });
+}
+
+export async function listTopStorySelectionsForDiscoveryRun(
+  discoveryRunId: string,
+  region: Region,
+) {
+  return prisma.topStorySelection.findMany({
+    where: {
+      region,
+      rankingRun: {
+        discoveryRunId,
+        rankingVersion: "final-v1",
+      },
+    },
+    orderBy: { rank: "asc" },
+  });
+}
+
 export async function createTopStorySelection(input: {
   rankingRunId: string;
   eventId: string;

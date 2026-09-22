@@ -33,9 +33,13 @@ export {
   evaluationService,
 } from "@/services/news/evaluation.service";
 export {
-  createRankingService,
-  rankingService,
-} from "@/services/news/ranking.service";
+  createFinalRankingService,
+  finalRankingService,
+} from "@/services/news/final-ranking.service";
+export {
+  createDiscoveryResultsService,
+  discoveryResultsService,
+} from "@/services/news/discovery-results.service";
 export {
   createRankingIntelligenceService,
   rankingIntelligenceService,

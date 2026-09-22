@@ -69,6 +69,9 @@ export function createDiscoveryService(deps: NewsServiceDeps) {
         pipelineStage: "ranking_final",
         pipelineStageUpdatedAt: new Date().toISOString(),
       });
+      await deps.events.send(NEWS_EVENTS.DISCOVERY_COMPLETED, {
+        discoveryRunId,
+      });
     },
 
     async markDiscoveryFailed(

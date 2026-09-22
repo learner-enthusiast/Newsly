@@ -3,6 +3,9 @@ import { z } from "zod";
 /** Canonical Inngest event names for the news pipeline. Payloads are ID-only. */
 export const NEWS_EVENTS = {
   DISCOVERY_REQUESTED: "news/discovery.requested",
+  /** Search/source discovery phase finished; document pipeline follows. */
+  DISCOVERY_SOURCES_COMPLETED: "news/discovery.sources.completed",
+  /** Entire pipeline finished (Top 5 selected, DiscoveryRun COMPLETED). */
   DISCOVERY_COMPLETED: "news/discovery.completed",
   DISCOVERY_FAILED: "news/discovery.failed",
 
@@ -59,6 +62,7 @@ export type DiscoveryFailedPayload = z.infer<typeof discoveryFailedPayloadSchema
 
 export const newsEventPayloadSchemas = {
   [NEWS_EVENTS.DISCOVERY_REQUESTED]: discoveryRunIdPayloadSchema,
+  [NEWS_EVENTS.DISCOVERY_SOURCES_COMPLETED]: discoveryRunIdPayloadSchema,
   [NEWS_EVENTS.DISCOVERY_COMPLETED]: discoveryRunIdPayloadSchema,
   [NEWS_EVENTS.DISCOVERY_FAILED]: discoveryFailedPayloadSchema,
 
@@ -84,7 +88,7 @@ export const newsEventPayloadSchemas = {
   [NEWS_EVENTS.RANKING_COVERAGE_COMPLETED]: discoveryRunIdPayloadSchema,
 
   [NEWS_EVENTS.RANKING_FINAL_REQUESTED]: discoveryRunIdPayloadSchema,
-  [NEWS_EVENTS.RANKING_FINAL_COMPLETED]: rankingRunIdPayloadSchema,
+  [NEWS_EVENTS.RANKING_FINAL_COMPLETED]: discoveryRunIdPayloadSchema,
 } as const satisfies Record<NewsEventName, z.ZodType>;
 
 export type NewsEventPayloadMap = {

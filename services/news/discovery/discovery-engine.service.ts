@@ -287,7 +287,7 @@ export function createDiscoveryEngineService(deps: NewsServiceDeps) {
         discovery: stats,
       });
 
-      await deps.events.send(NEWS_EVENTS.DISCOVERY_COMPLETED, {
+      await deps.events.send(NEWS_EVENTS.DISCOVERY_SOURCES_COMPLETED, {
         discoveryRunId,
       });
 
