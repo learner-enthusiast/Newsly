@@ -45,3 +45,10 @@ export async function listVerificationsByEventId(eventId: string) {
     orderBy: { createdAt: "desc" },
   });
 }
+
+export async function getLatestEventVerification(eventId: string) {
+  return prisma.eventVerification.findFirst({
+    where: { eventId },
+    orderBy: { createdAt: "desc" },
+  });
+}

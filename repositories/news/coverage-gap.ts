@@ -45,6 +45,29 @@ export async function updateCoverageGapRunStatus(
   });
 }
 
+export async function mergeCoverageGapRunMetadata(
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  const existing = await getCoverageGapRunById(id);
+  const current =
+    existing?.metadata &&
+    typeof existing.metadata === "object" &&
+    !Array.isArray(existing.metadata)
+      ? (existing.metadata as Record<string, unknown>)
+      : {};
+
+  return prisma.coverageGapRun.update({
+    where: { id },
+    data: {
+      metadata: toNullableJson({
+        ...current,
+        ...patch,
+      }),
+    },
+  });
+}
+
 export async function createCoverageGapCandidate(input: {
   coverageGapRunId: string;
   rawSearchResultId?: string;

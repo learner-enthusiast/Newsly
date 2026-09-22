@@ -25,6 +25,10 @@ export {
   verificationService,
 } from "@/services/news/verification.service";
 export {
+  createEvidenceIntelligenceService,
+  evidenceIntelligenceService,
+} from "@/services/news/evidence-intelligence.service";
+export {
   createEvaluationService,
   evaluationService,
 } from "@/services/news/evaluation.service";
@@ -32,6 +36,10 @@ export {
   createRankingService,
   rankingService,
 } from "@/services/news/ranking.service";
+export {
+  createRankingIntelligenceService,
+  rankingIntelligenceService,
+} from "@/services/news/ranking-intelligence.service";
 export {
   createCoverageGapService,
   coverageGapService,

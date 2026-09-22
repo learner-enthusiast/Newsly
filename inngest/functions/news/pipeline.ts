@@ -12,14 +12,13 @@ import { eventIntelligenceService } from "@/services/news/event-intelligence.ser
 import type { ProcessDocumentEventsResult } from "@/services/news/event-intelligence.service";
 import { evidenceIntelligenceService } from "@/services/news/evidence-intelligence.service";
 import type { ProcessEventEvidenceResult } from "@/services/news/evidence-intelligence.service";
+import { rankingIntelligenceService } from "@/services/news/ranking-intelligence.service";
+import type { RegionRankingResult } from "@/services/news/ranking-intelligence.service";
 import { rankingService } from "@/services/news/ranking.service";
 import {
   failDiscoveryFromStep,
   parseDiscoveryRunEvent,
-  parseRankingRunEvent,
 } from "@/inngest/functions/news/helpers";
-import { getRankingRunById } from "@/repositories/news/ranking";
-import { pipelineEventPublisher } from "@/infrastructure/inngest/pipeline-event-publisher";
 import type { IngestBatchResult } from "@/services/news/document-ingestion.service";
 import type { UnderstandDocumentResult } from "@/services/news/document-understanding.service";
 
@@ -326,98 +325,117 @@ export const newsEventsProcessed = createFunction(
 export const newsEvidenceProcessed = createFunction(
   {
     id: "news-evidence-processed",
-    retries: 3,
+    retries: 2,
     triggers: [{ event: NEWS_EVENTS.EVIDENCE_PROCESSED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    await step.run("enqueue-ranking-primary", async () => {
-      await pipelineEventPublisher.send(NEWS_EVENTS.RANKING_PRIMARY_REQUESTED, {
-        discoveryRunId,
-      });
-    });
-  },
-);
-
-export const newsRankingPrimaryRequested = createFunction(
-  {
-    id: "news-ranking-primary-requested",
-    retries: 3,
-    triggers: [{ event: NEWS_EVENTS.RANKING_PRIMARY_REQUESTED }],
-  },
-  async ({ event, step }) => {
-    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
-
-    const result = await step.run("ranking-primary", async () =>
-      rankingService.runPrimaryRankingStage(discoveryRunId),
+    const plan = await step.run("ranking-challenge-plan", async () =>
+      rankingIntelligenceService.buildRankingChallengePlan(discoveryRunId),
     );
 
-    if (!result.ok) {
-      await step.run("ranking-primary-failed", async () =>
+    if (!plan.ok) {
+      await step.run("ranking-challenge-plan-failed", async () =>
         failDiscoveryFromStep(
           discoveryRunId,
-          result.reason,
+          plan.reason,
           "ranking_primary",
+        ),
+      );
+      return;
+    }
+
+    await step.run("ranking-challenge-mark-running", async () =>
+      rankingIntelligenceService.markRankingChallengeRunning(discoveryRunId),
+    );
+
+    const regionResults: RegionRankingResult[] = [];
+
+    for (const region of plan.regions) {
+      const primary = await step.run(`ranking-primary-${region}`, async () =>
+        rankingIntelligenceService.runPrimaryRankingForRegion(
+          discoveryRunId,
+          region,
+        ),
+      );
+
+      if (primary.status === "failed") {
+        await step.run(`ranking-primary-failed-${region}`, async () =>
+          failDiscoveryFromStep(
+            discoveryRunId,
+            primary.error ?? "ranking_primary_failed",
+            "ranking_primary",
+          ),
+        );
+        continue;
+      }
+
+      const independent = await step.run(
+        `ranking-independent-${primary.rankingRunId}`,
+        async () =>
+          rankingIntelligenceService.runIndependentRankingForRegion(
+            primary.rankingRunId,
+          ),
+      );
+
+      if (independent.status === "failed") {
+        await step.run(`ranking-independent-failed-${region}`, async () =>
+          failDiscoveryFromStep(
+            discoveryRunId,
+            independent.error ?? "ranking_independent_failed",
+            "ranking_independent",
+          ),
+        );
+        continue;
+      }
+
+      await step.run(
+        `ranking-disagreement-${primary.rankingRunId}`,
+        async () =>
+          rankingIntelligenceService.compareRankingDisagreements(
+            primary.rankingRunId,
+          ),
+      );
+
+      const coverage = await step.run(
+        `ranking-coverage-${primary.rankingRunId}`,
+        async () =>
+          rankingIntelligenceService.runCoverageGapForRegion(
+            primary.rankingRunId,
+          ),
+      );
+
+      regionResults.push(coverage);
+    }
+
+    const finalized = await step.run("ranking-challenge-finalize", async () =>
+      rankingIntelligenceService.finalizeRankingChallenge(
+        discoveryRunId,
+        regionResults,
+      ),
+    );
+
+    if (!finalized.ok) {
+      await step.run("ranking-challenge-finalize-failed", async () =>
+        failDiscoveryFromStep(
+          discoveryRunId,
+          finalized.reason,
+          "ranking_coverage",
         ),
       );
     }
   },
 );
 
-export const newsRankingIndependentRequested = createFunction(
+export const newsRankingCoverageCompleted = createFunction(
   {
-    id: "news-ranking-independent-requested",
-    retries: 3,
-    triggers: [{ event: NEWS_EVENTS.RANKING_INDEPENDENT_REQUESTED }],
+    id: "news-ranking-coverage-completed",
+    retries: 1,
+    triggers: [{ event: NEWS_EVENTS.RANKING_COVERAGE_COMPLETED }],
   },
-  async ({ event, step }) => {
-    const { rankingRunId } = parseRankingRunEvent(event.data);
-
-    const result = await step.run("ranking-independent", async () =>
-      rankingService.runIndependentRankingStage(rankingRunId),
-    );
-
-    if (!result.ok) {
-      await step.run("ranking-independent-failed", async () => {
-        const ranking = await getRankingRunById(rankingRunId);
-        if (ranking) {
-          await failDiscoveryFromStep(
-            ranking.discoveryRunId,
-            result.reason,
-            "ranking_independent",
-          );
-        }
-      });
-    }
-  },
-);
-
-export const newsRankingCoverageRequested = createFunction(
-  {
-    id: "news-ranking-coverage-requested",
-    retries: 3,
-    triggers: [{ event: NEWS_EVENTS.RANKING_COVERAGE_REQUESTED }],
-  },
-  async ({ event, step }) => {
-    const { rankingRunId } = parseRankingRunEvent(event.data);
-
-    const result = await step.run("ranking-coverage", async () =>
-      rankingService.runCoverageRankingStage(rankingRunId),
-    );
-
-    if (!result.ok) {
-      await step.run("ranking-coverage-failed", async () => {
-        const ranking = await getRankingRunById(rankingRunId);
-        if (ranking) {
-          await failDiscoveryFromStep(
-            ranking.discoveryRunId,
-            result.reason,
-            "ranking_coverage",
-          );
-        }
-      });
-    }
+  async () => {
+    // Final Top-N selection is a separate stage — not run here.
   },
 );
 
@@ -428,31 +446,25 @@ export const newsRankingFinalRequested = createFunction(
     triggers: [{ event: NEWS_EVENTS.RANKING_FINAL_REQUESTED }],
   },
   async ({ event, step }) => {
-    const { rankingRunId } = parseRankingRunEvent(event.data);
+    const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
     const result = await step.run("ranking-final", async () =>
-      rankingService.runFinalRankingStage(rankingRunId),
+      rankingService.runFinalRankingStage(discoveryRunId),
     );
 
     if (!result.ok) {
-      await step.run("ranking-final-failed", async () => {
-        const ranking = await getRankingRunById(rankingRunId);
-        if (ranking) {
-          await failDiscoveryFromStep(
-            ranking.discoveryRunId,
-            result.reason,
-            "ranking_final",
-          );
-        }
-      });
+      await step.run("ranking-final-failed", async () =>
+        failDiscoveryFromStep(
+          discoveryRunId,
+          result.reason,
+          "ranking_final",
+        ),
+      );
       return;
     }
 
     await step.run("discovery-complete", async () => {
-      const ranking = await getRankingRunById(rankingRunId);
-      if (ranking) {
-        await discoveryService.markDiscoveryRunCompleted(ranking.discoveryRunId);
-      }
+      await discoveryService.markDiscoveryRunCompleted(discoveryRunId);
     });
   },
 );
@@ -464,9 +476,7 @@ export const newsPipelineFunctions = [
   newsDocumentsUnderstood,
   newsEventsProcessed,
   newsEvidenceProcessed,
-  newsRankingPrimaryRequested,
-  newsRankingIndependentRequested,
-  newsRankingCoverageRequested,
+  newsRankingCoverageCompleted,
   newsRankingFinalRequested,
 ] as const;
 

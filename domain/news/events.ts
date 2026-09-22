@@ -81,9 +81,9 @@ export const newsEventPayloadSchemas = {
   [NEWS_EVENTS.RANKING_INDEPENDENT_COMPLETED]: rankingRunIdPayloadSchema,
 
   [NEWS_EVENTS.RANKING_COVERAGE_REQUESTED]: rankingRunIdPayloadSchema,
-  [NEWS_EVENTS.RANKING_COVERAGE_COMPLETED]: rankingRunIdPayloadSchema,
+  [NEWS_EVENTS.RANKING_COVERAGE_COMPLETED]: discoveryRunIdPayloadSchema,
 
-  [NEWS_EVENTS.RANKING_FINAL_REQUESTED]: rankingRunIdPayloadSchema,
+  [NEWS_EVENTS.RANKING_FINAL_REQUESTED]: discoveryRunIdPayloadSchema,
   [NEWS_EVENTS.RANKING_FINAL_COMPLETED]: rankingRunIdPayloadSchema,
 } as const satisfies Record<NewsEventName, z.ZodType>;
 

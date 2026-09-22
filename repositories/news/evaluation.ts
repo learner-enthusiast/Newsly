@@ -38,3 +38,10 @@ export async function listEvaluationsByEventId(eventId: string) {
     orderBy: { createdAt: "desc" },
   });
 }
+
+export async function getLatestEventEvaluation(eventId: string) {
+  return prisma.eventEvaluation.findFirst({
+    where: { eventId },
+    orderBy: { createdAt: "desc" },
+  });
+}

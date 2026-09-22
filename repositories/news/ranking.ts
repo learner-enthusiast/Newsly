@@ -61,6 +61,56 @@ export async function updateRankingRunStatus(
   });
 }
 
+export async function mergeRankingRunMetadata(
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  const existing = await getRankingRunById(id);
+  const current =
+    existing?.metadata &&
+    typeof existing.metadata === "object" &&
+    !Array.isArray(existing.metadata)
+      ? (existing.metadata as Record<string, unknown>)
+      : {};
+
+  return prisma.rankingRun.update({
+    where: { id },
+    data: {
+      metadata: toNullableJson({
+        ...current,
+        ...patch,
+      }),
+    },
+  });
+}
+
+export async function listEventRankingsForRun(rankingRunId: string) {
+  return prisma.eventRanking.findMany({
+    where: { rankingRunId },
+    orderBy: { rank: "asc" },
+  });
+}
+
+export async function listRankingEvaluationsForRun(
+  rankingRunId: string,
+  evaluatorType: EvaluatorType,
+) {
+  return prisma.rankingEvaluation.findMany({
+    where: { rankingRunId, evaluatorType },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function findRankingDisagreementForEvent(
+  rankingRunId: string,
+  eventId: string,
+) {
+  return prisma.rankingDisagreement.findFirst({
+    where: { rankingRunId, eventId },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 /** Idempotent per (rankingRunId, eventId) via DB unique constraint. */
 export async function upsertEventRanking(input: EventRankingUpsertInput) {
   return prisma.eventRanking.upsert({

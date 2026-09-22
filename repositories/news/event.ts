@@ -151,6 +151,34 @@ export async function listEventsForDiscoveryRun(discoveryRunId: string) {
   });
 }
 
+export async function listEventsForDiscoveryRunInRegion(
+  discoveryRunId: string,
+  region: Region,
+) {
+  return prisma.event.findMany({
+    where: {
+      region,
+      status: "ACTIVE",
+      eventDocuments: {
+        some: {
+          document: {
+            rawSearchResults: {
+              some: {
+                searchExecution: { discoveryRunId },
+              },
+            },
+          },
+        },
+      },
+    },
+    include: {
+      eventNarratives: { include: { narrative: true } },
+      eventEntities: { include: { entity: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 export async function listActiveEventsByEntityIds(
   entityIds: string[],
   region: Region,
