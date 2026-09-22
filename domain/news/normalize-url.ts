@@ -8,3 +8,22 @@ export function normalizeDocumentUrl(url: string): string {
   }
   return parsed.toString();
 }
+
+export function tryNormalizeDocumentUrl(url: string): string | null {
+  try {
+    if (!/^https?:\/\//i.test(url)) {
+      return null;
+    }
+    return normalizeDocumentUrl(url);
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeDomainFromUrl(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}

@@ -85,3 +85,32 @@ export async function countRawSearchResultsForDiscoveryRun(
     },
   });
 }
+
+export async function linkRawSearchResultsToDocument(
+  rawSearchResultIds: string[],
+  documentId: string,
+) {
+  if (rawSearchResultIds.length === 0) {
+    return { count: 0 };
+  }
+  return prisma.rawSearchResult.updateMany({
+    where: { id: { in: rawSearchResultIds } },
+    data: { documentId },
+  });
+}
+
+export async function listRawSearchResultsWithExecution(
+  discoveryRunId: string,
+) {
+  return prisma.rawSearchResult.findMany({
+    where: {
+      searchExecution: { discoveryRunId },
+    },
+    include: {
+      searchExecution: {
+        select: { region: true },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}

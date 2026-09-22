@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { inngestClient } from "@/clients/inngestClient";
 import { NEWS_EVENTS } from "@/domain/news/events";
 import { discoveryService } from "@/services/news/discovery.service";
@@ -16,11 +17,8 @@ import {
   parseRankingRunEvent,
 } from "@/inngest/functions/news/helpers";
 import { getRankingRunById } from "@/repositories/news/ranking";
-import {
-  getDiscoveryRunById,
-  mergeDiscoveryRunMetadata,
-} from "@/repositories/news/discovery-run";
 import { pipelineEventPublisher } from "@/infrastructure/inngest/pipeline-event-publisher";
+import type { IngestBatchResult } from "@/services/news/document-ingestion.service";
 
 const { createFunction } = inngestClient;
 
@@ -87,58 +85,74 @@ export const newsDiscoveryRequested = createFunction(
 export const newsDiscoveryCompleted = createFunction(
   {
     id: "news-discovery-completed",
-    retries: 3,
+    retries: 2,
     triggers: [{ event: NEWS_EVENTS.DISCOVERY_COMPLETED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    await step.run("enqueue-document-ingest", async () => {
-      const discoveryRun = await getDiscoveryRunById(discoveryRunId);
-      if (!discoveryRun) {
-        return;
-      }
+    const plan = await step.run("document-ingest-plan", async () =>
+      documentIngestionService.buildIngestPlan(discoveryRunId),
+    );
 
-      const metadata =
-        discoveryRun.metadata &&
-        typeof discoveryRun.metadata === "object" &&
-        !Array.isArray(discoveryRun.metadata)
-          ? (discoveryRun.metadata as Record<string, unknown>)
-          : {};
+    if (!plan.ok) {
+      await step.run("document-ingest-plan-failed", async () =>
+        failDiscoveryFromStep(discoveryRunId, plan.reason, "document_ingest"),
+      );
+      return;
+    }
 
-      if (metadata.documentIngestEnqueued === true) {
-        return;
-      }
+    await step.run("document-ingest-mark-running", async () =>
+      documentIngestionService.markIngestRunning(discoveryRunId),
+    );
 
-      await mergeDiscoveryRunMetadata(discoveryRunId, {
-        documentIngestEnqueued: true,
-      });
+    const batches = documentIngestionService.chunkGroups(plan.groups);
+    const batchResults: IngestBatchResult[] = [];
 
-      await pipelineEventPublisher.send(NEWS_EVENTS.DOCUMENTS_INGEST_REQUESTED, {
-        discoveryRunId,
-      });
-    });
+    for (const batch of batches) {
+      const batchStepKey = createHash("sha256")
+        .update(batch.map((group) => group.normalizedUrl).sort().join("|"))
+        .digest("hex")
+        .slice(0, 24);
+
+      const results = await step.run(
+        `document-ingest-${batchStepKey}`,
+        async () => documentIngestionService.ingestBatch(batch),
+      );
+      batchResults.push(...results);
+    }
+
+    const finalized = await step.run("document-ingest-finalize", async () =>
+      documentIngestionService.finalizeIngest(discoveryRunId, batchResults),
+    );
+
+    if (!finalized.ok) {
+      await step.run("document-ingest-finalize-failed", async () =>
+        failDiscoveryFromStep(
+          discoveryRunId,
+          finalized.reason,
+          "document_ingest",
+        ),
+      );
+    }
   },
 );
 
-export const newsDocumentsIngestRequested = createFunction(
+export const newsDocumentsIngested = createFunction(
   {
-    id: "news-documents-ingest-requested",
+    id: "news-documents-ingested",
     retries: 3,
-    triggers: [{ event: NEWS_EVENTS.DOCUMENTS_INGEST_REQUESTED }],
+    triggers: [{ event: NEWS_EVENTS.DOCUMENTS_INGESTED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    const result = await step.run("document-ingest", async () =>
-      documentIngestionService.runIngestStage(discoveryRunId),
-    );
-
-    if (!result.ok) {
-      await step.run("ingest-failed", async () =>
-        failDiscoveryFromStep(discoveryRunId, result.reason, "document_ingest"),
+    await step.run("enqueue-document-understand", async () => {
+      await pipelineEventPublisher.send(
+        NEWS_EVENTS.DOCUMENTS_UNDERSTAND_REQUESTED,
+        { discoveryRunId },
       );
-    }
+    });
   },
 );
 
@@ -333,7 +347,7 @@ export const newsRankingFinalRequested = createFunction(
 export const newsPipelineFunctions = [
   newsDiscoveryRequested,
   newsDiscoveryCompleted,
-  newsDocumentsIngestRequested,
+  newsDocumentsIngested,
   newsDocumentsUnderstandRequested,
   newsEventsProcessRequested,
   newsEvidenceProcessRequested,
