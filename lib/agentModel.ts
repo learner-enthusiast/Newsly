@@ -2,7 +2,7 @@
 export const DEFAULT_OPENAI_AGENT_MODEL = "gpt-4o-mini";
 
 export type AgentModelOptions = {
-  /** Primary env var for this agent, e.g. FESTIVAL_AGENT_MODEL */
+  /** Primary env var for this agent, e.g. RESEARCH_AGENT_MODEL */
   agentEnvKey: string;
   /** Fallback when no env vars are set (per-agent default) */
   defaultModel?: string;

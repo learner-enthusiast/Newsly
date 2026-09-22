@@ -1,5 +1,6 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,12 +16,13 @@ import { SyncLocalUser } from "./sync-local-user";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Puja Planner",
-  description:
-    "Discover festivals, places, pandals, and food stops — then build an editable route.",
+  title: "my-app",
+  description: "Authenticated application shell.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: ReactNode }>) {
   return (
     <html
       lang="en"
