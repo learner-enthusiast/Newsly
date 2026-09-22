@@ -80,6 +80,7 @@ export async function linkEventDocument(input: {
   relationship: EventDocumentRelationship;
   evidenceStrength?: number;
   isPrimaryEvidence?: boolean;
+  metadata?: Record<string, unknown>;
 }) {
   return prisma.eventDocument.upsert({
     where: {
@@ -95,10 +96,12 @@ export async function linkEventDocument(input: {
       relationship: input.relationship,
       evidenceStrength: input.evidenceStrength,
       isPrimaryEvidence: input.isPrimaryEvidence ?? false,
+      metadata: toNullableJson(input.metadata),
     },
     update: {
       evidenceStrength: input.evidenceStrength,
       isPrimaryEvidence: input.isPrimaryEvidence,
+      metadata: toNullableJson(input.metadata),
     },
   });
 }
@@ -117,6 +120,51 @@ export async function listEventsForDiscoveryRun(discoveryRunId: string) {
           },
         },
       },
+    },
+  });
+}
+
+export async function listActiveEventsByEntityIds(
+  entityIds: string[],
+  region: Region,
+) {
+  if (entityIds.length === 0) {
+    return [];
+  }
+  return prisma.event.findMany({
+    where: {
+      region,
+      status: "ACTIVE",
+      eventEntities: {
+        some: {
+          entityId: { in: entityIds },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 25,
+  });
+}
+
+export async function mergeEventMetadata(
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  const existing = await getEventById(id);
+  const current =
+    existing?.metadata &&
+    typeof existing.metadata === "object" &&
+    !Array.isArray(existing.metadata)
+      ? (existing.metadata as Record<string, unknown>)
+      : {};
+
+  return prisma.event.update({
+    where: { id },
+    data: {
+      metadata: toNullableJson({
+        ...current,
+        ...patch,
+      }),
     },
   });
 }

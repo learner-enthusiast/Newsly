@@ -12,3 +12,4 @@ export * as evaluationRepository from "@/repositories/news/evaluation";
 export * as rankingRepository from "@/repositories/news/ranking";
 export * as coverageGapRepository from "@/repositories/news/coverage-gap";
 export * as researchRepository from "@/repositories/news/research";
+export * as contradictionRepository from "@/repositories/news/contradiction";

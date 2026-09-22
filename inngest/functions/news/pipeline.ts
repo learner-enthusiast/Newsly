@@ -8,7 +8,8 @@ import {
 } from "@/services/news/discovery/discovery-engine.service";
 import { documentIngestionService } from "@/services/news/document-ingestion.service";
 import { documentUnderstandingService } from "@/services/news/document-understanding.service";
-import { eventService } from "@/services/news/event.service";
+import { eventIntelligenceService } from "@/services/news/event-intelligence.service";
+import type { ProcessDocumentEventsResult } from "@/services/news/event-intelligence.service";
 import { verificationService } from "@/services/news/verification.service";
 import { rankingService } from "@/services/news/ranking.service";
 import {
@@ -207,38 +208,76 @@ export const newsDocumentsIngested = createFunction(
 export const newsDocumentsUnderstood = createFunction(
   {
     id: "news-documents-understood",
-    retries: 3,
+    retries: 2,
     triggers: [{ event: NEWS_EVENTS.DOCUMENTS_UNDERSTOOD }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    await step.run("enqueue-event-process", async () => {
-      await pipelineEventPublisher.send(NEWS_EVENTS.EVENTS_PROCESS_REQUESTED, {
+    const plan = await step.run("event-process-plan", async () =>
+      eventIntelligenceService.buildEventProcessPlan(discoveryRunId),
+    );
+
+    if (!plan.ok) {
+      await step.run("event-process-plan-failed", async () =>
+        failDiscoveryFromStep(discoveryRunId, plan.reason, "event_process"),
+      );
+      return;
+    }
+
+    await step.run("event-process-mark-running", async () =>
+      eventIntelligenceService.markEventProcessRunning(discoveryRunId),
+    );
+
+    const docResults: ProcessDocumentEventsResult[] = [];
+    for (const documentId of plan.documentIds) {
+      const result = await step.run(`event-process-doc-${documentId}`, async () =>
+        eventIntelligenceService.processDocumentEvents(
+          discoveryRunId,
+          documentId,
+        ),
+      );
+      docResults.push(result);
+    }
+
+    const narrativeStats = await step.run("event-process-narratives", async () =>
+      eventIntelligenceService.detectNarratives(discoveryRunId),
+    );
+
+    const finalized = await step.run("event-process-finalize", async () =>
+      eventIntelligenceService.finalizeEventProcess(
         discoveryRunId,
-      });
-    });
+        docResults,
+        narrativeStats,
+      ),
+    );
+
+    if (!finalized.ok) {
+      await step.run("event-process-finalize-failed", async () =>
+        failDiscoveryFromStep(
+          discoveryRunId,
+          finalized.reason,
+          "event_process",
+        ),
+      );
+    }
   },
 );
 
-export const newsEventsProcessRequested = createFunction(
+export const newsEventsProcessed = createFunction(
   {
-    id: "news-events-process-requested",
+    id: "news-events-processed",
     retries: 3,
-    triggers: [{ event: NEWS_EVENTS.EVENTS_PROCESS_REQUESTED }],
+    triggers: [{ event: NEWS_EVENTS.EVENTS_PROCESSED }],
   },
   async ({ event, step }) => {
     const { discoveryRunId } = parseDiscoveryRunEvent(event.data);
 
-    const result = await step.run("event-process", async () =>
-      eventService.runEventProcessStage(discoveryRunId),
-    );
-
-    if (!result.ok) {
-      await step.run("events-failed", async () =>
-        failDiscoveryFromStep(discoveryRunId, result.reason, "event_process"),
-      );
-    }
+    await step.run("enqueue-evidence-process", async () => {
+      await pipelineEventPublisher.send(NEWS_EVENTS.EVIDENCE_PROCESS_REQUESTED, {
+        discoveryRunId,
+      });
+    });
   },
 );
 
@@ -389,7 +428,7 @@ export const newsPipelineFunctions = [
   newsDiscoveryCompleted,
   newsDocumentsIngested,
   newsDocumentsUnderstood,
-  newsEventsProcessRequested,
+  newsEventsProcessed,
   newsEvidenceProcessRequested,
   newsRankingPrimaryRequested,
   newsRankingIndependentRequested,

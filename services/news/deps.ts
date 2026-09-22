@@ -21,6 +21,7 @@ import * as evaluationRepository from "@/repositories/news/evaluation";
 import * as rankingRepository from "@/repositories/news/ranking";
 import * as coverageGapRepository from "@/repositories/news/coverage-gap";
 import * as researchRepository from "@/repositories/news/research";
+import * as contradictionRepository from "@/repositories/news/contradiction";
 
 export type NewsRepositories = {
   discoveryRun: typeof discoveryRunRepository;
@@ -37,6 +38,7 @@ export type NewsRepositories = {
   ranking: typeof rankingRepository;
   coverageGap: typeof coverageGapRepository;
   research: typeof researchRepository;
+  contradiction: typeof contradictionRepository;
 };
 
 export type NewsProviders = {
@@ -67,6 +69,7 @@ export const defaultNewsRepositories: NewsRepositories = {
   ranking: rankingRepository,
   coverageGap: coverageGapRepository,
   research: researchRepository,
+  contradiction: contradictionRepository,
 };
 
 export const defaultNewsServiceDeps: NewsServiceDeps = {

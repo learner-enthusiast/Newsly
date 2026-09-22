@@ -34,6 +34,19 @@ export async function getNarrativeById(id: string) {
   return prisma.narrative.findUnique({ where: { id } });
 }
 
+export async function findNarrativeByTitleRegion(
+  title: string,
+  region: Region,
+) {
+  return prisma.narrative.findFirst({
+    where: {
+      region,
+      title,
+      status: "ACTIVE",
+    },
+  });
+}
+
 export async function linkEventNarrative(input: {
   eventId: string;
   narrativeId: string;
