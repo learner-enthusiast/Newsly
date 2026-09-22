@@ -1,5 +1,6 @@
 import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 export default async function Home() {
@@ -15,7 +16,11 @@ export default async function Home() {
           ? "The application shell is ready. New research and content workflows will be added here."
           : "Authentication is enabled. Sign in or create an account to access protected routes."}
       </p>
-      {!userId ? (
+      {userId ? (
+        <Button render={<Link href="/dashboard" />} variant="brand">
+          Open dashboard
+        </Button>
+      ) : (
         <div className="flex flex-wrap items-center gap-3">
           <SignInButton mode="modal">
             <Button type="button" variant="outline">
@@ -28,7 +33,7 @@ export default async function Home() {
             </Button>
           </SignUpButton>
         </div>
-      ) : null}
+      )}
     </main>
   );
 }

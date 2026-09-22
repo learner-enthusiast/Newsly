@@ -1,5 +1,5 @@
 import { NEWS_EVENTS } from "@/domain/news/events";
-import { dateRangeForDiscoveryPeriod } from "@/domain/news/discovery-period";
+import { resolveDiscoveryDateRange } from "@/domain/news/discovery-period";
 import {
   discoveryRequestSchema,
   type DiscoveryRequest,
@@ -17,6 +17,7 @@ export type StartDiscoveryInput = {
 
 export type StartDiscoveryResult = {
   discoveryRunId: string;
+  status: "PENDING";
 };
 
 export function createDiscoveryService(deps: NewsServiceDeps) {
@@ -29,10 +30,11 @@ export function createDiscoveryService(deps: NewsServiceDeps) {
       input: StartDiscoveryInput,
     ): Promise<StartDiscoveryResult> {
       const request = discoveryRequestSchema.parse(input.request);
-      const { startDate, endDate } = dateRangeForDiscoveryPeriod(
-        request.period,
-        request.anchorDate,
-      );
+      const { startDate, endDate } = resolveDiscoveryDateRange({
+        period: request.period,
+        startDate: request.startDate,
+        endDate: request.endDate,
+      });
 
       const run = await deps.repos.discoveryRun.createDiscoveryRun({
         userId: input.userId,
@@ -47,7 +49,14 @@ export function createDiscoveryService(deps: NewsServiceDeps) {
         discoveryRunId: run.id,
       });
 
-      return { discoveryRunId: run.id };
+      return { discoveryRunId: run.id, status: "PENDING" };
+    },
+
+    async getDiscoveryRunForUser(discoveryRunId: string, userId: string) {
+      return deps.repos.discoveryRun.getDiscoveryRunForUser(
+        discoveryRunId,
+        userId,
+      );
     },
 
     /** Inngest: mark run started and hand off to document ingestion stage. */

@@ -34,6 +34,12 @@ export async function getDiscoveryRunById(id: string) {
   return prisma.discoveryRun.findUnique({ where: { id } });
 }
 
+export async function getDiscoveryRunForUser(id: string, userId: string) {
+  return prisma.discoveryRun.findFirst({
+    where: { id, userId },
+  });
+}
+
 export async function updateDiscoveryRunStatus(
   id: string,
   status: DiscoveryStatus,

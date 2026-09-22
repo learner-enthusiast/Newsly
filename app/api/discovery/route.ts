@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth";
 import { discoveryRequestSchema } from "@/domain/news/schemas/discovery";
 import { discoveryService } from "@/services/news/discovery.service";
-
 export async function POST(request: Request) {
   const user = await requireAuthenticatedUser();
   if (!user) {
@@ -24,10 +23,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const { discoveryRunId } = await discoveryService.startDiscovery({
+  const result = await discoveryService.startDiscovery({
     userId: user.id,
     request: parsed.data,
   });
 
-  return NextResponse.json({ discoveryRunId }, { status: 202 });
+  return NextResponse.json(
+    {
+      discoveryRunId: result.discoveryRunId,
+      status: result.status,
+    },
+    { status: 202 },
+  );
 }

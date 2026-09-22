@@ -4,13 +4,37 @@ import {
   requestRegionSchema,
 } from "@/domain/news/schemas/shared";
 
-export const discoveryRequestSchema = z.object({
-  region: requestRegionSchema,
-  period: discoveryPeriodSchema,
-  /** ISO date (YYYY-MM-DD) anchor for the window; defaults to today in the service. */
-  anchorDate: z.coerce.date().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
+export const discoveryRequestSchema = z
+  .object({
+    region: requestRegionSchema,
+    period: discoveryPeriodSchema,
+    startDate: z.coerce.date().optional(),
+    endDate: z.coerce.date().optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasStart = value.startDate !== undefined;
+    const hasEnd = value.endDate !== undefined;
+    if (hasStart !== hasEnd) {
+      ctx.addIssue({
+        code: "custom",
+        message: "startDate and endDate must both be provided or omitted",
+        path: hasStart ? ["endDate"] : ["startDate"],
+      });
+      return;
+    }
+    if (
+      hasStart &&
+      hasEnd &&
+      value.startDate!.getTime() > value.endDate!.getTime()
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "startDate must be on or before endDate",
+        path: ["endDate"],
+      });
+    }
+  });
 
 export type DiscoveryRequest = z.infer<typeof discoveryRequestSchema>;
 

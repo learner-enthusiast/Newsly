@@ -31,6 +31,12 @@ export function SiteHeader() {
             </SignUpButton>
           </Show>
           <Show when="signed-in">
+            <Link
+              href="/dashboard"
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Dashboard
+            </Link>
             <UserButton />
           </Show>
         </div>
