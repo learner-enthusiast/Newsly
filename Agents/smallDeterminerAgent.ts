@@ -4,6 +4,7 @@ import {
   type GuardrailCheckResult,
 } from "@/Agents/guardrails";
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
+import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { serpEngines } from "@/SERP/index";
 import { z } from "zod";
 
@@ -30,11 +31,11 @@ const plannedToolCallSchema = z.object({
 export const smallDeterminerRawOutputSchema = z.discriminatedUnion("useTools", [
   z.object({
     useTools: z.literal("no"),
-    reasoning: z.string().optional(),
+    reasoning: z.string().nullable(),
   }),
   z.object({
     useTools: z.literal("yes"),
-    reasoning: z.string().optional(),
+    reasoning: z.string().nullable(),
     calls: z.array(plannedToolCallSchema).min(1),
   }),
 ]);
@@ -67,7 +68,7 @@ export type SmallDeterminerResult =
 export type SmallDeterminerAgentParams = {
   /** End-user question or task to route to Serp tools. */
   userPrompt: string;
-  /** Overrides `DETERMINER_MODEL` / default `gpt-4o-mini`. */
+  /** Overrides `DETERMINER_MODEL` / `OPENAI_MODEL` / default. */
   model?: string;
   /** Tool catalog (defaults to `serpEngines` from `@/SERP`). */
   tools?: SerpEnginesCatalog;
@@ -83,11 +84,8 @@ export type SmallDeterminerRunResult = {
   determiner: SmallDeterminerResult;
 };
 
-const DEFAULT_DETERMINER_MODEL = "gpt-4o-mini";
-
 export function resolveDeterminerModel(override?: string): string {
-  const fromEnv = process.env.DETERMINER_MODEL?.trim();
-  return override?.trim() || fromEnv || DEFAULT_DETERMINER_MODEL;
+  return resolveOpenAiModelId(override, process.env.DETERMINER_MODEL);
 }
 
 function buildToolCatalog(tools: SerpEnginesCatalog): string {
@@ -151,14 +149,14 @@ async function runDeterminerCore(
   if (raw.useTools === "no") {
     return {
       useTools: "no",
-      reasoning: raw.reasoning,
+      reasoning: raw.reasoning ?? undefined,
       model,
     };
   }
 
   return {
     useTools: "yes",
-    reasoning: raw.reasoning,
+    reasoning: raw.reasoning ?? undefined,
     calls: validatePlannedCalls(raw.calls, tools),
     model,
   };

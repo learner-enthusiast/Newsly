@@ -1,8 +1,8 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
+import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
 
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid"]);
-const DEFAULT_MODEL = "gpt-4o-mini";
 const SCRAPE_EXCERPT_CHARS = 4000;
 
 /** Scraped article. Matches NewsSource fields that exist before a story id is assigned. */
@@ -86,8 +86,7 @@ type IndexedArticle = ResearchedArticle & {
 };
 
 function resolveSynthesizerModel(override?: string): string {
-  const fromEnv = process.env.NEWS_SYNTHESIZER_MODEL?.trim();
-  return override?.trim() || fromEnv || DEFAULT_MODEL;
+  return resolveOpenAiModelId(override, process.env.NEWS_SYNTHESIZER_MODEL);
 }
 
 function canonicalUrlKey(raw: string): string | null {

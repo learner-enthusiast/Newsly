@@ -1,6 +1,7 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
+import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
 
 const extraContextSchema = z.unknown().optional();
@@ -26,6 +27,9 @@ const generateParamsSchema = z.object({
 export type AIClientOptions = {
   defaultModel?: LanguageModel;
   openaiApiKey?: string;
+  /** Optional override; default is the official OpenAI API base URL. */
+  openaiBaseUrl?: string;
+  openaiProjectId?: string;
   openaiModel?: string;
   timeout?: number;
   maxRetries?: number;
@@ -63,7 +67,9 @@ function buildPrompt(prompt: string, extraContext: unknown): string {
 
 function publicErrorMessage(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error);
-  return raw.replace(/sk-[A-Za-z0-9_-]+/g, "sk-redacted");
+  return raw
+    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-redacted")
+    .replace(/ABSK[A-Za-z0-9+/=_-]+/g, "ABSK-redacted");
 }
 
 function resolveOpenAiApiKey(options: AIClientOptions) {
@@ -72,9 +78,18 @@ function resolveOpenAiApiKey(options: AIClientOptions) {
 }
 
 function resolveOpenAiModel(options: AIClientOptions, override?: string) {
-  return (
-    override ?? options.openaiModel ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini"
-  );
+  return resolveOpenAiModelId(override, options.openaiModel);
+}
+
+function resolveOpenAiBaseUrl(options: AIClientOptions): string | undefined {
+  const baseUrl = options.openaiBaseUrl ?? process.env.OPENAI_BASE_URL?.trim();
+  return baseUrl || undefined;
+}
+
+function resolveOpenAiProjectId(options: AIClientOptions): string | undefined {
+  const projectId =
+    options.openaiProjectId ?? process.env.OPENAI_PROJECT_ID?.trim();
+  return projectId || undefined;
 }
 
 /** Reasoning models reject temperature / top_p / penalties (OpenAI + AI SDK gateway). */
@@ -163,7 +178,9 @@ function shouldRetryOpenAiStructuredOutput(error: unknown): boolean {
     return true;
   }
   const msg = publicErrorMessage(error);
-  return msg.includes("OpenAI response did not include parsed structured output");
+  return msg.includes(
+    "OpenAI response did not include parsed structured output",
+  );
 }
 
 function resolveMaxOutputTokens(
@@ -181,7 +198,9 @@ function resolveMaxOutputTokens(
   return Math.max(base, floor);
 }
 
-function collectOpenAiOutputText(response: OpenAiParsedResponse): string | undefined {
+function collectOpenAiOutputText(
+  response: OpenAiParsedResponse,
+): string | undefined {
   if (typeof response.output_text === "string" && response.output_text.trim()) {
     return response.output_text;
   }
@@ -285,8 +304,13 @@ export function createAIClient(options: AIClientOptions = {}) {
       return null;
     }
 
+    const baseURL = resolveOpenAiBaseUrl(options);
+    const project = resolveOpenAiProjectId(options);
+
     openaiClient ??= new OpenAI({
       apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      ...(project ? { project } : {}),
       timeout: options.timeout,
       maxRetries: options.maxRetries,
     });
@@ -323,7 +347,9 @@ export function createAIClient(options: AIClientOptions = {}) {
         ...(omitSampling
           ? {
               reasoning: {
-                effort: params.retryAttempt ? ("minimal" as const) : ("low" as const),
+                effort: params.retryAttempt
+                  ? ("minimal" as const)
+                  : ("low" as const),
               },
             }
           : {}),
@@ -361,10 +387,11 @@ export function createAIClient(options: AIClientOptions = {}) {
     options: AIClientOptions;
     abortSignal?: AbortSignal;
   }): Promise<z.output<SCHEMA>> {
-    const modelId =
-      languageModelId(params.model) ?? params.parsed.model ?? "";
+    const modelId = languageModelId(params.model) ?? params.parsed.model ?? "";
     const omitSampling = modelId ? modelOmitsSamplingParams(modelId) : false;
-    const parsed = omitSampling ? withoutSamplingParams(params.parsed) : params.parsed;
+    const parsed = omitSampling
+      ? withoutSamplingParams(params.parsed)
+      : params.parsed;
 
     const maxOutputTokens = resolveMaxOutputTokens(
       modelId || "unknown",
@@ -381,7 +408,9 @@ export function createAIClient(options: AIClientOptions = {}) {
         description: parsed.schemaDescription,
       }),
       maxOutputTokens,
-      ...(parsed.temperature != null ? { temperature: parsed.temperature } : {}),
+      ...(parsed.temperature != null
+        ? { temperature: parsed.temperature }
+        : {}),
       ...(parsed.topP != null ? { topP: parsed.topP } : {}),
       ...(parsed.topK != null ? { topK: parsed.topK } : {}),
       ...(parsed.presencePenalty != null
@@ -430,46 +459,29 @@ export function createAIClient(options: AIClientOptions = {}) {
         } catch (error) {
           if (shouldRetryOpenAiStructuredOutput(error)) {
             const retryModel = resolveStructuredRetryModel(openAiModel);
-            try {
-              console.warn(
-                JSON.stringify({
-                  scope: "aiClient",
-                  action: "openai-structured-retry",
-                  primaryModel: openAiModel,
-                  retryModel,
-                  reason: publicErrorMessage(error),
-                }),
-              );
-              return await generateWithOpenAI({
-                client: openai,
-                model: retryModel,
-                parsed,
-                outputSchema,
-                schemaName,
-                abortSignal,
-                retryAttempt: true,
-              });
-            } catch (retryError) {
-              console.warn(
-                JSON.stringify({
-                  scope: "aiClient",
-                  primary: "openai",
-                  retryModel,
-                  fallback: "vercel-ai",
-                  error: publicErrorMessage(retryError),
-                }),
-              );
-            }
-          } else {
             console.warn(
               JSON.stringify({
                 scope: "aiClient",
-                primary: "openai",
-                fallback: "vercel-ai",
-                error: publicErrorMessage(error),
+                action: "openai-structured-retry",
+                primaryModel: openAiModel,
+                retryModel,
+                reason: publicErrorMessage(error),
               }),
             );
+            return await generateWithOpenAI({
+              client: openai,
+              model: retryModel,
+              parsed,
+              outputSchema,
+              schemaName,
+              abortSignal,
+              retryAttempt: true,
+            });
           }
+
+          throw error instanceof Error
+            ? error
+            : new Error(publicErrorMessage(error));
         }
       }
 
@@ -484,6 +496,21 @@ export function createAIClient(options: AIClientOptions = {}) {
   };
 }
 
-export const aiClient = createAIClient({
-  defaultModel: process.env.AI_MODEL ?? "inclusionai/ling-3.0-flash-sante-free",
-});
+function createDefaultAIClient() {
+  const openAiKey = process.env.OPENAI_API_KEY?.trim();
+  if (openAiKey) {
+    return createAIClient({
+      openaiApiKey: openAiKey,
+      openaiBaseUrl: process.env.OPENAI_BASE_URL?.trim(),
+      openaiProjectId: process.env.OPENAI_PROJECT_ID?.trim(),
+      openaiModel: process.env.OPENAI_MODEL?.trim(),
+    });
+  }
+
+  return createAIClient({
+    defaultModel:
+      process.env.AI_MODEL ?? "inclusionai/ling-3.0-flash-sante-free",
+  });
+}
+
+export const aiClient = createDefaultAIClient();

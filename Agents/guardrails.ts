@@ -1,7 +1,6 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
+import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
-
-const DEFAULT_GUARDRAIL_MODEL = "gpt-4o-mini";
 const MAX_PROMPT_CHARS = 8_000;
 const MIN_PROMPT_CHARS = 2;
 
@@ -23,8 +22,8 @@ export const stockResearchGuardrailOutputSchema = z.object({
   allowed: z.enum(["yes", "no"]),
   category: guardrailCategorySchema,
   reason: z.string().min(1),
-  /** Short message suitable to show the end user when allowed is no. */
-  userMessage: z.string().min(1).optional(),
+  /** Short message for the end user when allowed is no; null when allowed. */
+  userMessage: z.string().min(1).nullable(),
 });
 
 export type StockResearchGuardrailOutput = z.infer<
@@ -77,8 +76,7 @@ const GUARDRAIL_SYSTEM = [
 ].join("\n");
 
 export function resolveGuardrailModel(override?: string): string {
-  const fromEnv = process.env.GUARDRAIL_MODEL?.trim();
-  return override?.trim() || fromEnv || DEFAULT_GUARDRAIL_MODEL;
+  return resolveOpenAiModelId(override, process.env.GUARDRAIL_MODEL);
 }
 
 function normalizePrompt(raw: string): string {

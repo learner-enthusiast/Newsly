@@ -15,7 +15,12 @@ import {
   listNewsStoriesByNewsRequestId,
 } from "@/repositories/newsStory";
 import { serpEngines } from "@/SERP/index";
-import { normalizeSerpArticles } from "@/services/news/normalizeArticles";
+import {
+  filterArticlesNearRequestDate,
+  normalizeSerpArticles,
+  slimSerpPayloadForNormalize,
+  toJsonSafeStepOutput,
+} from "@/services/news/normalizeArticles";
 import { z } from "zod";
 
 export const NEWS_PIPELINE_EVENT = "news/pipeline.requested" as const;
@@ -48,6 +53,20 @@ function scrapeMarkdown(payload: unknown): string | null {
   return null;
 }
 
+const PIPELINE_LOG_PREFIX = "[news-pipeline]";
+
+function pipelineLog(
+  step: string,
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
+  const suffix =
+    extra && Object.keys(extra).length > 0
+      ? ` ${JSON.stringify(extra)}`
+      : "";
+  console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
+}
+
 function buildResearchPrompt(input: {
   date: string;
   location: string | null;
@@ -64,14 +83,25 @@ export const newsPipelineFunction = inngest.createFunction(
     id: "news-pipeline",
     name: "News pipeline",
     triggers: [{ event: NEWS_PIPELINE_EVENT }],
+    timeouts: { finish: "45m" },
   },
   async ({ event, step }) => {
     const input = newsPipelineEventDataSchema.parse(event.data);
     const location = input.location?.trim() || null;
     const scope = input.scope;
-    const plannerType = scope === "local" ? ("LOCAL" as const) : ("WORLD" as const);
+    const plannerType =
+      scope === "local" ? ("LOCAL" as const) : ("WORLD" as const);
 
+    pipelineLog("run", "started", {
+      newsRequestId: input.newsRequestId,
+      date: input.date,
+      scope,
+      location,
+    });
+
+    pipelineLog("step", "entering load-news-request");
     const newsRequest = await step.run("load-news-request", async () => {
+      pipelineLog("load-news-request", "start");
       const row = await getNewsRequestByIdForUser(
         input.newsRequestId,
         input.userId,
@@ -79,11 +109,14 @@ export const newsPipelineFunction = inngest.createFunction(
       if (!row) {
         throw new Error("News request not found for user");
       }
-      return row;
+      pipelineLog("load-news-request", "done", { id: row.id });
+      return toJsonSafeStepOutput({ id: row.id });
     });
 
     try {
+      pipelineLog("step", "entering plan-search-queries");
       const plans = await step.run("plan-search-queries", async () => {
+        pipelineLog("plan-search-queries", "start");
         const news = buildNewsSearchQuery({
           type: plannerType,
           location: location ?? undefined,
@@ -96,94 +129,151 @@ export const newsPipelineFunction = inngest.createFunction(
           date: input.date,
           channel: "search",
         });
+        pipelineLog("plan-search-queries", "done", {
+          newsQuery: news.query,
+          searchQuery: search.query,
+        });
         return { news, search };
       });
 
-      await step.run("save-search-queries", async () =>
-        patchNewsRequest(newsRequest.id, {
+      pipelineLog("step", "entering save-search-queries");
+      await step.run("save-search-queries", async () => {
+        pipelineLog("save-search-queries", "start");
+        await patchNewsRequest(newsRequest.id, {
           searchQuery: {
             news: plans.news.query,
             search: plans.search.query,
           },
-        }),
-      );
-
-      const serp = await step.run("fetch-serp-results", async () => {
-        const gl = plans.news.suggestedGl ?? plans.search.suggestedGl;
-        const hl = plans.news.suggestedHl ?? "en";
-        const shared = { num: 10, ...(gl ? { gl } : {}), hl };
-
-        const [googleNewsPayload, googleSearchPayload] = await Promise.all([
-          serpEngines.searchGoogleNews.fn({
-            q: plans.news.query,
-            ...shared,
-          }),
-          serpEngines.searchGoogle.fn({
-            q: plans.search.query,
-            tbm: "nws",
-            ...shared,
-          }),
-        ]);
-
-        return { googleNewsPayload, googleSearchPayload };
+        });
+        pipelineLog("save-search-queries", "done");
       });
 
-      const normalized = await step.run("normalize-articles", async () =>
-        normalizeSerpArticles({
-          googleNewsPayload: serp.googleNewsPayload,
-          googleSearchPayload: serp.googleSearchPayload,
-          limitPerEngine: 10,
-        }),
+      pipelineLog("step", "entering fetch-and-normalize-serp");
+      const normalized = await step.run(
+        "fetch-and-normalize-serp",
+        async () => {
+          pipelineLog("fetch-and-normalize-serp", "start");
+          const gl = plans.news.suggestedGl ?? plans.search.suggestedGl;
+          const hl = plans.news.suggestedHl ?? "en";
+          const shared = { num: 10, ...(gl ? { gl } : {}), hl };
+
+          const [googleNewsPayload, googleSearchPayload] = await Promise.all([
+            serpEngines.searchGoogleNews.fn({
+              q: plans.news.query,
+              ...shared,
+            }),
+            serpEngines.searchGoogle.fn({
+              q: plans.search.query,
+              tbm: "nws",
+              ...shared,
+            }),
+          ]);
+
+          const articles = normalizeSerpArticles({
+            googleNewsPayload: slimSerpPayloadForNormalize(googleNewsPayload),
+            googleSearchPayload:
+              slimSerpPayloadForNormalize(googleSearchPayload),
+            limitPerEngine: 10,
+          });
+
+          const filtered = filterArticlesNearRequestDate(
+            articles,
+            input.date,
+            3,
+          );
+          pipelineLog("fetch-and-normalize-serp", "done", {
+            rawCount: articles.length,
+            afterDateFilter: filtered.length,
+          });
+          return toJsonSafeStepOutput(filtered);
+        },
       );
 
-      const selected = await step.run("select-articles", async () =>
-        runResearchArticleSelectorAgent({
+      if (normalized.length === 0) {
+        throw new Error("No articles returned from Serp normalization");
+      }
+      pipelineLog("step", "entering select-articles");
+      const selected = await step.run("select-articles", async () => {
+        pipelineLog("select-articles", "start", {
+          candidateCount: Math.min(normalized.length, 12),
+        });
+        const links = normalized.slice(0, 12).map((article) => ({
+          url: article.url,
+          title: article.title,
+          snippet: article.snippet,
+          source: article.source,
+          sourceType: article.sourceType,
+        }));
+
+        const result = await runResearchArticleSelectorAgent({
           userPrompt: buildResearchPrompt({
             date: input.date,
             location,
             scope,
           }),
-          links: normalized.map((article) => ({
-            url: article.url,
-            title: article.title,
-            snippet: article.snippet,
-            source: article.source,
-            sourceType: article.sourceType,
-          })),
+          links,
           topPercent: 50,
-        }),
-      );
+          abortSignal: AbortSignal.timeout(180_000),
+        });
 
-      const researched = await step.run("scrape-selected-articles", async () => {
-        const articles = [];
-        for (let index = 0; index < selected.length; index += 1) {
-          const article = selected[index] as SelectedResearchArticle;
-          const normalizedMatch = normalized.find((row) => row.url === article.url);
-          let scrapedContent: string | null = null;
-          try {
-            const scraped = await firecrawlClient.scrape({ url: article.url });
-            scrapedContent = scrapeMarkdown(scraped);
-          } catch {
-            scrapedContent = null;
-          }
-
-          articles.push({
-            index: normalizedMatch?.index ?? index,
-            url: article.url,
-            domain: article.domain,
-            title: article.title,
-            sourceType: article.sourceType,
-            scrapedContent,
-            publishedAt: normalizedMatch?.publishedAt
-              ? new Date(normalizedMatch.publishedAt)
-              : null,
-          });
-        }
-        return articles;
+        pipelineLog("select-articles", "done", { selectedCount: result.length });
+        return toJsonSafeStepOutput(result);
       });
 
-      const synthesized = await step.run("synthesize-stories", async () =>
-        runNewsSynthesizerAgent({
+      pipelineLog("step", "entering scrape-selected-articles");
+      const researched = await step.run(
+        "scrape-selected-articles",
+        async () => {
+          pipelineLog("scrape-selected-articles", "start", {
+            urlCount: selected.length,
+          });
+          const articles = [];
+          for (let index = 0; index < selected.length; index += 1) {
+            pipelineLog("scrape-selected-articles", "scraping", {
+              index: index + 1,
+              total: selected.length,
+              url: selected[index]?.url,
+            });
+            const article = selected[index] as SelectedResearchArticle;
+            const normalizedMatch = normalized.find(
+              (row) => row.url === article.url,
+            );
+            let scrapedContent: string | null = null;
+            try {
+              const scraped = await firecrawlClient.scrape({
+                url: article.url,
+              });
+              scrapedContent = scrapeMarkdown(scraped);
+            } catch {
+              scrapedContent = null;
+            }
+
+            articles.push({
+              index: normalizedMatch?.index ?? index,
+              url: article.url,
+              domain: article.domain,
+              title: article.title,
+              sourceType: article.sourceType,
+              scrapedContent,
+              publishedAt: normalizedMatch?.publishedAt
+                ? new Date(normalizedMatch.publishedAt)
+                : null,
+            });
+          }
+          pipelineLog("scrape-selected-articles", "done", {
+            scrapedCount: articles.length,
+            withContent: articles.filter((a) => a.scrapedContent).length,
+          });
+          return toJsonSafeStepOutput(articles);
+        },
+      );
+
+      pipelineLog("step", "entering synthesize-stories");
+      const synthesized = await step.run("synthesize-stories", async () => {
+        pipelineLog("synthesize-stories", "start", {
+          articleCount: researched.length,
+        });
+        const stories = await runNewsSynthesizerAgent({
           newsRequestId: newsRequest.id,
           location,
           articles: researched,
@@ -192,10 +282,19 @@ export const newsPipelineFunction = inngest.createFunction(
             location,
             scope,
           }),
-        }),
-      );
+          abortSignal: AbortSignal.timeout(300_000),
+        });
+        pipelineLog("synthesize-stories", "done", {
+          storyCount: stories.length,
+        });
+        return toJsonSafeStepOutput(stories);
+      });
 
+      pipelineLog("step", "entering persist-stories-and-sources");
       await step.run("persist-stories-and-sources", async () => {
+        pipelineLog("persist-stories-and-sources", "start", {
+          storyCount: synthesized.length,
+        });
         for (const story of synthesized) {
           const savedStory = await createNewsStory({
             newsRequestId: newsRequest.id,
@@ -221,28 +320,42 @@ export const newsPipelineFunction = inngest.createFunction(
             });
           }
         }
+        pipelineLog("persist-stories-and-sources", "done");
       });
 
-      await step.run("mark-request-success", async () =>
-        patchNewsRequest(newsRequest.id, {
+      pipelineLog("step", "entering mark-request-success");
+      await step.run("mark-request-success", async () => {
+        pipelineLog("mark-request-success", "start");
+        await patchNewsRequest(newsRequest.id, {
           status: "success",
           completedAt: new Date(),
           error: null,
-        }),
-      );
+        });
+        pipelineLog("mark-request-success", "done");
+      });
 
-      return step.run("load-stories", async () =>
-        listNewsStoriesByNewsRequestId(newsRequest.id),
-      );
+      pipelineLog("step", "entering load-stories");
+      const stories = await step.run("load-stories", async () => {
+        pipelineLog("load-stories", "start");
+        const rows = await listNewsStoriesByNewsRequestId(newsRequest.id);
+        pipelineLog("load-stories", "done", { count: rows.length });
+        return rows;
+      });
+      pipelineLog("run", "finished", { newsRequestId: newsRequest.id });
+      return toJsonSafeStepOutput(stories);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await step.run("mark-request-failed", async () =>
-        patchNewsRequest(newsRequest.id, {
+      pipelineLog("run", "failed", { error: message });
+      pipelineLog("step", "entering mark-request-failed");
+      await step.run("mark-request-failed", async () => {
+        pipelineLog("mark-request-failed", "start", { error: message });
+        await patchNewsRequest(newsRequest.id, {
           status: "failed",
           error: message,
           completedAt: new Date(),
-        }),
-      );
+        });
+        pipelineLog("mark-request-failed", "done");
+      });
       throw error;
     }
   },

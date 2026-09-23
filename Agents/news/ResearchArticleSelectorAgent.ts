@@ -1,4 +1,5 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
+import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
 
 const TRACKING_PARAMS = new Set([
@@ -7,8 +8,6 @@ const TRACKING_PARAMS = new Set([
   "mc_cid",
   "mc_eid",
 ]);
-
-const DEFAULT_MODEL = "gpt-4o-mini";
 
 const researchArticleLinkSchema = z.union([
   z.string().min(1),
@@ -48,6 +47,7 @@ export const selectedResearchArticleSchema = z.object({
 
 export type SelectedResearchArticle = z.infer<typeof selectedResearchArticleSchema>;
 
+/** OpenAI structured outputs: every property must be required (no .optional()). */
 const selectorModelOutputSchema = z.object({
   articles: z.array(
     z.object({
@@ -55,8 +55,6 @@ const selectorModelOutputSchema = z.object({
       relevant: z.boolean(),
       rank: z.number().int().min(1),
       reason: z.string().min(1).max(400),
-      title: z.string().min(1).max(300).optional(),
-      sourceType: z.string().min(1).max(80).optional(),
     }),
   ),
 });
@@ -73,8 +71,10 @@ type Candidate = {
 type SelectorDecision = z.infer<typeof selectorModelOutputSchema>["articles"][number];
 
 function resolveSelectorModel(override?: string): string {
-  const fromEnv = process.env.RESEARCH_ARTICLE_SELECTOR_MODEL?.trim();
-  return override?.trim() || fromEnv || DEFAULT_MODEL;
+  return resolveOpenAiModelId(
+    override,
+    process.env.RESEARCH_ARTICLE_SELECTOR_MODEL,
+  );
 }
 
 function canonicalUrlKey(raw: string): string | null {
@@ -136,23 +136,12 @@ function domainFromUrl(url: string): string {
   }
 }
 
-function resolveSourceType(
-  candidate: Candidate,
-  decision: SelectorDecision,
-): string {
-  const fromDecision = decision.sourceType?.trim();
-  if (fromDecision) {
-    return fromDecision;
-  }
-  const fromCandidate = candidate.sourceType?.trim();
-  if (fromCandidate) {
-    return fromCandidate;
-  }
-  return "web";
+function resolveSourceType(candidate: Candidate): string {
+  return candidate.sourceType?.trim() || "web";
 }
 
-function resolveTitle(candidate: Candidate, decision: SelectorDecision): string {
-  const title = (decision.title ?? candidate.title)?.trim();
+function resolveTitle(candidate: Candidate): string {
+  const title = candidate.title?.trim();
   if (title) {
     return title;
   }
@@ -215,8 +204,8 @@ function selectTopArticles(
       return {
         url,
         domain: domainFromUrl(url),
-        title: resolveTitle(candidate, decision),
-        sourceType: resolveSourceType(candidate, decision),
+        title: resolveTitle(candidate),
+        sourceType: resolveSourceType(candidate),
       };
     }),
   );
@@ -231,8 +220,6 @@ function buildSystemPrompt(): string {
     "Set relevant to false for off-topic pages, homepages, section indexes, search pages, login walls, and link lists.",
     "rank 1 is the most important page to scrape. Give every candidate a rank.",
     "When relevant is true, reason is one concise sentence on why Firecrawl should scrape this URL: name the development, announcement, or reporting the full page is expected to contain.",
-    "When relevant is true, set title to the article headline when known; otherwise infer a short headline from the candidate.",
-    "When relevant is true, set sourceType to the Serp origin when known (e.g. google_news, google_search); otherwise web.",
     "When relevant is false, reason is one short sentence on why the URL was dropped.",
   ].join("\n");
 }

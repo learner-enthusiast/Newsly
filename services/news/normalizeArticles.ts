@@ -18,13 +18,14 @@ const serpOrganicItemSchema = z.looseObject({
   snippet: z.string().optional(),
 });
 
+/** JSON-safe for Inngest step output (no Date instances). */
 export const normalizedArticleLinkSchema = z.object({
-  url: z.url(),
+  url: z.string().url(),
   title: z.string().min(1).optional(),
   snippet: z.string().min(1).optional(),
   source: z.string().min(1).optional(),
   sourceType: z.string().min(1),
-  publishedAt: z.coerce.date().optional(),
+  publishedAt: z.string().min(1).optional(),
   index: z.number().int().min(0),
 });
 
@@ -42,13 +43,18 @@ function publisherName(
   return undefined;
 }
 
-function parsePublishedAt(item: z.infer<typeof serpNewsItemSchema>): Date | undefined {
+function parsePublishedAtIso(
+  item: z.infer<typeof serpNewsItemSchema>,
+): string | undefined {
   const raw = item.iso_date ?? item.published_at ?? item.date;
   if (!raw?.trim()) {
     return undefined;
   }
   const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? undefined : date;
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toISOString();
 }
 
 function canonicalKey(url: string): string | null {
@@ -78,16 +84,15 @@ function toLink(
     return null;
   }
 
-  return normalizedArticleLinkSchema
-    .omit({ index: true })
-    .parse({
-      url,
-      title: item.title?.trim() || undefined,
-      snippet: item.snippet?.trim() || undefined,
-      source: publisherName(item.source),
-      sourceType,
-      publishedAt: parsePublishedAt(item),
-    });
+  const parsed = normalizedArticleLinkSchema.omit({ index: true }).safeParse({
+    url,
+    title: item.title?.trim() || undefined,
+    snippet: item.snippet?.trim() || undefined,
+    source: publisherName(item.source),
+    sourceType,
+    publishedAt: parsePublishedAtIso(item),
+  });
+  return parsed.success ? parsed.data : null;
 }
 
 function extractNewsResults(payload: unknown): z.infer<typeof serpNewsItemSchema>[] {
@@ -98,7 +103,14 @@ function extractNewsResults(payload: unknown): z.infer<typeof serpNewsItemSchema
   if (!Array.isArray(news)) {
     return [];
   }
-  return news.map((row) => serpNewsItemSchema.parse(row));
+  const rows: z.infer<typeof serpNewsItemSchema>[] = [];
+  for (const row of news) {
+    const parsed = serpNewsItemSchema.safeParse(row);
+    if (parsed.success) {
+      rows.push(parsed.data);
+    }
+  }
+  return rows;
 }
 
 function extractOrganicResults(payload: unknown): z.infer<typeof serpOrganicItemSchema>[] {
@@ -109,7 +121,70 @@ function extractOrganicResults(payload: unknown): z.infer<typeof serpOrganicItem
   if (!Array.isArray(organic)) {
     return [];
   }
-  return organic.map((row) => serpOrganicItemSchema.parse(row));
+  const rows: z.infer<typeof serpOrganicItemSchema>[] = [];
+  for (const row of organic) {
+    const parsed = serpOrganicItemSchema.safeParse(row);
+    if (parsed.success) {
+      rows.push(parsed.data);
+    }
+  }
+  return rows;
+}
+
+/** Drop thumbnails / metadata blobs before Inngest persists step output. */
+export function slimSerpPayloadForNormalize(payload: unknown): {
+  news_results: unknown[];
+  organic_results?: unknown[];
+} {
+  if (!payload || typeof payload !== "object") {
+    return { news_results: [] };
+  }
+
+  const record = payload as {
+    news_results?: unknown;
+    organic_results?: unknown;
+  };
+
+  const slimNews = Array.isArray(record.news_results)
+    ? record.news_results.slice(0, 15).map(slimSerpNewsRow)
+    : [];
+
+  const slimOrganic = Array.isArray(record.organic_results)
+    ? record.organic_results.slice(0, 15).map(slimSerpOrganicRow)
+    : undefined;
+
+  return {
+    news_results: slimNews,
+    ...(slimOrganic ? { organic_results: slimOrganic } : {}),
+  };
+}
+
+function slimSerpNewsRow(row: unknown) {
+  if (!row || typeof row !== "object") {
+    return {};
+  }
+  const item = row as Record<string, unknown>;
+  return {
+    link: item.link,
+    title: item.title,
+    snippet: item.snippet,
+    date: item.date,
+    iso_date: item.iso_date,
+    published_at: item.published_at,
+    source: item.source,
+  };
+}
+
+function slimSerpOrganicRow(row: unknown) {
+  if (!row || typeof row !== "object") {
+    return {};
+  }
+  const item = row as Record<string, unknown>;
+  return {
+    link: item.link,
+    title: item.title,
+    snippet: item.snippet,
+  };
 }
 
 /** Merge top Serp hits from `searchGoogleNews` and `searchGoogle` (news tab). */
@@ -158,7 +233,48 @@ export function normalizeSerpArticles(params: {
     }
   }
 
-  return merged.map((row, index) =>
-    normalizedArticleLinkSchema.parse({ ...row, index }),
-  );
+  return merged.map((row, index) => {
+    const parsed = normalizedArticleLinkSchema.safeParse({ ...row, index });
+    if (!parsed.success) {
+      throw new Error(
+        `Failed to normalize article at index ${index}: ${parsed.error.message}`,
+      );
+    }
+    return parsed.data;
+  });
+}
+
+/** Inngest step outputs must be plain JSON (no Date, Buffer, etc.). */
+export function toJsonSafeStepOutput<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * Prefer articles near the requested calendar day; keep undated rows.
+ * Reduces stale Serp hits and shrinks the selector LLM payload.
+ */
+export function filterArticlesNearRequestDate(
+  articles: NormalizedArticleLink[],
+  requestDateIso: string,
+  windowDays = 3,
+): NormalizedArticleLink[] {
+  const requestMs = Date.parse(`${requestDateIso}T12:00:00.000Z`);
+  if (Number.isNaN(requestMs)) {
+    return articles;
+  }
+
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  const filtered = articles.filter((article) => {
+    if (!article.publishedAt) {
+      return true;
+    }
+    const publishedMs = Date.parse(article.publishedAt);
+    if (Number.isNaN(publishedMs)) {
+      return true;
+    }
+    return Math.abs(publishedMs - requestMs) <= windowMs;
+  });
+
+  const pool = filtered.length > 0 ? filtered : articles;
+  return pool.map((article, index) => ({ ...article, index }));
 }
