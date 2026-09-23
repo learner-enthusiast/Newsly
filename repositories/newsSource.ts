@@ -40,6 +40,29 @@ export async function listNewsSourcesByNewsStoryId(newsStoryId: string) {
   });
 }
 
+export async function listNewsSourcesByIdsForStory(
+  newsStoryId: string,
+  ids: string[],
+) {
+  const parsedStoryId = newsStoryIdSchema.parse(newsStoryId);
+  const parsedIds = ids.map((id) => newsSourceIdSchema.parse(id));
+  if (parsedIds.length === 0) {
+    return [];
+  }
+
+  const rows = await prisma.newsSource.findMany({
+    where: {
+      newsStoryId: parsedStoryId,
+      id: { in: parsedIds },
+    },
+  });
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return parsedIds
+    .map((id) => byId.get(id))
+    .filter((row): row is (typeof rows)[number] => row != null);
+}
+
 export async function putNewsSource(id: string, input: NewsSourcePutInput) {
   return prisma.newsSource.update({
     where: { id: newsSourceIdSchema.parse(id) },

@@ -3,6 +3,7 @@ import { prisma } from "@/db";
 
 const newsStoryIdSchema = z.uuid("id must be a uuid");
 const newsRequestIdSchema = z.uuid("newsRequestId must be a uuid");
+const userIdSchema = z.string().min(1, "userId is required");
 
 const newsSourceIdSchema = z.uuid();
 
@@ -46,6 +47,42 @@ export async function getNewsStoryById(id: string) {
   return prisma.newsStory.findUnique({
     where: { id: newsStoryIdSchema.parse(id) },
   });
+}
+
+export async function getNewsStoryByIdForUser(storyId: string, userId: string) {
+  return prisma.newsStory.findFirst({
+    where: {
+      id: newsStoryIdSchema.parse(storyId),
+      newsRequest: { userId: userIdSchema.parse(userId) },
+    },
+  });
+}
+
+/** Story row plus sources ordered by `newsSourceIds` (fallback: createdAt). */
+export async function getNewsStoryWithSourcesById(id: string) {
+  const row = await prisma.newsStory.findUnique({
+    where: { id: newsStoryIdSchema.parse(id) },
+    include: {
+      sources: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!row) {
+    return null;
+  }
+
+  const { sources, ...story } = row;
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const ordered =
+    story.newsSourceIds.length > 0
+      ? story.newsSourceIds
+          .map((sourceId) => byId.get(sourceId))
+          .filter((source): source is (typeof sources)[number] => source != null)
+      : sources;
+
+  return { ...story, sources: ordered };
 }
 
 export async function listNewsStoriesByNewsRequestId(newsRequestId: string) {

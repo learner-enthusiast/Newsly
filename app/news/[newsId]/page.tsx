@@ -4,8 +4,9 @@ import {
   StorySourceLinks,
   type StorySourceLink,
 } from "@/components/news/StorySourceLinks";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 type NewsStory = {
@@ -38,6 +39,9 @@ export default function NewsResultPage() {
   const [data, setData] = useState<PollPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
+  const [deepDiveError, setDeepDiveError] = useState<string | null>(null);
+  const router = useRouter();
 
   const fetchStatus = useCallback(async () => {
     const response = await fetch(`/api/news/${newsId}`);
@@ -83,6 +87,32 @@ export default function NewsResultPage() {
     };
   }, [fetchStatus]);
 
+  async function onDeepDive(storyId: string) {
+    setDeepDiveError(null);
+    setDeepDiveStoryId(storyId);
+    try {
+      const response = await fetch("/api/newsStoryChat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newsStoryId: storyId }),
+      });
+      const payload = (await response.json()) as {
+        chatSessionId?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.chatSessionId) {
+        throw new Error(payload.error ?? "Failed to start deep dive");
+      }
+      router.push(`/chat/${payload.chatSessionId}`);
+    } catch (deepDiveErr) {
+      setDeepDiveError(
+        deepDiveErr instanceof Error ? deepDiveErr.message : "Deep dive failed",
+      );
+    } finally {
+      setDeepDiveStoryId(null);
+    }
+  }
+
   async function onRetry() {
     setRetrying(true);
     setError(null);
@@ -122,6 +152,9 @@ export default function NewsResultPage() {
       ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {deepDiveError ? (
+        <p className="text-sm text-red-600">{deepDiveError}</p>
+      ) : null}
 
       {status === "pending" ? (
         <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -171,6 +204,19 @@ export default function NewsResultPage() {
                 {story.description.split(/\n\n+/).map((paragraph, index) => (
                   <p key={index}>{paragraph}</p>
                 ))}
+              </div>
+            ) : null}
+            {status === "success" ? (
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={deepDiveStoryId === story.id}
+                  onClick={() => onDeepDive(story.id)}
+                >
+                  {deepDiveStoryId === story.id ? "Starting…" : "Deep dive"}
+                </Button>
               </div>
             ) : null}
           </li>

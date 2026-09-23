@@ -117,10 +117,9 @@ model ChatSession {
   id          String    @id @default(uuid()) @db.Uuid
   userId      String    @map("user_id")
   newsStoryId String?   @map("news_story_id") @db.Uuid
-  newsSourceId String? @map("news_source_id") @db.Uuid
+  newsSourceId String[]  @default([]) @map("news_source_id") @db.Uuid
   title       String?
   topic       String?
-  status      String
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   isFromNewsStory Boolean   @default(false) @map("is_from_news_story")

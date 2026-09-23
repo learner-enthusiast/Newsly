@@ -114,8 +114,11 @@ async function searchGoogle<T = unknown>(
   responseSchema?: z.ZodType<T>,
   client = serpClient,
 ): Promise<T> {
+  const { tbm: _tbm, ...rest } = params as SerpEngineSearchParams & {
+    tbm?: unknown;
+  };
   return client.search(
-    { ...withRequiredQuery(params), engine: "google" },
+    { ...withGoogleWebQuery(rest), engine: "google" },
     responseSchema,
   );
 }
