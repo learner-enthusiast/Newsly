@@ -1,4 +1,8 @@
-import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
+import {
+  aiClient,
+  createAIClient,
+  type AIClientOptions,
+} from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
 const MAX_PROMPT_CHARS = 8_000;

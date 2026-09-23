@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  StorySourceLinks,
+  type StorySourceLink,
+} from "@/components/news/StorySourceLinks";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -8,8 +12,10 @@ type NewsStory = {
   id: string;
   title: string;
   summary: string;
+  description: string | null;
   category: string;
   importanceScore: number | null;
+  sourceUrls: StorySourceLink[];
 };
 
 type PollPayload = {
@@ -151,10 +157,22 @@ export default function NewsResultPage() {
                 <span>Score {story.importanceScore}</span>
               ) : null}
             </div>
-            <h2 className="mt-1 text-lg font-semibold">{story.title}</h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            <div className="mt-1 flex items-start gap-2">
+              <h2 className="min-w-0 flex-1 text-lg font-semibold">
+                {story.title}
+              </h2>
+              <StorySourceLinks sources={story.sourceUrls ?? []} />
+            </div>
+            <p className="mt-2 text-sm font-medium leading-relaxed">
               {story.summary}
             </p>
+            {story.description ? (
+              <div className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
+                {story.description.split(/\n\n+/).map((paragraph, index) => (
+                  <p key={index}>{paragraph}</p>
+                ))}
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>

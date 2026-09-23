@@ -75,6 +75,7 @@ model NewsStory {
   id              String    @id @default(uuid()) @db.Uuid
   newsRequestId   String    @map("news_request_id") @db.Uuid
   title           String
+  description     String?
   slug            String
   summary         String    @db.Text
   content         String    @db.Text
@@ -84,6 +85,7 @@ model NewsStory {
   importanceScore Decimal?  @map("importance_score") @db.Decimal(10, 4)
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
+  newsSourceIds   String[]  @default([]) @map("news_source_ids") @db.Uuid
 
   newsRequest  NewsRequest   @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
   sources      NewsSource[]
@@ -115,11 +117,13 @@ model ChatSession {
   id          String    @id @default(uuid()) @db.Uuid
   userId      String    @map("user_id")
   newsStoryId String?   @map("news_story_id") @db.Uuid
+  newsSourceId String? @map("news_source_id") @db.Uuid
   title       String?
   topic       String?
   status      String
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
+  isFromNewsStory Boolean   @default(false) @map("is_from_news_story")
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   newsStory        NewsStory?        @relation(fields: [newsStoryId], references: [id], onDelete: SetNull)

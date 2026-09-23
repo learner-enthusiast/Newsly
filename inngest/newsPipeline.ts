@@ -13,6 +13,7 @@ import { createNewsSource } from "@/repositories/newsSource";
 import {
   createNewsStory,
   listNewsStoriesByNewsRequestId,
+  patchNewsStory,
 } from "@/repositories/newsStory";
 import { serpEngines } from "@/SERP/index";
 import {
@@ -61,9 +62,7 @@ function pipelineLog(
   extra?: Record<string, unknown>,
 ): void {
   const suffix =
-    extra && Object.keys(extra).length > 0
-      ? ` ${JSON.stringify(extra)}`
-      : "";
+    extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
   console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
 }
 
@@ -155,7 +154,7 @@ export const newsPipelineFunction = inngest.createFunction(
           pipelineLog("fetch-and-normalize-serp", "start");
           const gl = plans.news.suggestedGl ?? plans.search.suggestedGl;
           const hl = plans.news.suggestedHl ?? "en";
-          const shared = { num: 10, ...(gl ? { gl } : {}), hl };
+          const shared = { num: 30, ...(gl ? { gl } : {}), hl };
 
           const [googleNewsPayload, googleSearchPayload] = await Promise.all([
             serpEngines.searchGoogleNews.fn({
@@ -173,7 +172,7 @@ export const newsPipelineFunction = inngest.createFunction(
             googleNewsPayload: slimSerpPayloadForNormalize(googleNewsPayload),
             googleSearchPayload:
               slimSerpPayloadForNormalize(googleSearchPayload),
-            limitPerEngine: 10,
+            limitPerEngine: 15,
           });
 
           const filtered = filterArticlesNearRequestDate(
@@ -216,7 +215,9 @@ export const newsPipelineFunction = inngest.createFunction(
           abortSignal: AbortSignal.timeout(180_000),
         });
 
-        pipelineLog("select-articles", "done", { selectedCount: result.length });
+        pipelineLog("select-articles", "done", {
+          selectedCount: result.length,
+        });
         return toJsonSafeStepOutput(result);
       });
 
@@ -299,6 +300,7 @@ export const newsPipelineFunction = inngest.createFunction(
           const savedStory = await createNewsStory({
             newsRequestId: newsRequest.id,
             title: story.title,
+            description: story.description,
             slug: story.slug,
             summary: story.summary,
             content: story.content,
@@ -306,10 +308,12 @@ export const newsPipelineFunction = inngest.createFunction(
             location: story.location,
             publishedAt: story.publishedAt,
             importanceScore: story.importanceScore,
+            newsSourceIds: [],
           });
 
+          const newsSourceIds: string[] = [];
           for (const source of story.sources) {
-            await createNewsSource({
+            const savedSource = await createNewsSource({
               newsStoryId: savedStory.id,
               url: source.url,
               domain: source.domain,
@@ -318,6 +322,11 @@ export const newsPipelineFunction = inngest.createFunction(
               publishedAt: source.publishedAt,
               sourceType: source.sourceType,
             });
+            newsSourceIds.push(savedSource.id);
+          }
+
+          if (newsSourceIds.length > 0) {
+            await patchNewsStory(savedStory.id, { newsSourceIds });
           }
         }
         pipelineLog("persist-stories-and-sources", "done");

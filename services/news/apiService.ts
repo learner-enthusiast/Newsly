@@ -46,6 +46,7 @@ function serializeStory(story: Awaited<
     id: story.id,
     newsRequestId: story.newsRequestId,
     title: story.title,
+    description: story.description,
     slug: story.slug,
     summary: story.summary,
     content: story.content,
@@ -54,6 +55,7 @@ function serializeStory(story: Awaited<
     publishedAt: story.publishedAt?.toISOString() ?? null,
     importanceScore:
       story.importanceScore != null ? Number(story.importanceScore) : null,
+    sourceUrls: story.sourceUrls,
     createdAt: story.createdAt.toISOString(),
     updatedAt: story.updatedAt.toISOString(),
   };

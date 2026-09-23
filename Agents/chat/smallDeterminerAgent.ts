@@ -2,8 +2,12 @@ import {
   assertGuardrailAllowed,
   runStockResearchGuardrails,
   type GuardrailCheckResult,
-} from "@/Agents/guardrails";
-import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
+} from "@/Agents/chat/guardrails";
+import {
+  aiClient,
+  createAIClient,
+  type AIClientOptions,
+} from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { serpEngines } from "@/SERP/index";
 import { z } from "zod";
@@ -190,7 +194,10 @@ export function createSmallDeterminerAgent(options: AIClientOptions = {}) {
     params: SmallDeterminerAgentParams,
   ): Promise<SmallDeterminerRunResult> {
     const guardrail = await applyGuardrails(params);
-    const determiner = await runDeterminerCore(params, client.generate.bind(client));
+    const determiner = await runDeterminerCore(
+      params,
+      client.generate.bind(client),
+    );
     return { guardrail, determiner };
   };
 }
@@ -200,6 +207,9 @@ export async function runSmallDeterminerAgent(
   params: SmallDeterminerAgentParams,
 ): Promise<SmallDeterminerRunResult> {
   const guardrail = await applyGuardrails(params);
-  const determiner = await runDeterminerCore(params, aiClient.generate.bind(aiClient));
+  const determiner = await runDeterminerCore(
+    params,
+    aiClient.generate.bind(aiClient),
+  );
   return { guardrail, determiner };
 }
