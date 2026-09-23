@@ -1,5 +1,4 @@
-// Add more .prisma files in this folder (e.g. user.prisma, post.prisma).
-// Prisma loads every file here automatically — no imports needed.
+// Prisma loads every file in db/schema automatically.
 
 generator client {
   provider = "prisma-client"
@@ -9,301 +8,6 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-
-// ---------------------------------------------------------------------------
-// Shared / legacy plan enums (non-festival)
-// ---------------------------------------------------------------------------
-
-enum PlanStatus {
-  draft
-  processing
-  ready
-  failed
-  archived
-
-  @@map("plan_status")
-}
-
-enum PlanVisibility {
-  private
-  public
-
-  @@map("plan_visibility")
-}
-
-// ---------------------------------------------------------------------------
-// Region semantics
-// ---------------------------------------------------------------------------
-
-enum RequestRegion {
-  INDIA
-  WORLD
-  BOTH
-
-  @@map("request_region")
-}
-
-enum Region {
-  INDIA
-  WORLD
-
-  @@map("region")
-}
-
-// ---------------------------------------------------------------------------
-// Discovery
-// ---------------------------------------------------------------------------
-
-enum DiscoveryPeriod {
-  DAY
-  WEEK
-  MONTH
-
-  @@map("discovery_period")
-}
-
-enum DiscoveryStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-
-  @@map("discovery_status")
-}
-
-enum SearchProvider {
-  SERPAPI
-  NSE
-  BSE
-
-  @@map("search_provider")
-}
-
-enum SearchType {
-  GOOGLE_NEWS
-  GOOGLE_FINANCE
-  GOOGLE_SEARCH
-  CORPORATE_FILINGS
-
-  @@map("search_type")
-}
-
-enum SearchStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-
-  @@map("search_status")
-}
-
-enum ScrapeStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-  BLOCKED
-
-  @@map("scrape_status")
-}
-
-// ---------------------------------------------------------------------------
-// Sources & documents
-// ---------------------------------------------------------------------------
-
-enum SourceType {
-  PRIMARY
-  MAJOR_MEDIA
-  SECONDARY_MEDIA
-  BLOG
-  SOCIAL
-  OTHER
-
-  @@map("source_type")
-}
-
-// ---------------------------------------------------------------------------
-// Entities
-// ---------------------------------------------------------------------------
-
-enum EntityType {
-  COMPANY
-  PERSON
-  ORGANIZATION
-  GOVERNMENT
-  REGULATOR
-  COUNTRY
-  CITY
-  SECTOR
-  INDUSTRY
-  FINANCIAL_INSTRUMENT
-  PRODUCT
-  INDEX
-  OTHER
-
-  @@map("entity_type")
-}
-
-// ---------------------------------------------------------------------------
-// Events
-// ---------------------------------------------------------------------------
-
-enum EventType {
-  CORPORATE
-  FINANCIAL
-  ECONOMIC
-  MARKET
-  REGULATORY
-  POLITICAL
-  LEGAL
-  GEOPOLITICAL
-  TECHNOLOGY
-  COMMODITY
-  MACRO
-  OTHER
-
-  @@map("event_type")
-}
-
-enum EventStatus {
-  ACTIVE
-  SUPERSEDED
-  RESOLVED
-  CANCELLED
-  ARCHIVED
-
-  @@map("event_status")
-}
-
-enum EventClaimRelationship {
-  SUPPORTS
-  DESCRIBES
-  QUALIFIES
-  CONTRADICTS
-  UPDATES
-
-  @@map("event_claim_relationship")
-}
-
-enum EventDocumentRelationship {
-  REPORTS
-  SUPPORTS
-  PRIMARY_SOURCE
-  ANALYSIS
-  FOLLOW_UP
-
-  @@map("event_document_relationship")
-}
-
-// ---------------------------------------------------------------------------
-// Contradictions
-// ---------------------------------------------------------------------------
-
-enum ContradictionSeverity {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-
-  @@map("contradiction_severity")
-}
-
-enum ContradictionResolutionStatus {
-  UNRESOLVED
-  UNDER_REVIEW
-  RESOLVED
-  INCONCLUSIVE
-
-  @@map("contradiction_resolution_status")
-}
-
-// ---------------------------------------------------------------------------
-// Narratives
-// ---------------------------------------------------------------------------
-
-enum NarrativeStatus {
-  ACTIVE
-  DORMANT
-  RESOLVED
-  ARCHIVED
-
-  @@map("narrative_status")
-}
-
-enum NarrativeRelationship {
-  UPDATE
-  FOLLOW_UP
-  CAUSE
-  EFFECT
-  ESCALATION
-  REVERSAL
-  RELATED
-
-  @@map("narrative_relationship")
-}
-
-// ---------------------------------------------------------------------------
-// Verification & evaluation
-// ---------------------------------------------------------------------------
-
-enum VerificationStatus {
-  UNVERIFIED
-  PARTIALLY_VERIFIED
-  VERIFIED
-  CONTESTED
-  INCONCLUSIVE
-
-  @@map("verification_status")
-}
-
-enum ConsensusLevel {
-  HIGH
-  MODERATE
-  MIXED
-  LOW
-  CONTESTED
-
-  @@map("consensus_level")
-}
-
-// ---------------------------------------------------------------------------
-// Ranking
-// ---------------------------------------------------------------------------
-
-enum RankingStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-
-  @@map("ranking_status")
-}
-
-enum EvaluatorType {
-  PRIMARY_RANKER
-  INDEPENDENT_RANKER
-  CHALLENGER
-  COVERAGE_REVIEWER
-
-  @@map("evaluator_type")
-}
-
-// ---------------------------------------------------------------------------
-// Coverage gap
-// ---------------------------------------------------------------------------
-
-enum CoverageGapStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-
-  @@map("coverage_gap_status")
-}
-
-// ---------------------------------------------------------------------------
-// User (canonical — do not duplicate)
-// ---------------------------------------------------------------------------
 
 model User {
   id                    String    @id @default(cuid())
@@ -324,717 +28,155 @@ model User {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  plans            Plan[]
-  preference       UserPreference?
-  discoveryRuns    DiscoveryRun[]
-  researchProjects ResearchProject[]
+  newsRequests NewsRequest[]
+  chatSessions ChatSession[]
+  scripts      Script[]
 
   @@map("users")
 }
 
-/// Legacy plan slot retained for the User ↔ Plan relation (festival fields removed).
-model Plan {
-  id          String         @id @default(uuid()) @db.Uuid
-  userId      String
-  slug        String
-  title       String
-  description String?
-  status      PlanStatus
-  visibility  PlanVisibility
-  requestData Json?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+enum NewsScope {
+  local
+  world
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, slug])
-  @@index([userId])
-  @@map("plans")
+  @@map("news_scope")
 }
 
-// ---------------------------------------------------------------------------
-// Discovery pipeline
-// ---------------------------------------------------------------------------
+enum NewsRequestStatus {
+  pending
+  failed
+  success
 
-model UserPreference {
-  id             String         @id @default(cuid())
-  userId         String         @unique
-  defaultRegion  RequestRegion?
-  settings       Json?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("user_preferences")
+  @@map("news_request_status")
 }
 
-model DiscoveryRun {
-  id          String           @id @default(cuid())
-  userId      String
-  region      RequestRegion
-  period      DiscoveryPeriod
-  startDate   DateTime         @db.Date
-  endDate     DateTime         @db.Date
-  status      DiscoveryStatus  @default(PENDING)
-  startedAt   DateTime?
-  completedAt DateTime?
-  metadata    Json?
-  createdAt   DateTime         @default(now())
+model NewsRequest {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id")
+  date            DateTime  @db.Date
+  location        String?
+  scope           NewsScope
+  searchQuery     Json      @map("search_query")
+  status          NewsRequestStatus
+  error           String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  completedAt     DateTime? @map("completed_at")
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  searchExecutions  SearchExecution[]
-  rankingRuns       RankingRun[]
-  coverageGapRuns   CoverageGapRun[]
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stories NewsStory[]
 
   @@index([userId])
   @@index([status])
-  @@index([region])
-  @@index([createdAt])
-  @@map("discovery_runs")
+  @@index([date])
+  @@map("news_requests")
 }
 
-model SearchExecution {
-  id             String         @id @default(cuid())
-  discoveryRunId String
-  provider       SearchProvider
-  searchType     SearchType
-  region         Region
-  status         SearchStatus   @default(PENDING)
-  query          String?
-  startedAt      DateTime?
-  completedAt    DateTime?
-  metadata       Json?
-  createdAt      DateTime       @default(now())
+model NewsStory {
+  id              String    @id @default(uuid()) @db.Uuid
+  newsRequestId   String    @map("news_request_id") @db.Uuid
+  title           String
+  slug            String
+  summary         String    @db.Text
+  content         String    @db.Text
+  category        String
+  location        String?
+  publishedAt     DateTime? @map("published_at")
+  importanceScore Decimal?  @map("importance_score") @db.Decimal(10, 4)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  discoveryRun DiscoveryRun      @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
-  rawResults   RawSearchResult[]
+  newsRequest  NewsRequest   @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
+  sources      NewsSource[]
+  chatSessions ChatSession[]
 
-  @@index([discoveryRunId])
-  @@index([region])
-  @@index([status])
-  @@map("search_executions")
+  @@unique([newsRequestId, slug])
+  @@index([newsRequestId])
+  @@map("news_stories")
 }
 
-model RawSearchResult {
-  id                String   @id @default(cuid())
-  searchExecutionId String
-  documentId        String?
-  url               String
-  title             String?
-  snippet           String?
-  position          Int?
-  publishedAt       DateTime?
-  providerPayload   Json?
-  metadata          Json?
-  createdAt         DateTime @default(now())
-
-  searchExecution       SearchExecution        @relation(fields: [searchExecutionId], references: [id], onDelete: Cascade)
-  document              Document?              @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  coverageGapCandidates CoverageGapCandidate[]
-
-  @@index([searchExecutionId])
-  @@index([documentId])
-  @@map("raw_search_results")
-}
-
-// ---------------------------------------------------------------------------
-// Source → Document
-// ---------------------------------------------------------------------------
-
-model Source {
-  id              String     @id @default(cuid())
-  name            String
+model NewsSource {
+  id              String    @id @default(uuid()) @db.Uuid
+  newsStoryId     String    @map("news_story_id") @db.Uuid
+  url             String    @db.Text
   domain          String
-  sourceType      SourceType
-  region          Region?
-  country         String?
-  credibilityTier Int        @default(3)
-  isPrimarySource Boolean    @default(false)
-  metadata        Json?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-
-  documents Document[]
-
-  @@index([domain])
-  @@index([region])
-  @@index([sourceType])
-  @@map("sources")
-}
-
-model Document {
-  id            String       @id @default(cuid())
-  sourceId      String
-  url           String
-  canonicalUrl  String?
-  normalizedUrl String       @unique
-  title         String
-  author        String?
-  publishedAt   DateTime?
-  content       String       @db.Text
-  contentHash   String
-  scrapeStatus  ScrapeStatus @default(PENDING)
-  scrapedAt     DateTime?
-  metadata      Json?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
-  source           Source            @relation(fields: [sourceId], references: [id], onDelete: Restrict)
-  rawSearchResults RawSearchResult[]
-  claims           Claim[]
-  documentEntities DocumentEntity[]
-  eventDocuments          EventDocument[]
-  researchSources         ResearchSource[]
-  coverageGapCandidates   CoverageGapCandidate[]
-
-  @@index([sourceId])
-  @@index([contentHash])
-  @@index([publishedAt])
-  @@index([scrapeStatus])
-  @@map("documents")
-}
-
-// ---------------------------------------------------------------------------
-// Entities
-// ---------------------------------------------------------------------------
-
-model Entity {
-  id             String     @id @default(cuid())
-  entityType     EntityType
-  name           String
-  normalizedName String
-  metadata       Json?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-
-  documentEntities DocumentEntity[]
-  eventEntities    EventEntity[]
-  claimEntities    ClaimEntity[]
-
-  @@index([normalizedName])
-  @@index([entityType])
-  @@map("entities")
-}
-
-model DocumentEntity {
-  documentId String
-  entityId   String
-  role       String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
-
-  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  entity   Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@id([documentId, entityId])
-  @@index([entityId])
-  @@map("document_entities")
-}
-
-model EventEntity {
-  eventId   String
-  entityId  String
-  role      String?
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  event  Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@id([eventId, entityId])
-  @@index([entityId])
-  @@map("event_entities")
-}
-
-model ClaimEntity {
-  claimId   String
-  entityId  String
-  role      String?
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  claim  Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
-  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@id([claimId, entityId])
-  @@index([entityId])
-  @@map("claim_entities")
-}
-
-// ---------------------------------------------------------------------------
-// Claims
-// ---------------------------------------------------------------------------
-
-model Claim {
-  id              String   @id @default(cuid())
-  documentId      String
-  claimType       String
-  claimText       String   @db.Text
-  normalizedClaim String
-  confidence      Decimal? @db.Decimal(5, 4)
-  embedding       Unsupported("vector")?
-  metadata        Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  document           Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  claimEntities      ClaimEntity[]
-  eventClaims        EventClaim[]
-  contradictionsAsA  Contradiction[] @relation("ClaimContradictionA")
-  contradictionsAsB  Contradiction[] @relation("ClaimContradictionB")
-  researchClaims     ResearchClaim[]
-
-  @@index([documentId])
-  @@index([normalizedClaim])
-  @@map("claims")
-}
-
-// ---------------------------------------------------------------------------
-// Events
-// ---------------------------------------------------------------------------
-
-model Event {
-  id              String      @id @default(cuid())
   title           String
-  normalizedTitle String
-  description     String?     @db.Text
-  eventType       EventType
-  region          Region
-  eventDate       DateTime?
-  status          EventStatus @default(ACTIVE)
-  embedding       Unsupported("vector")?
-  metadata        Json?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  scrapedContent  String?   @map("scraped_content") @db.Text
+  publishedAt     DateTime? @map("published_at")
+  sourceType      String    @map("source_type")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
-  eventClaims            EventClaim[]
-  eventDocuments         EventDocument[]
-  eventEntities          EventEntity[]
-  eventNarratives        EventNarrative[]
-  verifications          EventVerification[]
-  evaluations            EventEvaluation[]
-  rankings               EventRanking[]
-  topStorySelections     TopStorySelection[]
-  outcomes               EventOutcome[]
-  researchProjects       ResearchProject[]
-  coverageGapCandidates  CoverageGapCandidate[]
-  rankingEvaluations     RankingEvaluation[]
-  rankingDisagreements   RankingDisagreement[]
+  newsStory NewsStory @relation(fields: [newsStoryId], references: [id], onDelete: Cascade)
 
-  @@index([normalizedTitle])
-  @@index([eventDate])
-  @@index([region])
-  @@index([status])
-  @@index([eventType])
-  @@map("events")
+  @@index([newsStoryId])
+  @@map("news_sources")
 }
 
-model EventClaim {
-  eventId           String
-  claimId           String
-  relationship      EventClaimRelationship
-  evidenceStrength  Decimal? @db.Decimal(5, 4)
-  isPrimaryEvidence Boolean  @default(false)
-  metadata          Json?
-  createdAt         DateTime @default(now())
-
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
-
-  @@id([eventId, claimId, relationship])
-  @@index([claimId])
-  @@map("event_claims")
-}
-
-model EventDocument {
-  eventId           String
-  documentId        String
-  relationship      EventDocumentRelationship
-  evidenceStrength  Decimal? @db.Decimal(5, 4)
-  isPrimaryEvidence Boolean  @default(false)
-  metadata          Json?
-  createdAt         DateTime @default(now())
-
-  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
-  @@id([eventId, documentId, relationship])
-  @@index([documentId])
-  @@map("event_documents")
-}
-
-// ---------------------------------------------------------------------------
-// Contradictions
-// ---------------------------------------------------------------------------
-
-model Contradiction {
-  id               String                        @id @default(cuid())
-  claimAId         String
-  claimBId         String
-  contradictionType String
-  severity         ContradictionSeverity
-  explanation      String?                       @db.Text
-  resolutionStatus ContradictionResolutionStatus @default(UNRESOLVED)
-  resolutionNotes  String?                       @db.Text
-  confidence       Decimal?                      @db.Decimal(5, 4)
-  createdAt        DateTime                      @default(now())
-  updatedAt        DateTime                      @updatedAt
-
-  claimA Claim @relation("ClaimContradictionA", fields: [claimAId], references: [id], onDelete: Cascade)
-  claimB Claim @relation("ClaimContradictionB", fields: [claimBId], references: [id], onDelete: Cascade)
-
-  @@index([claimAId])
-  @@index([claimBId])
-  @@index([resolutionStatus])
-  @@map("contradictions")
-}
-
-// ---------------------------------------------------------------------------
-// Narratives
-// ---------------------------------------------------------------------------
-
-model Narrative {
-  id              String          @id @default(cuid())
-  title           String
-  description     String?         @db.Text
-  region          Region
-  startDate       DateTime?
-  latestEventDate DateTime?
-  status          NarrativeStatus @default(ACTIVE)
-  embedding       Unsupported("vector")?
-  metadata        Json?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  eventNarratives  EventNarrative[]
-  researchProjects ResearchProject[]
-
-  @@index([region])
-  @@index([status])
-  @@index([latestEventDate])
-  @@map("narratives")
-}
-
-model EventNarrative {
-  eventId      String
-  narrativeId  String
-  relationship NarrativeRelationship
-  metadata     Json?
-  createdAt    DateTime              @default(now())
-
-  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  narrative Narrative @relation(fields: [narrativeId], references: [id], onDelete: Cascade)
-
-  @@id([eventId, narrativeId, relationship])
-  @@index([narrativeId])
-  @@map("event_narratives")
-}
-
-// ---------------------------------------------------------------------------
-// Verification & evaluation
-// ---------------------------------------------------------------------------
-
-model EventVerification {
-  id                       String             @id @default(cuid())
-  eventId                  String
-  evidenceConfidence       Decimal?           @db.Decimal(5, 4)
-  primarySourceAvailable   Boolean            @default(false)
-  independentSourceCount   Int                @default(0)
-  supportingSourceCount    Int                @default(0)
-  contradictingSourceCount Int                @default(0)
-  consensusLevel           ConsensusLevel?
-  verificationStatus       VerificationStatus @default(UNVERIFIED)
-  reasoning                String?            @db.Text
-  model                    String?
-  promptVersion            String?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([eventId])
-  @@index([verificationStatus])
-  @@map("event_verifications")
-}
-
-model EventEvaluation {
-  id                     String          @id @default(cuid())
-  eventId                String
-  financialSignificance  Decimal?        @db.Decimal(5, 4)
-  marketRelevance        Decimal?        @db.Decimal(5, 4)
-  economicImpact         Decimal?        @db.Decimal(5, 4)
-  breadth                Decimal?        @db.Decimal(5, 4)
-  magnitude              Decimal?        @db.Decimal(5, 4)
-  investorRelevance      Decimal?        @db.Decimal(5, 4)
-  novelty                Decimal?        @db.Decimal(5, 4)
-  narrativeSignificance  Decimal?        @db.Decimal(5, 4)
-  contentPotential       Decimal?        @db.Decimal(5, 4)
-  humanInterest          Decimal?        @db.Decimal(5, 4)
-  explainability         Decimal?        @db.Decimal(5, 4)
-  evidenceConfidence     Decimal?        @db.Decimal(5, 4)
-  consensusLevel         ConsensusLevel?
-  contradictionSeverity  ContradictionSeverity?
-  previousState          Json?
-  newInformation         Boolean?
-  whatChanged            String?         @db.Text
-  whyItMatters           String?         @db.Text
-  reasoning              String?         @db.Text
-  model                  String?
-  promptVersion          String?
-  createdAt              DateTime        @default(now())
-  updatedAt              DateTime        @updatedAt
-
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([eventId])
-  @@index([createdAt])
-  @@map("event_evaluations")
-}
-
-// ---------------------------------------------------------------------------
-// Ranking
-// ---------------------------------------------------------------------------
-
-model RankingRun {
-  id             String          @id @default(cuid())
-  discoveryRunId String
-  region         Region
-  period         DiscoveryPeriod
-  rankingVersion String
-  status         RankingStatus   @default(PENDING)
-  methodology    String?         @db.Text
-  startedAt      DateTime?
-  completedAt    DateTime?
-  metadata       Json?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-
-  discoveryRun         DiscoveryRun          @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
-  eventRankings        EventRanking[]
-  topStorySelections   TopStorySelection[]
-  coverageGapRuns      CoverageGapRun[]
-  rankingEvaluations   RankingEvaluation[]
-  rankingDisagreements RankingDisagreement[]
-
-  @@index([discoveryRunId])
-  @@index([region])
-  @@index([status])
-  @@map("ranking_runs")
-}
-
-model EventRanking {
-  id              String   @id @default(cuid())
-  rankingRunId    String
-  eventId         String
-  rank            Int
-  finalScore      Decimal? @db.Decimal(8, 4)
-  importanceScore Decimal? @db.Decimal(8, 4)
-  noveltyScore    Decimal? @db.Decimal(8, 4)
-  evidenceScore   Decimal? @db.Decimal(8, 4)
-  narrativeScore  Decimal? @db.Decimal(8, 4)
-  contentScore    Decimal? @db.Decimal(8, 4)
-  reasoning       String?  @db.Text
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  rankingRun RankingRun @relation(fields: [rankingRunId], references: [id], onDelete: Cascade)
-  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@unique([rankingRunId, eventId])
-  @@index([rankingRunId, rank])
-  @@index([eventId])
-  @@map("event_rankings")
-}
-
-model RankingEvaluation {
-  id             String        @id @default(cuid())
-  rankingRunId   String
-  eventId        String
-  evaluatorType  EvaluatorType
-  finalScore     Decimal?      @db.Decimal(8, 4)
-  importanceScore Decimal?     @db.Decimal(8, 4)
-  noveltyScore   Decimal?      @db.Decimal(8, 4)
-  evidenceScore  Decimal?      @db.Decimal(8, 4)
-  narrativeScore Decimal?      @db.Decimal(8, 4)
-  contentScore   Decimal?      @db.Decimal(8, 4)
-  reasoning      String?       @db.Text
-  model          String?
-  promptVersion  String?
-  createdAt      DateTime      @default(now())
-
-  rankingRun RankingRun @relation(fields: [rankingRunId], references: [id], onDelete: Cascade)
-  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([rankingRunId])
-  @@index([eventId])
-  @@index([evaluatorType])
-  @@map("ranking_evaluations")
-}
-
-model RankingDisagreement {
-  id              String        @id @default(cuid())
-  rankingRunId    String
-  eventId         String
-  evaluatorTypeA  EvaluatorType
-  evaluatorTypeB  EvaluatorType
-  dimension       String
-  severity        ContradictionSeverity @default(MEDIUM)
-  explanation     String?       @db.Text
-  metadata        Json?
-  createdAt       DateTime      @default(now())
-
-  rankingRun RankingRun @relation(fields: [rankingRunId], references: [id], onDelete: Cascade)
-  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([rankingRunId])
-  @@index([eventId])
-  @@map("ranking_disagreements")
-}
-
-// ---------------------------------------------------------------------------
-// Coverage gap
-// ---------------------------------------------------------------------------
-
-model CoverageGapRun {
-  id             String            @id @default(cuid())
-  discoveryRunId String?
-  rankingRunId   String
-  region         Region
-  status         CoverageGapStatus @default(PENDING)
-  startedAt      DateTime?
-  completedAt    DateTime?
-  metadata       Json?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-
-  discoveryRun DiscoveryRun?          @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
-  rankingRun   RankingRun             @relation(fields: [rankingRunId], references: [id], onDelete: Cascade)
-  candidates   CoverageGapCandidate[]
-
-  @@index([rankingRunId])
-  @@index([discoveryRunId])
-  @@index([region])
-  @@index([status])
-  @@map("coverage_gap_runs")
-}
-
-model CoverageGapCandidate {
-  id                String   @id @default(cuid())
-  coverageGapRunId  String
-  rawSearchResultId String?
-  documentId        String?
-  eventId           String?
-  status            String   @default("PENDING")
-  metadata          Json?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  coverageGapRun  CoverageGapRun   @relation(fields: [coverageGapRunId], references: [id], onDelete: Cascade)
-  rawSearchResult RawSearchResult? @relation(fields: [rawSearchResultId], references: [id], onDelete: SetNull)
-  document        Document?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  event           Event?           @relation(fields: [eventId], references: [id], onDelete: SetNull)
-
-  @@index([coverageGapRunId])
-  @@index([rawSearchResultId])
-  @@index([documentId])
-  @@index([eventId])
-  @@map("coverage_gap_candidates")
-}
-
-// ---------------------------------------------------------------------------
-// Top stories & outcomes
-// ---------------------------------------------------------------------------
-
-model TopStorySelection {
-  id           String   @id @default(cuid())
-  rankingRunId String
-  eventId      String
-  region       Region
-  rank         Int
-  selectedAt   DateTime @default(now())
-  metadata     Json?
-
-  rankingRun RankingRun @relation(fields: [rankingRunId], references: [id], onDelete: Cascade)
-  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@unique([rankingRunId, eventId])
-  @@unique([rankingRunId, region, rank])
-  @@index([eventId])
-  @@map("top_story_selections")
-}
-
-model EventOutcome {
-  id                      String    @id @default(cuid())
-  eventId                 String
-  observationDate         DateTime  @db.Date
-  marketMovement          String?
-  narrativeContinued      Boolean?
-  subsequentSignificance  Decimal?  @db.Decimal(5, 4)
-  outcomeClassification   String?
-  notes                   String?   @db.Text
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@index([eventId])
-  @@index([observationDate])
-  @@map("event_outcomes")
-}
-
-// ---------------------------------------------------------------------------
-// Phase 2 deep research (schema only)
-// ---------------------------------------------------------------------------
-
-model ResearchProject {
-  id          String   @id @default(cuid())
-  userId      String
-  eventId     String
-  narrativeId String?
+model ChatSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id")
+  newsStoryId String?   @map("news_story_id") @db.Uuid
   title       String?
-  status      String   @default("DRAFT")
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  topic       String?
+  status      String
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  narrative Narrative? @relation(fields: [narrativeId], references: [id], onDelete: SetNull)
-  sources   ResearchSource[]
-  claims    ResearchClaim[]
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newsStory        NewsStory?        @relation(fields: [newsStoryId], references: [id], onDelete: SetNull)
+  messages         ChatMessage[]
+  researchSources  ResearchSource[]
+  scripts          Script[]
 
   @@index([userId])
-  @@index([eventId])
-  @@index([narrativeId])
-  @@map("research_projects")
+  @@index([newsStoryId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id            String   @id @default(uuid()) @db.Uuid
+  chatSessionId String   @map("chat_session_id") @db.Uuid
+  role          String
+  content       String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@index([chatSessionId])
+  @@map("chat_messages")
 }
 
 model ResearchSource {
-  researchProjectId String
-  documentId        String
-  notes             String?  @db.Text
-  metadata          Json?
-  createdAt         DateTime @default(now())
+  id            String   @id @default(uuid()) @db.Uuid
+  chatSessionId String   @map("chat_session_id") @db.Uuid
+  url           String   @db.Text
+  domain        String
+  title         String
+  content       String   @db.Text
+  sourceType    String   @map("source_type")
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  project  ResearchProject @relation(fields: [researchProjectId], references: [id], onDelete: Cascade)
-  document Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
 
-  @@id([researchProjectId, documentId])
-  @@index([documentId])
-  @@map("research_project_sources")
+  @@index([chatSessionId])
+  @@map("research_sources")
 }
 
-model ResearchClaim {
-  researchProjectId String
-  claimId           String
-  metadata          Json?
-  createdAt         DateTime @default(now())
+model Script {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id")
+  chatSessionId   String   @map("chat_session_id") @db.Uuid
+  title           String
+  content         String   @db.Text
+  durationSeconds Int?     @map("duration_seconds")
+  style           String?
+  status          String
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  project ResearchProject @relation(fields: [researchProjectId], references: [id], onDelete: Cascade)
-  claim   Claim           @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
 
-  @@id([researchProjectId, claimId])
-  @@index([claimId])
-  @@map("research_project_claims")
+  @@index([userId])
+  @@index([chatSessionId])
+  @@map("scripts")
 }

@@ -1,39 +1,18 @@
-import { SignInButton, SignUpButton } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-
-export default async function Home() {
-  const { userId } = await auth();
-
+export default function HomePage() {
   return (
-    <main className="landing-section flex flex-1 flex-col gap-6 py-16 md:py-24">
-      <h1 className="text-display text-3xl text-foreground md:text-4xl">
-        {userId ? "Welcome back" : "Sign in to continue"}
+    <main className="landing-section flex flex-1 flex-col items-center justify-center py-24 text-center">
+      <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
+        Stock Market Search Engine
       </h1>
-      <p className="max-w-xl text-base text-muted-foreground md:text-lg">
-        {userId
-          ? "The application shell is ready. New research and content workflows will be added here."
-          : "Authentication is enabled. Sign in or create an account to access protected routes."}
+      <p className="mt-4 max-w-md text-muted-foreground">
+        Request daily market news by region or world scope.
       </p>
-      {userId ? (
-        <Button render={<Link href="/dashboard" />} variant="brand">
-          Open dashboard
-        </Button>
-      ) : (
-        <div className="flex flex-wrap items-center gap-3">
-          <SignInButton mode="modal">
-            <Button type="button" variant="outline">
-              Sign in
-            </Button>
-          </SignInButton>
-          <SignUpButton mode="modal">
-            <Button type="button" variant="brand">
-              Sign up
-            </Button>
-          </SignUpButton>
-        </div>
-      )}
+      <a
+        href="/news"
+        className="mt-8 inline-flex rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+      >
+        Open news research
+      </a>
     </main>
   );
 }

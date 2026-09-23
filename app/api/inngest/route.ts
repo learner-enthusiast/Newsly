@@ -1,4 +1,4 @@
 import { inngestClient } from "@/clients/inngestClient";
-import "@/inngest/functions/news/pipeline";
+import { inngestFunctions } from "@/inngest";
 
-export const { GET, POST, PUT } = inngestClient.serve();
+export const { GET, POST, PUT } = inngestClient.serve(inngestFunctions);

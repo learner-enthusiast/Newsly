@@ -25,43 +25,12 @@ export function createInngestClient(options: InngestClientOptions = {}) {
     isDev: parsed.isDev,
   });
 
-  const registered: InngestFunction.Like[] = [];
-
-  const register = <T extends InngestFunction.Like>(
-    ...fns: Array<T | readonly T[]>
-  ): T[] => {
-    const flattened = fns.flat() as T[];
-
-    for (const fn of flattened) {
-      if (!registered.includes(fn)) {
-        registered.push(fn);
-      }
-    }
-
-    return flattened;
-  };
-
-  const getFunctions = (functions?: readonly InngestFunction.Like[]) => {
-    if (functions) {
-      return [...functions];
-    }
-
-    return [...client.funcs, ...registered];
-  };
-
   return {
     client,
     createFunction: client.createFunction.bind(client),
-    register,
     send: client.send.bind(client),
-    get functions() {
-      return getFunctions();
-    },
-    serve(functions?: readonly InngestFunction.Like[]) {
-      return serveInngest({
-        client,
-        functions: getFunctions(functions),
-      });
+    serve(functions: InngestFunction.Like[] = []) {
+      return serveInngest({ client, functions });
     },
   };
 }

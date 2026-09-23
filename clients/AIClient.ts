@@ -77,6 +77,189 @@ function resolveOpenAiModel(options: AIClientOptions, override?: string) {
   );
 }
 
+/** Reasoning models reject temperature / top_p / penalties (OpenAI + AI SDK gateway). */
+function modelOmitsSamplingParams(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  const id = normalized.includes("/")
+    ? (normalized.split("/").pop() ?? normalized)
+    : normalized;
+
+  if (/^o[0-9](-|$)/.test(id)) {
+    return true;
+  }
+  if (id.includes("gpt-5")) {
+    return true;
+  }
+  return false;
+}
+
+function languageModelId(model: LanguageModel): string | undefined {
+  if (typeof model === "string") {
+    return model;
+  }
+  if (model && typeof model === "object") {
+    const record = model as { modelId?: string };
+    if (typeof record.modelId === "string" && record.modelId.length > 0) {
+      return record.modelId;
+    }
+  }
+  return undefined;
+}
+
+function withoutSamplingParams(
+  parsed: z.output<typeof generateParamsSchema>,
+): z.output<typeof generateParamsSchema> {
+  return {
+    ...parsed,
+    temperature: undefined,
+    topP: undefined,
+    topK: undefined,
+    seed: undefined,
+    presencePenalty: undefined,
+    frequencyPenalty: undefined,
+  };
+}
+
+type OpenAiParsedResponse = {
+  status?: string;
+  incomplete_details?: { reason?: string } | null;
+  output_parsed?: unknown;
+  output_text?: string;
+  output?: Array<{
+    type?: string;
+    content?: Array<{ type?: string; text?: string; parsed?: unknown }>;
+  }>;
+};
+
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+/** Reasoning models spend tokens on internal reasoning; need a higher output budget. */
+const REASONING_MIN_MAX_OUTPUT_TOKENS = 16_384;
+const REASONING_RETRY_MAX_OUTPUT_TOKENS = 32_768;
+const DEFAULT_STRUCTURED_RETRY_MODEL = "gpt-5";
+
+export class OpenAiStructuredOutputError extends Error {
+  readonly response?: OpenAiParsedResponse;
+
+  constructor(message: string, response?: OpenAiParsedResponse) {
+    super(message);
+    this.name = "OpenAiStructuredOutputError";
+    this.response = response;
+  }
+}
+
+function resolveStructuredRetryModel(primaryModel: string): string {
+  const configured = process.env.OPENAI_STRUCTURED_RETRY_MODEL?.trim();
+  if (configured) {
+    return configured;
+  }
+  if (primaryModel.trim().toLowerCase().includes("gpt-5")) {
+    return primaryModel;
+  }
+  return DEFAULT_STRUCTURED_RETRY_MODEL;
+}
+
+function shouldRetryOpenAiStructuredOutput(error: unknown): boolean {
+  if (error instanceof OpenAiStructuredOutputError) {
+    return true;
+  }
+  const msg = publicErrorMessage(error);
+  return msg.includes("OpenAI response did not include parsed structured output");
+}
+
+function resolveMaxOutputTokens(
+  model: string,
+  requested?: number,
+  options?: { retry?: boolean },
+): number {
+  const base = requested ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  if (!modelOmitsSamplingParams(model)) {
+    return options?.retry ? Math.max(base, 8192) : base;
+  }
+  const floor = options?.retry
+    ? REASONING_RETRY_MAX_OUTPUT_TOKENS
+    : REASONING_MIN_MAX_OUTPUT_TOKENS;
+  return Math.max(base, floor);
+}
+
+function collectOpenAiOutputText(response: OpenAiParsedResponse): string | undefined {
+  if (typeof response.output_text === "string" && response.output_text.trim()) {
+    return response.output_text;
+  }
+
+  const chunks: string[] = [];
+  for (const item of response.output ?? []) {
+    if (item.type !== "message") {
+      continue;
+    }
+    for (const content of item.content ?? []) {
+      if (content.type === "output_text" && typeof content.text === "string") {
+        chunks.push(content.text);
+      }
+    }
+  }
+
+  const joined = chunks.join("").trim();
+  return joined.length > 0 ? joined : undefined;
+}
+
+function extractOpenAiStructuredOutput<SCHEMA extends z.ZodType>(
+  response: OpenAiParsedResponse,
+  schema: SCHEMA,
+): z.output<SCHEMA> | null {
+  if (response.output_parsed != null) {
+    const fromParsed = schema.safeParse(response.output_parsed);
+    if (fromParsed.success) {
+      return fromParsed.data;
+    }
+  }
+
+  for (const item of response.output ?? []) {
+    if (item.type !== "message") {
+      continue;
+    }
+    for (const content of item.content ?? []) {
+      if (content.type === "output_text" && content.parsed != null) {
+        const fromContent = schema.safeParse(content.parsed);
+        if (fromContent.success) {
+          return fromContent.data;
+        }
+      }
+    }
+  }
+
+  const text = collectOpenAiOutputText(response);
+  if (!text) {
+    return null;
+  }
+
+  try {
+    const json = JSON.parse(text) as unknown;
+    const fromText = schema.safeParse(json);
+    if (fromText.success) {
+      return fromText.data;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function openAiStructuredOutputError(response: OpenAiParsedResponse): string {
+  const parts = ["OpenAI response did not include parsed structured output"];
+  if (response.status) {
+    parts.push(`status=${response.status}`);
+  }
+  if (response.incomplete_details?.reason) {
+    parts.push(`incomplete=${response.incomplete_details.reason}`);
+  }
+  const preview = collectOpenAiOutputText(response);
+  if (preview) {
+    parts.push(`output_text_chars=${preview.length}`);
+  }
+  return parts.join("; ");
+}
+
 function resolveVercelModel(
   options: AIClientOptions,
   override?: string,
@@ -118,8 +301,15 @@ export function createAIClient(options: AIClientOptions = {}) {
     outputSchema: SCHEMA;
     schemaName: string;
     abortSignal?: AbortSignal;
+    retryAttempt?: boolean;
   }): Promise<z.output<SCHEMA>> {
-    const response = await params.client.responses.parse(
+    const omitSampling = modelOmitsSamplingParams(params.model);
+    const maxOutputTokens = resolveMaxOutputTokens(
+      params.model,
+      params.parsed.maxOutputTokens,
+      { retry: params.retryAttempt },
+    );
+    const response = (await params.client.responses.parse(
       {
         model: params.model,
         instructions: params.parsed.system,
@@ -129,21 +319,39 @@ export function createAIClient(options: AIClientOptions = {}) {
             description: params.parsed.schemaDescription,
           }),
         },
-        max_output_tokens: params.parsed.maxOutputTokens,
-        temperature: params.parsed.temperature,
-        top_p: params.parsed.topP,
-        ...(params.parsed.seed != null ? { seed: params.parsed.seed } : {}),
+        max_output_tokens: maxOutputTokens,
+        ...(omitSampling
+          ? {
+              reasoning: {
+                effort: params.retryAttempt ? ("minimal" as const) : ("low" as const),
+              },
+            }
+          : {}),
+        ...(!omitSampling && params.parsed.temperature != null
+          ? { temperature: params.parsed.temperature }
+          : {}),
+        ...(!omitSampling && params.parsed.topP != null
+          ? { top_p: params.parsed.topP }
+          : {}),
+        ...(!omitSampling && params.parsed.seed != null
+          ? { seed: params.parsed.seed }
+          : {}),
       },
       { signal: params.abortSignal },
-    );
+    )) as OpenAiParsedResponse;
 
-    if (response.output_parsed == null) {
-      throw new Error(
-        "OpenAI response did not include parsed structured output",
-      );
+    const structured = extractOpenAiStructuredOutput(
+      response,
+      params.outputSchema,
+    );
+    if (structured != null) {
+      return structured;
     }
 
-    return params.outputSchema.parse(response.output_parsed);
+    throw new OpenAiStructuredOutputError(
+      openAiStructuredOutputError(response),
+      response,
+    );
   }
 
   async function generateWithVercelAI<SCHEMA extends z.ZodType>(params: {
@@ -153,24 +361,38 @@ export function createAIClient(options: AIClientOptions = {}) {
     options: AIClientOptions;
     abortSignal?: AbortSignal;
   }): Promise<z.output<SCHEMA>> {
+    const modelId =
+      languageModelId(params.model) ?? params.parsed.model ?? "";
+    const omitSampling = modelId ? modelOmitsSamplingParams(modelId) : false;
+    const parsed = omitSampling ? withoutSamplingParams(params.parsed) : params.parsed;
+
+    const maxOutputTokens = resolveMaxOutputTokens(
+      modelId || "unknown",
+      parsed.maxOutputTokens,
+    );
+
     const { output } = await generateText({
       model: params.model,
-      prompt: buildPrompt(params.parsed.prompt, params.parsed.extraContext),
-      system: params.parsed.system,
+      prompt: buildPrompt(parsed.prompt, parsed.extraContext),
+      system: parsed.system,
       output: Output.object({
         schema: params.outputSchema,
-        name: params.parsed.schemaName,
-        description: params.parsed.schemaDescription,
+        name: parsed.schemaName,
+        description: parsed.schemaDescription,
       }),
-      maxOutputTokens: params.parsed.maxOutputTokens,
-      temperature: params.parsed.temperature,
-      topP: params.parsed.topP,
-      topK: params.parsed.topK,
-      presencePenalty: params.parsed.presencePenalty,
-      frequencyPenalty: params.parsed.frequencyPenalty,
-      seed: params.parsed.seed,
-      maxRetries: params.parsed.maxRetries ?? params.options.maxRetries,
-      timeout: params.parsed.timeout ?? params.options.timeout,
+      maxOutputTokens,
+      ...(parsed.temperature != null ? { temperature: parsed.temperature } : {}),
+      ...(parsed.topP != null ? { topP: parsed.topP } : {}),
+      ...(parsed.topK != null ? { topK: parsed.topK } : {}),
+      ...(parsed.presencePenalty != null
+        ? { presencePenalty: parsed.presencePenalty }
+        : {}),
+      ...(parsed.frequencyPenalty != null
+        ? { frequencyPenalty: parsed.frequencyPenalty }
+        : {}),
+      ...(parsed.seed != null ? { seed: parsed.seed } : {}),
+      maxRetries: parsed.maxRetries ?? params.options.maxRetries,
+      timeout: parsed.timeout ?? params.options.timeout,
       abortSignal: params.abortSignal,
     });
 
@@ -182,33 +404,75 @@ export function createAIClient(options: AIClientOptions = {}) {
       params: AIGenerateParams<SCHEMA>,
     ): Promise<z.output<SCHEMA>> {
       const { output: outputSchema, abortSignal, ...rawParams } = params;
-      const parsed = generateParamsSchema.parse(rawParams);
+      let parsed = generateParamsSchema.parse(rawParams);
       const schemaName = parsed.schemaName ?? "StructuredOutput";
+      const openAiModel = resolveOpenAiModel(options, parsed.model);
+      const vercelModel = resolveVercelModel(options, parsed.model);
+      const vercelModelId = languageModelId(vercelModel) ?? parsed.model ?? "";
+      if (
+        modelOmitsSamplingParams(openAiModel) ||
+        (vercelModelId && modelOmitsSamplingParams(vercelModelId))
+      ) {
+        parsed = withoutSamplingParams(parsed);
+      }
       const openai = getOpenAI();
 
       if (openai) {
         try {
           return await generateWithOpenAI({
             client: openai,
-            model: resolveOpenAiModel(options, parsed.model),
+            model: openAiModel,
             parsed,
             outputSchema,
             schemaName,
             abortSignal,
           });
         } catch (error) {
-          console.warn(
-            JSON.stringify({
-              scope: "aiClient",
-              primary: "openai",
-              fallback: "vercel-ai",
-              error: publicErrorMessage(error),
-            }),
-          );
+          if (shouldRetryOpenAiStructuredOutput(error)) {
+            const retryModel = resolveStructuredRetryModel(openAiModel);
+            try {
+              console.warn(
+                JSON.stringify({
+                  scope: "aiClient",
+                  action: "openai-structured-retry",
+                  primaryModel: openAiModel,
+                  retryModel,
+                  reason: publicErrorMessage(error),
+                }),
+              );
+              return await generateWithOpenAI({
+                client: openai,
+                model: retryModel,
+                parsed,
+                outputSchema,
+                schemaName,
+                abortSignal,
+                retryAttempt: true,
+              });
+            } catch (retryError) {
+              console.warn(
+                JSON.stringify({
+                  scope: "aiClient",
+                  primary: "openai",
+                  retryModel,
+                  fallback: "vercel-ai",
+                  error: publicErrorMessage(retryError),
+                }),
+              );
+            }
+          } else {
+            console.warn(
+              JSON.stringify({
+                scope: "aiClient",
+                primary: "openai",
+                fallback: "vercel-ai",
+                error: publicErrorMessage(error),
+              }),
+            );
+          }
         }
       }
 
-      const vercelModel = resolveVercelModel(options, parsed.model);
       return generateWithVercelAI({
         model: vercelModel,
         parsed,

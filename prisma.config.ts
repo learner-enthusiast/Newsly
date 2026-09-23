@@ -7,7 +7,6 @@ export default defineConfig({
   schema: "db/schema",
   migrations: {
     path: "db/schema/migrations",
-    seed: "node --import ./tests/register.mjs --experimental-strip-types db/seed/index.ts",
   },
   datasource: {
     url: databaseUrl ?? env("DATABASE_URL"),

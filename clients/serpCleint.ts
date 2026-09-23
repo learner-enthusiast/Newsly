@@ -66,15 +66,17 @@ export function createSerpClient(options: SerpClientOptions = {}) {
 
   return {
     async search<T = unknown>(
-      params: SerpSearchParams,
+      params: SerpSearchParams & Record<string, unknown>,
       responseSchema?: z.ZodType<T>,
     ): Promise<T> {
       const { apiKey, timeout } = resolveCredentials();
-      const parsed = serpSearchParamsSchema.parse(params);
+      serpSearchParamsSchema.parse(params);
+      const requestTimeout =
+        typeof params.timeout === "number" ? params.timeout : timeout;
       const json = await getJson({
-        ...parsed,
+        ...params,
         api_key: apiKey,
-        timeout: parsed.timeout ?? timeout,
+        timeout: requestTimeout,
       });
 
       return responseSchema ? responseSchema.parse(json) : (json as T);

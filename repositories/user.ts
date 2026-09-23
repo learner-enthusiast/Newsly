@@ -1,8 +1,13 @@
 import type { User as ClerkUser } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { prisma } from "@/db";
+import {
+  findNewsRequestByUserScopeDate,
+  type FindNewsRequestInput,
+} from "@/repositories/newsRequest";
 
 const clerkIdSchema = z.string().min(1, "clerkId is required");
+const userIdSchema = z.string().min(1, "userId is required");
 
 const userWriteSchema = z.object({
   clerkId: clerkIdSchema,
@@ -85,6 +90,17 @@ export async function getUserByClerkId(clerkId: string) {
   return prisma.user.findUnique({
     where: { clerkId: clerkIdSchema.parse(clerkId) },
   });
+}
+
+export async function getNewsRequestsByUserId(userId: string) {
+  return prisma.newsRequest.findMany({
+    where: { userId: userIdSchema.parse(userId) },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function findUserNewsRequest(input: FindNewsRequestInput) {
+  return findNewsRequestByUserScopeDate(input);
 }
 
 export async function upsertUserFromClerk(user: ClerkUser) {

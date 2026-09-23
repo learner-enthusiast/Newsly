@@ -14,7 +14,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="landing-section flex items-center justify-between gap-3 py-4">
         <Link href="/" className="font-brand shrink-0 text-xl text-foreground">
-          my-app
+          Stock Search
         </Link>
         <div className="flex items-center gap-3">
           <Show when="signed-out">
@@ -31,12 +31,6 @@ export function SiteHeader() {
             </SignUpButton>
           </Show>
           <Show when="signed-in">
-            <Link
-              href="/dashboard"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Dashboard
-            </Link>
             <UserButton />
           </Show>
         </div>
