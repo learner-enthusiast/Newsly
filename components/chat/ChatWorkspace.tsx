@@ -1,7 +1,7 @@
 "use client";
 
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Loader2, Menu, MessageSquarePlus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -57,7 +56,7 @@ function SessionList({
   if (sessions.length === 0) {
     return (
       <p className="px-3 py-2 text-sm text-muted-foreground">
-        No chats yet. Start a deep dive from a news story.
+        No chats yet. Use New chat to start one.
       </p>
     );
   }
@@ -135,6 +134,7 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [creatingChat, setCreatingChat] = useState(false);
 
   const loadSessions = useCallback(async () => {
     const response = await fetch("/api/newsStoryChat");
@@ -203,7 +203,9 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
 
   const composerPlaceholder =
     state?.status === "ready"
-      ? "Ask a follow-up about this research…"
+      ? visibleMessages.length === 0
+        ? "Ask a research question…"
+        : "Ask a follow-up about this research…"
       : "Waiting for the assistant reply…";
 
   const canSend =
@@ -247,19 +249,55 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
     router.push(`/chat/${id}`);
   }
 
+  async function handleNewChat() {
+    if (creatingChat) {
+      return;
+    }
+
+    setCreatingChat(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/chat", { method: "POST" });
+      const payload = (await response.json()) as {
+        chatSessionId?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.chatSessionId) {
+        throw new Error(payload.error ?? "Failed to start a new chat");
+      }
+
+      await loadSessions();
+      navigateToSession(payload.chatSessionId);
+    } catch (newChatError) {
+      setError(
+        newChatError instanceof Error
+          ? newChatError.message
+          : "Failed to start a new chat",
+      );
+    } finally {
+      setCreatingChat(false);
+    }
+  }
+
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 p-3">
-        <Link
-          href="/news"
-          className={cn(
-            buttonVariants({ variant: "outline", size: "sm" }),
-            "w-full justify-start",
-          )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full justify-start"
+          disabled={creatingChat}
+          onClick={() => void handleNewChat()}
         >
-          <MessageSquarePlus className="mr-2 size-4" aria-hidden />
+          {creatingChat ? (
+            <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+          ) : (
+            <MessageSquarePlus className="mr-2 size-4" aria-hidden />
+          )}
           New chat
-        </Link>
+        </Button>
       </div>
       <Separator />
       <div className="min-h-0 flex-1 overflow-y-auto">

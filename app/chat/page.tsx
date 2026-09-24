@@ -1,5 +1,6 @@
 import { getAuthenticatedUser } from "@/lib/auth";
 import { listUserChatSessionsForUi } from "@/services/chat/newsStoryChatService";
+import { StartNewChatButton } from "@/components/chat/StartNewChatButton";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,14 +23,17 @@ export default async function ChatIndexPage() {
         No chats yet
       </h1>
       <p className="mt-3 max-w-md text-muted-foreground">
-        Start a deep dive from a news story to open your first research chat.
+        Start a new research chat here, or open a deep dive from a news story.
       </p>
-      <Link
-        href="/news"
-        className={cn(buttonVariants({ variant: "default" }), "mt-8")}
-      >
-        Browse news
-      </Link>
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <StartNewChatButton />
+        <Link
+          href="/news"
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Browse news
+        </Link>
+      </div>
     </main>
   );
 }

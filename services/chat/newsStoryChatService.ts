@@ -48,7 +48,7 @@ function deriveChatSessionStatus(
   messages: { role: string; content: string }[],
 ): ChatSessionStatus {
   if (messages.length === 0) {
-    return "initializing";
+    return "ready";
   }
 
   let lastUserIndex = -1;
