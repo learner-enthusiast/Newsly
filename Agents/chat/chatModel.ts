@@ -1,3 +1,17 @@
+/**
+ * Chat model agent
+ *
+ * What it does: Produces the final user-facing assistant reply for the research
+ * chat — Markdown that answers the current prompt using optional Serp/scrape
+ * context and recent session history.
+ *
+ * Input: prompt (current user message); chatHistory (up to 10 messages); optional
+ * serpData (research prompt, hits, scraped sources, etc.); model, system,
+ * abortSignal.
+ *
+ * Output: One Markdown string for the assistant bubble (no JSON wrapper).
+ */
+
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";

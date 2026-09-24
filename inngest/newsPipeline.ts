@@ -1,3 +1,28 @@
+/**
+ * Daily news request pipeline
+ *
+ * Event: news/pipeline.requested
+ * Input: { userId, newsRequestId, date, scope, location? }
+ *
+ * Purpose: Fulfill a user’s “news for date/region” request — plan Serp queries,
+ * fetch and normalize articles, select and scrape the best links, cluster them
+ * into NewsStory rows with NewsSource children, and mark the request success or
+ * failed.
+ *
+ * Steps:
+ * 1. load-news-request — Verify the request exists for the user.
+ * 2. plan-search-queries — Build Google News + web news tab query strings.
+ * 3. save-search-queries — Store planned queries on the NewsRequest row.
+ * 4. fetch-and-normalize-serp — Call Serp, normalize hits, filter by request date.
+ * 5. select-articles — LLM picks relevant article URLs to scrape.
+ * 6. scrape-selected-articles — Firecrawl each selected URL.
+ * 7. synthesize-stories — LLM groups scraped articles into story summaries.
+ * 8. persist-stories-and-sources — Write NewsStory + NewsSource records.
+ * 9. mark-request-success — Set request status success and completedAt.
+ * 10. load-stories — Return persisted stories (function output).
+ * 11. mark-request-failed — On error, set request status failed with message.
+ */
+
 import { runNewsSynthesizerAgent } from "@/Agents/news/NewsSythesizeragent";
 import { runResearchArticleSelectorAgent } from "@/Agents/news/ResearchArticleSelectorAgent";
 import { buildNewsSearchQuery } from "@/Agents/news/searchPlanner";

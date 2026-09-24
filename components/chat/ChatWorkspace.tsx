@@ -41,9 +41,6 @@ type ChatState = {
 
 const POLL_MS = 2000;
 
-/** Follow-up messaging is implemented in a later pipeline; keep composer off. */
-const CHAT_FOLLOW_UP_ENABLED = false;
-
 function isAssistantRole(role: string) {
   return role === "agent" || role === "assistant";
 }
@@ -136,6 +133,8 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [state, setState] = useState<ChatState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
 
   const loadSessions = useCallback(async () => {
     const response = await fetch("/api/newsStoryChat");
@@ -171,12 +170,9 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
           return;
         }
         setError(null);
-        const hasAssistant = payload.messages.some((message) =>
-          isAssistantRole(message.role),
-        );
-        if (payload.status === "initializing" || (!hasAssistant && payload.status !== "failed")) {
+        if (payload.status === "initializing") {
           timer = setTimeout(poll, POLL_MS);
-        } else if (hasAssistant) {
+        } else if (payload.status === "ready") {
           void loadSessions();
         }
       } catch (pollError) {
@@ -196,23 +192,55 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
         clearTimeout(timer);
       }
     };
-  }, [loadState, loadSessions]);
+  }, [loadState, loadSessions, state?.status]);
 
   const title = state?.chatSession.title ?? "Chat";
 
   const visibleMessages = useMemo(() => state?.messages ?? [], [state?.messages]);
 
-  const awaitingFirstAssistant = !visibleMessages.some((message) =>
-    isAssistantRole(message.role),
-  );
-
   const showResearching =
-    awaitingFirstAssistant && state != null && state.status !== "failed";
+    state != null && state.status === "initializing";
 
   const composerPlaceholder =
     state?.status === "ready"
-      ? "Follow-up chat will be available after the next update."
-      : "Preparing your first research reply…";
+      ? "Ask a follow-up about this research…"
+      : "Waiting for the assistant reply…";
+
+  const canSend =
+    state?.status === "ready" &&
+    !sending &&
+    draft.trim().length > 0;
+
+  async function handleSend() {
+    const content = draft.trim();
+    if (!content || !canSend) {
+      return;
+    }
+
+    setSending(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/chat/${chatSessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to send message");
+      }
+
+      setDraft("");
+      await loadState();
+    } catch (sendError) {
+      setError(
+        sendError instanceof Error ? sendError.message : "Failed to send message",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
 
   function navigateToSession(id: string) {
     setMobileNavOpen(false);
@@ -291,7 +319,7 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-base font-semibold">{title}</h1>
             {showResearching ? (
-              <p className="text-xs text-muted-foreground">Preparing research…</p>
+              <p className="text-xs text-muted-foreground">Research in progress…</p>
             ) : null}
           </div>
         </header>
@@ -316,32 +344,43 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
               {showResearching ? <ResearchingState /> : null}
               {state.status === "failed" ? (
                 <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-                  The initial research step failed. Try starting a new deep dive from the
-                  news story.
+                  The last research step failed. You can send another message to try again.
                 </Card>
               ) : null}
             </div>
           ) : null}
         </main>
 
-        {state && (state.status === "ready" || state.status === "failed") ? (
+        {state ? (
           <footer className="border-t p-3">
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
               <Textarea
                 placeholder={composerPlaceholder}
-                disabled={!CHAT_FOLLOW_UP_ENABLED}
-                readOnly
-                aria-disabled
-                className="min-h-[52px] resize-none opacity-80"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                disabled={state.status === "initializing" || sending}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void handleSend();
+                  }
+                }}
+                className="min-h-[52px] resize-none"
               />
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {CHAT_FOLLOW_UP_ENABLED
-                    ? null
-                    : "Read-only for now — ongoing chat ships in the next pipeline step."}
-                </p>
-                <Button type="button" disabled={!CHAT_FOLLOW_UP_ENABLED}>
-                  Send
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  disabled={!canSend}
+                  onClick={() => void handleSend()}
+                >
+                  {sending ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                      Sending…
+                    </>
+                  ) : (
+                    "Send"
+                  )}
                 </Button>
               </div>
             </div>

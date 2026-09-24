@@ -1,3 +1,17 @@
+/**
+ * Research article selector agent
+ *
+ * What it does: Scores Serp link candidates against the user prompt, marks which
+ * are relevant, ranks them, and returns the top share (topPercent) as scrape targets.
+ * Used by the news pipeline and by the chat article synthesizer wrapper.
+ *
+ * Input: userPrompt; links (URL strings or objects with url, title, snippet,
+ * source, sourceType); optional topPercent (default 50), model, system, abortSignal.
+ *
+ * Output: Array of { url, domain, title, sourceType } for relevant links only,
+ * ordered by rank.
+ */
+
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";

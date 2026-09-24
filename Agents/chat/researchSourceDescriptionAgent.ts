@@ -1,3 +1,15 @@
+/**
+ * Research source description agent
+ *
+ * What it does: Summarizes a scraped chat research article into a short plain-text
+ * description (about 10–15 lines) for storage and vector search indexing.
+ *
+ * Input: title, url, domain, content (scraped body); optional model, system,
+ * abortSignal.
+ *
+ * Output: A single description string.
+ */
+
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";

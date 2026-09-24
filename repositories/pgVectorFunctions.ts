@@ -116,3 +116,30 @@ export async function searchSimilarChatDescriptionIdList(
   const matches = await searchSimilarChatDescriptionIds(input);
   return matches.map((row) => row.id);
 }
+
+const countInputSchema = z.object({
+  chatSessionId: chatSessionIdSchema,
+});
+
+export type CountChatDescriptionEmbeddingsInput = z.input<
+  typeof countInputSchema
+>;
+
+/**
+ * Returns the number of vector embeddings available for a chat session.
+ *
+ * This counts rows in chat_description_embeddings, not all ResearchSource rows.
+ */
+export async function countChatDescriptionEmbeddings(
+  input: CountChatDescriptionEmbeddingsInput,
+): Promise<number> {
+  const { chatSessionId } = countInputSchema.parse(input);
+
+  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS count
+      FROM chat_description_embeddings
+      WHERE chat_session_id = ${chatSessionId}::uuid
+    `;
+
+  return Number(rows[0]?.count ?? 0);
+}

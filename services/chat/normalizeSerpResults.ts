@@ -51,6 +51,11 @@ function canonicalUrl(raw: string): string | null {
   }
 }
 
+/** Shared URL identity for Serp hits and ResearchSource deduplication. */
+export function canonicalResearchUrl(raw: string): string | null {
+  return canonicalUrl(raw);
+}
+
 function rowUrl(row: z.infer<typeof looseRow>): string | null {
   const raw = row.link?.trim() || row.url?.trim();
   if (!raw) {

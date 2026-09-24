@@ -40,19 +40,42 @@ function serializeMessage(message: {
   };
 }
 
+function isAgentRole(role: string) {
+  return role === "agent" || role === "assistant";
+}
+
 function deriveChatSessionStatus(
   messages: { role: string; content: string }[],
 ): ChatSessionStatus {
-  const agentMessages = messages.filter(
-    (row) => row.role === "agent" || row.role === "assistant",
-  );
-  if (agentMessages.length === 0) {
+  if (messages.length === 0) {
     return "initializing";
   }
-  const latestAgent = agentMessages.at(-1);
-  if (latestAgent?.content.startsWith("Research pipeline failed:")) {
+
+  let lastUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]!.role === "user") {
+      lastUserIndex = index;
+      break;
+    }
+  }
+
+  if (lastUserIndex === -1) {
+    return "initializing";
+  }
+
+  const repliesAfterLastUser = messages
+    .slice(lastUserIndex + 1)
+    .filter((row) => isAgentRole(row.role));
+
+  if (repliesAfterLastUser.length === 0) {
+    return "initializing";
+  }
+
+  const latestReply = repliesAfterLastUser.at(-1)!;
+  if (latestReply.content.startsWith("Research pipeline failed:")) {
     return "failed";
   }
+
   return "ready";
 }
 

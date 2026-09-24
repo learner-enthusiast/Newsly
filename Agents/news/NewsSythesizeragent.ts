@@ -1,3 +1,17 @@
+/**
+ * News synthesizer agent
+ *
+ * What it does: Takes many scraped articles from a daily news request, clusters
+ * them into distinct market/economy stories, and writes story-level copy (title,
+ * slug, summary, description, content, category, scores) with linked source URLs.
+ *
+ * Input: newsRequestId; articles array (url, title, scraped content, sourceType,
+ * etc.); optional location, userPrompt, model, system, abortSignal.
+ *
+ * Output: Array of SynthesizedNewsStory objects — each story plus its sources
+ * shaped for persisting NewsStory and NewsSource rows.
+ */
+
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";

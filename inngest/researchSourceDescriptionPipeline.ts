@@ -1,3 +1,21 @@
+/**
+ * Research source description + vector index (background)
+ *
+ * Event: research/source.index.requested
+ * Input: { researchSourceId, chatSessionId }
+ *
+ * Purpose: After a chat ResearchSource is saved, summarize scraped content into
+ * a short description, store it on the row, and embed the description for
+ * pgvector similarity search in later chat turns. Enqueued fire-and-forget from
+ * createResearchSource — does not block the main chat pipelines.
+ *
+ * Steps:
+ * 1. load-research-source — Load row and verify chatSessionId matches.
+ * 2. summarize-source — LLM produces ~10–15 line plain-text description.
+ * 3. persist-description-and-embedding — Update ResearchSource.description and
+ *    upsert chat_description_embeddings for similarity search.
+ */
+
 import { runResearchSourceDescriptionAgent } from "@/Agents/chat/researchSourceDescriptionAgent";
 import { inngest } from "@/clients/inngestClient";
 import {

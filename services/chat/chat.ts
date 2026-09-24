@@ -1,4 +1,5 @@
 import { inngest } from "@/clients/inngestClient";
+import { MESSAGE_CHAT_PIPELINE_EVENT } from "@/inngest/chatPipeline";
 import { CHAT_PIPELINE_EVENT } from "@/inngest/newsNewchatPipeline";
 import { DEFAULT_NEWS_RESEARCH_REQUEST } from "@/Agents/chat/newsNewChatAgent";
 import {
@@ -115,14 +116,24 @@ export async function startNewChat(input: StartNewChatInput) {
     content: researchRequest,
   });
 
-  await inngest.send({
-    name: CHAT_PIPELINE_EVENT,
-    data: {
-      userId: parsed.userId,
-      chatSessionId: chatSession.id,
-      userMessageId: userMessage.id,
-    },
-  });
+  if (parsed.newsStoryId) {
+    await inngest.send({
+      name: CHAT_PIPELINE_EVENT,
+      data: {
+        userId: parsed.userId,
+        chatSessionId: chatSession.id,
+        userMessageId: userMessage.id,
+      },
+    });
+  } else {
+    await inngest.send({
+      name: MESSAGE_CHAT_PIPELINE_EVENT,
+      data: {
+        chatSessionId: chatSession.id,
+        chatMessageId: userMessage.id,
+      },
+    });
+  }
 
   return {
     chatSession: {

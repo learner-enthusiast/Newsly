@@ -1,3 +1,17 @@
+/**
+ * Relevance agent
+ *
+ * What it does: Looks at search results (flat Serp rows or raw engine payloads)
+ * and picks which URLs are worth scraping with Firecrawl for the user’s question.
+ * It does not answer the question or rewrite the query.
+ *
+ * Input: userQuery; searchResults array; optional limit (default 10), model,
+ * system, abortSignal.
+ *
+ * Output: { selected: [{ id, url, reason }] } — up to limit items, each with a
+ * short reason tied to the query.
+ */
+
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";

@@ -1,3 +1,6 @@
+-- Prisma shadow DB does not run docker/init.sql; enable pgvector in the migration.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- CreateTable
 CREATE TABLE "chat_description_embeddings" (
     "id" UUID NOT NULL,

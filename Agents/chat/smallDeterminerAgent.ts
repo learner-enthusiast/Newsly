@@ -1,3 +1,20 @@
+/**
+ * Small determiner agent
+ *
+ * What it does: Runs stock-research guardrails first, optionally improves the user
+ * prompt via the query enhancer (except on news-story deep dives), then decides
+ * whether live Serp searches are needed and plans validated Google/Serp tool calls.
+ *
+ * Input: userPrompt; optional isNewsStory, recentMessages, model, tools catalog,
+ * skipGuardrails, guardrailModel, system, abortSignal.
+ *
+ * Output: { guardrail, determiner } — guardrail is allow/block with category and
+ * reason; determiner includes useExistingResearch, existingResearchQuery (a
+ * semantic query for ResearchSource.description, or null), useTools, reasoning,
+ * and optional validated Serp calls. Throws GuardrailBlockedError when the
+ * prompt is not allowed.
+ */
+
 import {
   assertGuardrailAllowed,
   runStockResearchGuardrails,
@@ -51,6 +68,8 @@ const plannedToolCallModelSchema = z.object({
 
 export const smallDeterminerModelOutputSchema = z.object({
   useTools: z.enum(["yes", "no"]),
+  useExistingResearch: z.boolean(),
+  existingResearchQuery: z.string().max(400).nullable(),
   reasoning: z.string().nullable(),
   calls: z.array(plannedToolCallModelSchema).nullable(),
 });
@@ -62,10 +81,14 @@ export type SmallDeterminerModelOutput = z.infer<
 export type SmallDeterminerRawOutput =
   | {
       useTools: "no";
+      useExistingResearch: boolean;
+      existingResearchQuery: string | null;
       reasoning: string | null;
     }
   | {
       useTools: "yes";
+      useExistingResearch: boolean;
+      existingResearchQuery: string | null;
       reasoning: string | null;
       calls: Array<{ tool: SerpToolName; input: Record<string, unknown> }>;
     };
@@ -120,11 +143,38 @@ export function sanitizeSerpToolInput(
   return next;
 }
 
+function normalizeExistingResearch(
+  isNewsStory: boolean,
+  researchSourceCount: number,
+  raw: SmallDeterminerModelOutput,
+): { useExistingResearch: boolean; existingResearchQuery: string | null } {
+  if (
+    isNewsStory ||
+    researchSourceCount === 0 ||
+    !raw.useExistingResearch
+  ) {
+    return { useExistingResearch: false, existingResearchQuery: null };
+  }
+
+  const query = raw.existingResearchQuery?.trim() ?? "";
+  if (!query) {
+    return { useExistingResearch: false, existingResearchQuery: null };
+  }
+
+  return { useExistingResearch: true, existingResearchQuery: query };
+}
+
 function normalizeDeterminerModelOutput(
   raw: SmallDeterminerModelOutput,
+  research: { useExistingResearch: boolean; existingResearchQuery: string | null },
 ): SmallDeterminerRawOutput {
   if (raw.useTools === "no") {
-    return { useTools: "no", reasoning: raw.reasoning };
+    return {
+      useTools: "no",
+      useExistingResearch: research.useExistingResearch,
+      existingResearchQuery: research.existingResearchQuery,
+      reasoning: raw.reasoning,
+    };
   }
 
   const calls = raw.calls ?? [];
@@ -134,6 +184,8 @@ function normalizeDeterminerModelOutput(
 
   return {
     useTools: "yes",
+    useExistingResearch: research.useExistingResearch,
+    existingResearchQuery: research.existingResearchQuery,
     reasoning: raw.reasoning,
     calls: calls.map((call) => ({
       tool: call.tool,
@@ -152,12 +204,16 @@ export type ValidatedSerpToolCall = {
 export type SmallDeterminerResult =
   | {
       useTools: "no";
+      useExistingResearch: boolean;
+      existingResearchQuery: string | null;
       reasoning?: string;
       calls?: undefined;
       model: string;
     }
   | {
       useTools: "yes";
+      useExistingResearch: boolean;
+      existingResearchQuery: string | null;
       reasoning?: string;
       calls: ValidatedSerpToolCall[];
       model: string;
@@ -176,6 +232,16 @@ export type SmallDeterminerAgentParams = {
   skipGuardrails?: boolean;
   guardrailModel?: string;
   isNewsStory?: boolean;
+  /**
+   * Indexed research descriptions in this chat (pgvector rows). When 0,
+   * existing-research retrieval is disabled; Serp may still run.
+   */
+  researchSourceCount?: number;
+  /**
+   * Recent session turns, oldest first. Used only to resolve references
+   * ("this", "they", "the second point"). Not a research-source payload.
+   */
+  recentMessages?: Array<{ role: string; content: string }>;
 };
 
 export type SmallDeterminerRunResult = {
@@ -198,12 +264,38 @@ function buildToolCatalog(tools: SerpEnginesCatalog): string {
   }).join("\n\n");
 }
 
-function buildDeterminerSystemPrompt(tools: SerpEnginesCatalog): string {
+function buildDeterminerSystemPrompt(
+  tools: SerpEnginesCatalog,
+  isNewsStory: boolean,
+  researchSourceCount: number,
+): string {
+  const existingResearchSection = isNewsStory
+    ? [
+        "This turn is a news-story deep dive. Always set useExistingResearch to false and existingResearchQuery to null.",
+      ]
+    : researchSourceCount === 0
+      ? [
+          "This chat session has no indexed research yet (researchSourceCount is 0). Always set useExistingResearch to false and existingResearchQuery to null.",
+          "Fresh SerpAPI tools may still be required when useTools is yes.",
+        ]
+      : [
+        `This chat session has ${researchSourceCount} indexed research description(s) available for vector retrieval.`,
+        "Also set useExistingResearch and existingResearchQuery. These are independent of useTools.",
+        "useExistingResearch does not disable fresh web search. Both may be true when stored research supplies background and SerpAPI is still needed for freshness.",
+        "Set useExistingResearch true only when information already stored for this chat session would help answer the current question: follow-ups, clarifications, prior sources, or references such as \"this\", \"they\", \"the second point\", or \"what you mentioned earlier\".",
+        "Do not set it true merely because the session has research. Set it false when stored research would not help, such as \"what happened today\" with no prior topic, a greeting, or a new subject.",
+        "When useExistingResearch is true, existingResearchQuery is one concise semantic-search phrase for matching ResearchSource.description.",
+        "Describe the underlying information to retrieve. Preserve entities, companies, people, events, and relationships. Resolve obvious references from the recent conversation. Do not copy conversational wording, invent facts, or answer the question.",
+        "When useExistingResearch is false, existingResearchQuery must be null.",
+        "You do not search the vector database. The caller embeds existingResearchQuery and runs pgvector similarity search on ResearchSource.description for this chat session.",
+      ];
+
   return [
     "You are a small determiner agent for a stock-market search product.",
     "Decide whether SerpAPI tools are needed to satisfy the user prompt.",
     'If external search or finance/news data is required, respond with useTools: "yes" and list one or more tool calls.',
     'If no Serp call is needed (greeting, meta question, or answerable without live search), respond with useTools: "no" and omit calls.',
+    ...existingResearchSection,
     "When useTools is yes:",
     "- Use only tool ids from the catalog below.",
     "- Each call must include `input` object fields that match that tool's input rules in its description.",
@@ -214,6 +306,26 @@ function buildDeterminerSystemPrompt(tools: SerpEnginesCatalog): string {
     "## Serp tool catalog",
     buildToolCatalog(tools),
   ].join("\n");
+}
+
+const RECENT_MESSAGE_LIMIT = 10;
+const RECENT_MESSAGE_CHARS = 500;
+
+function recentMessagesForPrompt(
+  messages: SmallDeterminerAgentParams["recentMessages"],
+): Array<{ role: string; content: string }> | undefined {
+  if (!messages || messages.length === 0) {
+    return undefined;
+  }
+
+  return messages.slice(-RECENT_MESSAGE_LIMIT).flatMap((message) => {
+    const role = message.role.trim();
+    const content = message.content.trim().slice(0, RECENT_MESSAGE_CHARS);
+    if (!role || !content) {
+      return [];
+    }
+    return [{ role, content }];
+  });
 }
 
 function validatePlannedCalls(
@@ -235,29 +347,48 @@ async function runDeterminerCore(
 ): Promise<SmallDeterminerResult> {
   const tools = params.tools ?? serpEngines;
   const model = resolveDeterminerModel(params.model);
-  if (!params?.isNewsStory) {
+  const isNewsStory = params.isNewsStory === true;
+  const recentMessages = recentMessagesForPrompt(params.recentMessages);
+  if (!isNewsStory) {
     params.userPrompt = await runQueryEnhancerAgent({
       query: params.userPrompt,
+      recentMessages,
+      abortSignal: params.abortSignal,
     });
+  }
+  const researchSourceCount = Math.max(0, params.researchSourceCount ?? 0);
+  const extraContext: Record<string, unknown> = {
+    researchSourceCount,
+  };
+  if (recentMessages) {
+    extraContext.recentMessages = recentMessages;
   }
   const raw = await generate({
     model,
-    system: params.system ?? buildDeterminerSystemPrompt(tools),
+    system:
+      params.system ??
+      buildDeterminerSystemPrompt(tools, isNewsStory, researchSourceCount),
     prompt: params.userPrompt,
+    extraContext,
     schemaName: "SmallDeterminerOutput",
     schemaDescription:
-      'Whether to call Serp tools ("yes" | "no") and planned tool inputs when yes.',
+      'useTools ("yes" | "no"), useExistingResearch, existingResearchQuery for ResearchSource.description or null, reasoning, and planned Serp calls when useTools is yes.',
     output: smallDeterminerModelOutputSchema,
     temperature: 0,
     maxOutputTokens: 2048,
     abortSignal: params.abortSignal,
   });
 
-  const parsed = normalizeDeterminerModelOutput(raw);
+  const parsed = normalizeDeterminerModelOutput(
+    raw,
+    normalizeExistingResearch(isNewsStory, researchSourceCount, raw),
+  );
 
   if (parsed.useTools === "no") {
     return {
       useTools: "no",
+      useExistingResearch: parsed.useExistingResearch,
+      existingResearchQuery: parsed.existingResearchQuery,
       reasoning: parsed.reasoning ?? undefined,
       model,
     };
@@ -265,6 +396,8 @@ async function runDeterminerCore(
 
   return {
     useTools: "yes",
+    useExistingResearch: parsed.useExistingResearch,
+    existingResearchQuery: parsed.existingResearchQuery,
     reasoning: parsed.reasoning ?? undefined,
     calls: validatePlannedCalls(parsed.calls, tools),
     model,

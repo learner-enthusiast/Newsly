@@ -59,6 +59,25 @@ export async function listResearchSourcesByChatSessionId(chatSessionId: string) 
   });
 }
 
+export async function listResearchSourcesByIdsForChatSession(
+  chatSessionId: string,
+  ids: string[],
+) {
+  const parsedSessionId = chatSessionIdSchema.parse(chatSessionId);
+  const parsedIds = ids.map((id) => researchSourceIdSchema.parse(id));
+  if (parsedIds.length === 0) {
+    return [];
+  }
+
+  return prisma.researchSource.findMany({
+    where: {
+      chatSessionId: parsedSessionId,
+      id: { in: parsedIds },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export async function deleteResearchSource(id: string) {
   return prisma.researchSource.delete({
     where: { id: researchSourceIdSchema.parse(id) },

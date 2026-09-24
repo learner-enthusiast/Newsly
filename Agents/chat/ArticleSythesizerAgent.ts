@@ -1,3 +1,16 @@
+/**
+ * Article synthesizer agent (chat)
+ *
+ * What it does: Thin wrapper for chat research — maps normalized Serp hits into
+ * link rows and calls the research article selector to choose what to scrape next.
+ *
+ * Input: userPrompt; hits (normalized Serp list); optional topPercent (default 40),
+ * maxArticles (default 6), model, abortSignal.
+ *
+ * Output: Array of selected articles: { url, domain, title, sourceType }, capped
+ * at maxArticles.
+ */
+
 import {
   runResearchArticleSelectorAgent,
   type SelectedResearchArticle,

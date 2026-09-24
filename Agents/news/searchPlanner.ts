@@ -1,3 +1,16 @@
+/**
+ * News search planner (not an LLM agent)
+ *
+ * What it does: Builds the Serp search query string and locale hints for a daily
+ * news request from structured inputs — local vs world scope, date, location, and
+ * news vs web search channel. Pure string rules; no model call.
+ *
+ * Input: type LOCAL or WORLD; date (YYYY-MM-DD); channel news or search; location
+ * required when type is LOCAL.
+ *
+ * Output: { query, channel, suggestedGl, suggestedHl, input } ready for Serp APIs.
+ */
+
 import { z } from "zod";
 
 const isoDateSchema = z

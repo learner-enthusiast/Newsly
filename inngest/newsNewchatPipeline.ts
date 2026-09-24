@@ -1,3 +1,31 @@
+/**
+ * News-story chat pipeline (first deep-dive run)
+ *
+ * Event: chat/pipeline.requested
+ * Input: { userId, chatSessionId, userMessageId }
+ *
+ * Purpose: Handle the first research chat tied to a news story (or legacy start
+ * flow): build a long research brief from the story + news sources, run Serp,
+ * scrape articles, and produce the initial assistant answer. Does not use
+ * pgvector session research on this path; isNewsStory skips query enhancement
+ * when the session is a deep dive.
+ *
+ * Steps:
+ * 1. load-chat-session — Verify the session belongs to the user.
+ * 2. load-user-message — Load the triggering user message content.
+ * 3. build-research-prompt — For news deep dives, expand story + news sources
+ *    into a research prompt; otherwise use raw user text.
+ * 4. run-determiner — Guardrails and Serp routing (with recent messages when
+ *    not a news-story session).
+ * 5. save-guardrail-message — Save refusal if guardrails block the prompt.
+ * 6. fetch-and-normalize-serp — Execute Serp calls and merge normalized hits.
+ * 7. select-articles — Article synthesizer chooses URLs to scrape.
+ * 8. scrape-and-persist-sources — Firecrawl + save ResearchSource rows for chat.
+ * 9. generate-assistant-reply — Chat model answer with Serp + scraped context.
+ * 10. save-assistant-message — Persist the agent Markdown reply.
+ * 11. save-error-message — On failure, save an agent error message for the UI.
+ */
+
 import { runArticleSynthesizerAgent } from "@/Agents/chat/ArticleSythesizerAgent";
 import {
   runChatModelAgent,
@@ -9,7 +37,6 @@ import {
 } from "@/Agents/chat/newsNewChatAgent";
 import {
   runSmallDeterminerAgent,
-  sanitizeSerpToolInput,
   type ValidatedSerpToolCall,
 } from "@/Agents/chat/smallDeterminerAgent";
 import { GuardrailBlockedError } from "@/Agents/chat/guardrails";
@@ -21,12 +48,14 @@ import { listNewsSourcesByIdsForStory } from "@/repositories/newsSource";
 import { getNewsStoryWithSourcesById } from "@/repositories/newsStory";
 import { createResearchSource } from "@/repositories/researchSource";
 import { listRecentChatMessagesByChatSessionId } from "@/repositories/chatMessage";
-import { serpEngines } from "@/SERP/index";
 import {
-  mergeNormalizedSerpHits,
-  normalizeSerpEnginePayload,
-  type NormalizedSerpHit,
-} from "@/services/chat/normalizeSerpResults";
+  fetchAndNormalizeSerp,
+  mapConcurrent,
+  roleForChatModel,
+  scrapeMarkdownFromFirecrawl,
+} from "@/services/chat/chatSerpResearch";
+import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
+import { loadRecentMessagesForQueryEnhancer } from "@/services/chat/recentChatMessagesForPipeline";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import { z } from "zod";
 
@@ -40,7 +69,6 @@ export const chatPipelineEventDataSchema = z.object({
 
 export type ChatPipelineEventData = z.infer<typeof chatPipelineEventDataSchema>;
 
-const SERP_NUM = 20;
 const PIPELINE_LOG_PREFIX = "[chat-pipeline]";
 
 function pipelineLog(
@@ -51,64 +79,6 @@ function pipelineLog(
   const suffix =
     extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
   console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
-}
-
-function scrapeMarkdown(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") {
-    return null;
-  }
-  const record = payload as Record<string, unknown>;
-  if (typeof record.markdown === "string" && record.markdown.trim()) {
-    return record.markdown;
-  }
-  const data = record.data;
-  if (data && typeof data === "object") {
-    const markdown = (data as Record<string, unknown>).markdown;
-    if (typeof markdown === "string" && markdown.trim()) {
-      return markdown;
-    }
-  }
-  return null;
-}
-
-function domainFromUrl(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
-
-async function runSerpCall(call: ValidatedSerpToolCall): Promise<unknown> {
-  const engine = serpEngines[call.tool];
-  const input = sanitizeSerpToolInput(call.tool, {
-    ...(call.input as Record<string, unknown>),
-    num: SERP_NUM,
-  });
-  return engine.fn(input);
-}
-
-async function mapConcurrent<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  for (let index = 0; index < items.length; index += concurrency) {
-    const chunk = items.slice(index, index + concurrency);
-    const chunkResults = await Promise.all(
-      chunk.map((item, chunkIndex) => fn(item, index + chunkIndex)),
-    );
-    results.push(...chunkResults);
-  }
-  return results;
-}
-
-function roleForChatModel(role: string): string {
-  if (role === "agent" || role === "assistant") {
-    return "assistant";
-  }
-  return role;
 }
 
 export const chatPipelineFunction = inngest.createFunction(
@@ -212,11 +182,19 @@ export const chatPipelineFunction = inngest.createFunction(
       });
 
       const determinerResult = await step.run("run-determiner", async () => {
-        pipelineLog("run-determiner", "start");
+        const recentMessages = await loadRecentMessagesForQueryEnhancer(
+          input.chatSessionId,
+          input.userMessageId,
+        );
+        pipelineLog("run-determiner", "start", {
+          recentMessageCount: recentMessages.length,
+          isFromNewsStory: session.isFromNewsStory,
+        });
         try {
           const outcome = await runSmallDeterminerAgent({
             userPrompt: researchPrompt.researchPrompt,
-            isNewsStory: true,
+            isNewsStory: session.isFromNewsStory === true,
+            recentMessages,
             abortSignal: AbortSignal.timeout(120_000),
           });
           pipelineLog("run-determiner", "done", {
@@ -263,22 +241,13 @@ export const chatPipelineFunction = inngest.createFunction(
           return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
         }
 
+        const calls = (determiner.determiner.calls ??
+          []) as ValidatedSerpToolCall[];
         pipelineLog("fetch-and-normalize-serp", "start", {
-          calls: determiner.determiner.calls?.length ?? 0,
+          calls: calls.length,
         });
 
-        const payloads = await Promise.all(
-          (determiner.determiner.calls ?? []).map((call) => runSerpCall(call)),
-        );
-
-        const batches: NormalizedSerpHit[] = [];
-        (determiner.determiner.calls ?? []).forEach((call, index) => {
-          batches.push(
-            ...normalizeSerpEnginePayload(payloads[index], call.tool, SERP_NUM),
-          );
-        });
-
-        const merged = mergeNormalizedSerpHits(batches, 40);
+        const merged = await fetchAndNormalizeSerp(calls);
         pipelineLog("fetch-and-normalize-serp", "done", { hitCount: merged.length });
         return toJsonSafeStepOutput(merged);
       });
@@ -312,7 +281,7 @@ export const chatPipelineFunction = inngest.createFunction(
           let content = "";
           try {
             const scraped = await firecrawlClient.scrape({ url: article.url });
-            content = scrapeMarkdown(scraped)?.trim() ?? "";
+            content = scrapeMarkdownFromFirecrawl(scraped)?.trim() ?? "";
           } catch {
             content = "";
           }

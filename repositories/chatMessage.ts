@@ -29,6 +29,40 @@ export async function getChatMessageById(id: string) {
   });
 }
 
+export async function getUserChatMessageForSession(
+  chatSessionId: string,
+  chatMessageId: string,
+) {
+  const message = await getChatMessageById(chatMessageId);
+  if (!message || message.chatSessionId !== chatSessionIdSchema.parse(chatSessionId)) {
+    return null;
+  }
+  return message;
+}
+
+/** First assistant reply created after the given user message (pipeline idempotency). */
+export async function findAssistantReplyAfterUserMessage(
+  chatSessionId: string,
+  userMessageId: string,
+) {
+  const userMessage = await getUserChatMessageForSession(
+    chatSessionId,
+    userMessageId,
+  );
+  if (!userMessage) {
+    return null;
+  }
+
+  return prisma.chatMessage.findFirst({
+    where: {
+      chatSessionId: chatSessionIdSchema.parse(chatSessionId),
+      role: { in: ["agent", "assistant"] },
+      createdAt: { gt: userMessage.createdAt },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export async function listChatMessagesByChatSessionId(chatSessionId: string) {
   return prisma.chatMessage.findMany({
     where: { chatSessionId: chatSessionIdSchema.parse(chatSessionId) },

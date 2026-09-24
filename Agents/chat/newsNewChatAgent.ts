@@ -1,3 +1,17 @@
+/**
+ * News new-chat agent
+ *
+ * What it does: Builds a long research prompt for “deep dive” on a saved news
+ * story by combining the story fields, linked news sources (including scraped
+ * text when present), and the user’s research request. No web search here.
+ *
+ * Input: newsStoryId; newsStory object; newsSources array (same story); researchRequest
+ * string; optional model, system, abortSignal.
+ *
+ * Output: { newsStoryId, researchPrompt } — a detailed text brief for downstream
+ * determiner/Serp/chat steps.
+ */
+
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
