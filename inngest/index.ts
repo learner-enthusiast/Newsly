@@ -10,9 +10,22 @@ export {
   chatPipelineEventDataSchema,
   chatPipelineFunction,
   type ChatPipelineEventData,
-} from "./chatPipeline";
+} from "./newsNewchatPipeline";
 
-import { chatPipelineFunction } from "./chatPipeline";
+export {
+  RESEARCH_SOURCE_INDEX_EVENT,
+  researchSourceIndexEventDataSchema,
+  researchSourceDescriptionFunction,
+  enqueueResearchSourceIndexing,
+  type ResearchSourceIndexEventData,
+} from "./researchSourceDescriptionPipeline";
+
+import { chatPipelineFunction } from "./newsNewchatPipeline";
 import { newsPipelineFunction } from "./newsPipeline";
+import { researchSourceDescriptionFunction } from "./researchSourceDescriptionPipeline";
 
-export const inngestFunctions = [newsPipelineFunction, chatPipelineFunction];
+export const inngestFunctions = [
+  newsPipelineFunction,
+  chatPipelineFunction,
+  researchSourceDescriptionFunction,
+];

@@ -1,8 +1,6 @@
 import { inngest } from "@/clients/inngestClient";
-import { CHAT_PIPELINE_EVENT } from "@/inngest/chatPipeline";
-import {
-  DEFAULT_NEWS_RESEARCH_REQUEST,
-} from "@/Agents/chat/newsNewChatAgent";
+import { CHAT_PIPELINE_EVENT } from "@/inngest/newsNewchatPipeline";
+import { DEFAULT_NEWS_RESEARCH_REQUEST } from "@/Agents/chat/newsNewChatAgent";
 import {
   createChatMessage,
   getChatMessageById,
@@ -25,10 +23,14 @@ export const startNewChatInputSchema = z
     researchRequest: z.string().min(1).optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.newsStoryId && (!data.newsSourceIds || data.newsSourceIds.length === 0)) {
+    if (
+      data.newsStoryId &&
+      (!data.newsSourceIds || data.newsSourceIds.length === 0)
+    ) {
       ctx.addIssue({
         code: "custom",
-        message: "At least one newsSourceId is required when newsStoryId is set",
+        message:
+          "At least one newsSourceId is required when newsStoryId is set",
         path: ["newsSourceIds"],
       });
     }
@@ -139,7 +141,10 @@ export async function startNewChat(input: StartNewChatInput) {
 }
 
 /** Poll session messages; includes assistant reply when the pipeline has finished. */
-export async function getChatSessionResult(userId: string, chatSessionId: string) {
+export async function getChatSessionResult(
+  userId: string,
+  chatSessionId: string,
+) {
   const session = await getChatSessionByIdForUser(chatSessionId, userId);
   if (!session) {
     return null;

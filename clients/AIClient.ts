@@ -31,6 +31,7 @@ export type AIClientOptions = {
   openaiBaseUrl?: string;
   openaiProjectId?: string;
   openaiModel?: string;
+  openaiEmbeddingModel?: string;
   timeout?: number;
   maxRetries?: number;
 };
@@ -90,6 +91,13 @@ function resolveOpenAiProjectId(options: AIClientOptions): string | undefined {
   const projectId =
     options.openaiProjectId ?? process.env.OPENAI_PROJECT_ID?.trim();
   return projectId || undefined;
+}
+
+function resolveOpenAiEmbeddingModel(options: AIClientOptions): string {
+  const model =
+    options.openaiEmbeddingModel ??
+    process.env.OPENAI_EMBEDDING_MODEL?.trim();
+  return model || "text-embedding-3-small";
 }
 
 /** Reasoning models reject temperature / top_p / penalties (OpenAI + AI SDK gateway). */
@@ -492,6 +500,30 @@ export function createAIClient(options: AIClientOptions = {}) {
         options,
         abortSignal,
       });
+    },
+
+    async embedText(text: string): Promise<number[]> {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        throw new Error("Cannot embed an empty string");
+      }
+
+      const openai = getOpenAI();
+      if (!openai) {
+        throw new Error("OpenAI API key is required for embeddings");
+      }
+
+      const response = await openai.embeddings.create({
+        model: resolveOpenAiEmbeddingModel(options),
+        input: trimmed,
+      });
+
+      const embedding = response.data[0]?.embedding;
+      if (!embedding?.length) {
+        throw new Error("Embedding API returned no vector");
+      }
+
+      return embedding;
     },
   };
 }

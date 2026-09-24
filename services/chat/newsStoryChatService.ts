@@ -1,5 +1,5 @@
 import { inngest } from "@/clients/inngestClient";
-import { CHAT_PIPELINE_EVENT } from "@/inngest/chatPipeline";
+import { CHAT_PIPELINE_EVENT } from "@/inngest/newsNewchatPipeline";
 import { DEFAULT_NEWS_RESEARCH_REQUEST } from "@/Agents/chat/newsNewChatAgent";
 import {
   createChatMessage,
