@@ -125,61 +125,67 @@ export const chatPipelineFunction = inngest.createFunction(
         });
       });
 
-      const researchPrompt = await step.run("build-research-prompt", async () => {
-        pipelineLog("build-research-prompt", "start", {
-          isFromNewsStory: session.isFromNewsStory,
-        });
-
-        if (!session.newsStoryId || !session.isFromNewsStory) {
-          return toJsonSafeStepOutput({
-            newsStoryId: null as string | null,
-            researchPrompt: userMessage.content.trim(),
+      const researchPrompt = await step.run(
+        "build-research-prompt",
+        async () => {
+          pipelineLog("build-research-prompt", "start", {
+            isFromNewsStory: session.isFromNewsStory,
           });
-        }
 
-        const storyBundle = await getNewsStoryWithSourcesById(session.newsStoryId);
-        if (!storyBundle) {
-          throw new Error("Linked news story not found");
-        }
+          if (!session.newsStoryId || !session.isFromNewsStory) {
+            return toJsonSafeStepOutput({
+              newsStoryId: null as string | null,
+              researchPrompt: userMessage.content.trim(),
+            });
+          }
 
-        const selectedIds =
-          session.newsSourceId.length > 0
-            ? session.newsSourceId
-            : storyBundle.newsSourceIds;
+          const storyBundle = await getNewsStoryWithSourcesById(
+            session.newsStoryId,
+          );
+          if (!storyBundle) {
+            throw new Error("Linked news story not found");
+          }
 
-        const newsSources = await listNewsSourcesByIdsForStory(
-          session.newsStoryId,
-          selectedIds,
-        );
+          const selectedIds =
+            session.newsSourceId.length > 0
+              ? session.newsSourceId
+              : storyBundle.newsSourceIds;
 
-        if (newsSources.length === 0) {
-          throw new Error("No news sources found for chat session");
-        }
+          const newsSources = await listNewsSourcesByIdsForStory(
+            session.newsStoryId,
+            selectedIds,
+          );
 
-        const { sources: _all, ...newsStory } = storyBundle;
-        const result = await runNewsNewChatAgent({
-          newsStoryId: session.newsStoryId,
-          newsStory: {
-            ...newsStory,
-            importanceScore:
-              newsStory.importanceScore != null
-                ? Number(newsStory.importanceScore)
-                : null,
-          },
-          newsSources,
-          researchRequest: userMessage.content.trim() || DEFAULT_NEWS_RESEARCH_REQUEST,
-          abortSignal: AbortSignal.timeout(180_000),
-        });
+          if (newsSources.length === 0) {
+            throw new Error("No news sources found for chat session");
+          }
 
-        pipelineLog("build-research-prompt", "done", {
-          promptLength: result.researchPrompt.length,
-        });
+          const { sources: _all, ...newsStory } = storyBundle;
+          const result = await runNewsNewChatAgent({
+            newsStoryId: session.newsStoryId,
+            newsStory: {
+              ...newsStory,
+              importanceScore:
+                newsStory.importanceScore != null
+                  ? Number(newsStory.importanceScore)
+                  : null,
+            },
+            newsSources,
+            researchRequest:
+              userMessage.content.trim() || DEFAULT_NEWS_RESEARCH_REQUEST,
+            abortSignal: AbortSignal.timeout(180_000),
+          });
 
-        return toJsonSafeStepOutput({
-          newsStoryId: result.newsStoryId,
-          researchPrompt: result.researchPrompt,
-        });
-      });
+          pipelineLog("build-research-prompt", "done", {
+            promptLength: result.researchPrompt.length,
+          });
+
+          return toJsonSafeStepOutput({
+            newsStoryId: result.newsStoryId,
+            researchPrompt: result.researchPrompt,
+          });
+        },
+      );
 
       const determinerResult = await step.run("run-determiner", async () => {
         const recentMessages = await loadRecentMessagesForQueryEnhancer(
@@ -217,13 +223,15 @@ export const chatPipelineFunction = inngest.createFunction(
       });
 
       if ("blocked" in determinerResult && determinerResult.blocked) {
-        const blockedMessage = await step.run("save-guardrail-message", async () =>
-          createChatMessage({
-            chatSessionId: input.chatSessionId,
-            role: "agent",
-            content:
-              "I can't run that research request because it falls outside stock-market and economic research guardrails.",
-          }),
+        const blockedMessage = await step.run(
+          "save-guardrail-message",
+          async () =>
+            createChatMessage({
+              chatSessionId: input.chatSessionId,
+              role: "agent",
+              content:
+                "I can't run that research request because it falls outside stock-market and economic research guardrails.",
+            }),
         );
         return toJsonSafeStepOutput({ assistantMessageId: blockedMessage.id });
       }
@@ -237,7 +245,9 @@ export const chatPipelineFunction = inngest.createFunction(
         };
 
         if (determiner.determiner.useTools !== "yes") {
-          pipelineLog("fetch-and-normalize-serp", "skipped", { reason: "no tools" });
+          pipelineLog("fetch-and-normalize-serp", "skipped", {
+            reason: "no tools",
+          });
           return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
         }
 
@@ -248,7 +258,9 @@ export const chatPipelineFunction = inngest.createFunction(
         });
 
         const merged = await fetchAndNormalizeSerp(calls);
-        pipelineLog("fetch-and-normalize-serp", "done", { hitCount: merged.length });
+        pipelineLog("fetch-and-normalize-serp", "done", {
+          hitCount: merged.length,
+        });
         return toJsonSafeStepOutput(merged);
       });
 
@@ -256,7 +268,9 @@ export const chatPipelineFunction = inngest.createFunction(
         if (serpHits.length === 0) {
           return toJsonSafeStepOutput([]);
         }
-        pipelineLog("select-articles", "start", { candidates: serpHits.length });
+        pipelineLog("select-articles", "start", {
+          candidates: serpHits.length,
+        });
         const selected = await runArticleSynthesizerAgent({
           userPrompt: researchPrompt.researchPrompt,
           hits: serpHits,
@@ -268,100 +282,119 @@ export const chatPipelineFunction = inngest.createFunction(
         return toJsonSafeStepOutput(selected);
       });
 
-      const scrapedSources = await step.run("scrape-and-persist-sources", async () => {
-        if (selectedArticles.length === 0) {
-          return toJsonSafeStepOutput([]);
-        }
-
-        pipelineLog("scrape-and-persist-sources", "start", {
-          count: selectedArticles.length,
-        });
-
-        const rows = await mapConcurrent(selectedArticles, 3, async (article) => {
-          let content = "";
-          try {
-            const scraped = await firecrawlClient.scrape({ url: article.url });
-            content = scrapeMarkdownFromFirecrawl(scraped)?.trim() ?? "";
-          } catch {
-            content = "";
+      const scrapedSources = await step.run(
+        "scrape-and-persist-sources",
+        async () => {
+          if (selectedArticles.length === 0) {
+            return toJsonSafeStepOutput([]);
           }
 
-          if (!content) {
-            content = article.title;
-          }
-
-          const saved = await createResearchSource({
-            chatSessionId: input.chatSessionId,
-            url: article.url,
-            domain: article.domain,
-            title: article.title,
-            content: content.slice(0, 50_000),
-            sourceType: article.sourceType,
+          pipelineLog("scrape-and-persist-sources", "start", {
+            count: selectedArticles.length,
           });
 
-          return {
+          const rows = await mapConcurrent(
+            selectedArticles,
+            3,
+            async (article) => {
+              let content = "";
+              try {
+                const scraped = await firecrawlClient.scrape({
+                  url: article.url,
+                });
+                content = scrapeMarkdownFromFirecrawl(scraped)?.trim() ?? "";
+              } catch {
+                content = "";
+              }
+
+              if (!content) {
+                content = article.title;
+              }
+
+              const saved = await createResearchSource({
+                chatSessionId: input.chatSessionId,
+                url: article.url,
+                domain: article.domain,
+                title: article.title,
+                content: content.slice(0, 50_000),
+                sourceType: article.sourceType,
+              });
+
+              return {
+                id: saved.id,
+                url: saved.url,
+                domain: saved.domain,
+                title: saved.title,
+                sourceType: saved.sourceType,
+                contentExcerpt: saved.content.slice(0, 4000),
+              };
+            },
+          );
+
+          pipelineLog("scrape-and-persist-sources", "done", {
+            saved: rows.length,
+          });
+          return toJsonSafeStepOutput(rows);
+        },
+      );
+
+      const assistantMarkdown = await step.run(
+        "generate-assistant-reply",
+        async () => {
+          pipelineLog("generate-assistant-reply", "start");
+          const historyRows = await listRecentChatMessagesByChatSessionId(
+            input.chatSessionId,
+            10,
+          );
+          const chatHistory = sliceChatHistoryForModel(
+            historyRows
+              .filter((row) => row.id !== input.userMessageId)
+              .map((row) => ({
+                role: roleForChatModel(row.role),
+                content: row.content,
+              })),
+          );
+
+          const markdown = await runChatModelAgent({
+            prompt: userMessage.content,
+            serpData: {
+              researchPrompt: researchPrompt.researchPrompt,
+              normalizedHits: serpHits,
+              scrapedResearchSources: scrapedSources,
+            },
+            chatHistory,
+            abortSignal: AbortSignal.timeout(300_000),
+          });
+
+          pipelineLog("generate-assistant-reply", "done", {
+            length: markdown.length,
+          });
+          return toJsonSafeStepOutput(markdown);
+        },
+      );
+
+      const assistantMessage = await step.run(
+        "save-assistant-message",
+        async () => {
+          pipelineLog("save-assistant-message", "start");
+          const saved = await createChatMessage({
+            chatSessionId: input.chatSessionId,
+            role: "agent",
+            content: assistantMarkdown,
+          });
+          pipelineLog("save-assistant-message", "done", { id: saved.id });
+          return toJsonSafeStepOutput({
             id: saved.id,
-            url: saved.url,
-            domain: saved.domain,
-            title: saved.title,
-            sourceType: saved.sourceType,
-            contentExcerpt: saved.content.slice(0, 4000),
-          };
-        });
+            role: saved.role,
+            content: saved.content,
+            createdAt: saved.createdAt.toISOString(),
+          });
+        },
+      );
 
-        pipelineLog("scrape-and-persist-sources", "done", { saved: rows.length });
-        return toJsonSafeStepOutput(rows);
+      pipelineLog("run", "finished", {
+        assistantMessageId: assistantMessage.id,
       });
-
-      const assistantMarkdown = await step.run("generate-assistant-reply", async () => {
-        pipelineLog("generate-assistant-reply", "start");
-        const historyRows = await listRecentChatMessagesByChatSessionId(
-          input.chatSessionId,
-          10,
-        );
-        const chatHistory = sliceChatHistoryForModel(
-          historyRows
-            .filter((row) => row.id !== input.userMessageId)
-            .map((row) => ({
-              role: roleForChatModel(row.role),
-              content: row.content,
-            })),
-        );
-
-        const markdown = await runChatModelAgent({
-          prompt: userMessage.content,
-          serpData: {
-            researchPrompt: researchPrompt.researchPrompt,
-            normalizedHits: serpHits,
-            scrapedResearchSources: scrapedSources,
-          },
-          chatHistory,
-          abortSignal: AbortSignal.timeout(300_000),
-        });
-
-        pipelineLog("generate-assistant-reply", "done", {
-          length: markdown.length,
-        });
-        return toJsonSafeStepOutput(markdown);
-      });
-
-      const assistantMessage = await step.run("save-assistant-message", async () => {
-        pipelineLog("save-assistant-message", "start");
-        const saved = await createChatMessage({
-          chatSessionId: input.chatSessionId,
-          role: "agent",
-          content: assistantMarkdown,
-        });
-        pipelineLog("save-assistant-message", "done", { id: saved.id });
-        return toJsonSafeStepOutput({
-          id: saved.id,
-          role: saved.role,
-          content: saved.content,
-          createdAt: saved.createdAt.toISOString(),
-        });
-      });
-
-      pipelineLog("run", "finished", { assistantMessageId: assistantMessage.id });
       return assistantMessage;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

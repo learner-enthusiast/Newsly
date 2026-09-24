@@ -263,7 +263,8 @@ export const messageChatPipelineFunction = inngest.createFunction(
         return toJsonSafeStepOutput({ assistantMessageId: blockedMessage.id });
       }
 
-      const determiner = (determinerParsed as SmallDeterminerRunResult).determiner;
+      const determiner = (determinerParsed as SmallDeterminerRunResult)
+        .determiner;
 
       const vectorResearchIds = await step.run(
         "retrieve-existing-research",
@@ -349,50 +350,58 @@ export const messageChatPipelineFunction = inngest.createFunction(
 
         pipelineLog("normalize-serp-results", "start");
         const hits = normalizeSerpCallResults(serpPayloads);
-        pipelineLog("normalize-serp-results", "done", { hitCount: hits.length });
+        pipelineLog("normalize-serp-results", "done", {
+          hitCount: hits.length,
+        });
         return toJsonSafeStepOutput(hits);
       });
 
-      const selectedArticles = await step.run("run-article-synthesizer", async () => {
-        if (serpHits.length === 0) {
-          return toJsonSafeStepOutput([]);
-        }
-        pipelineLog("run-article-synthesizer", "start", {
-          candidates: serpHits.length,
-        });
-        const selected = await runArticleSynthesizerAgent({
-          userPrompt: chatContext.userMessage.content,
-          hits: serpHits,
-          topPercent: 40,
-          maxArticles: 6,
-          abortSignal: AbortSignal.timeout(120_000),
-        });
-        pipelineLog("run-article-synthesizer", "done", {
-          selected: selected.length,
-        });
-        return toJsonSafeStepOutput(selected);
-      });
+      const selectedArticles = await step.run(
+        "run-article-synthesizer",
+        async () => {
+          if (serpHits.length === 0) {
+            return toJsonSafeStepOutput([]);
+          }
+          pipelineLog("run-article-synthesizer", "start", {
+            candidates: serpHits.length,
+          });
+          const selected = await runArticleSynthesizerAgent({
+            userPrompt: chatContext.userMessage.content,
+            hits: serpHits,
+            topPercent: 40,
+            maxArticles: 6,
+            abortSignal: AbortSignal.timeout(120_000),
+          });
+          pipelineLog("run-article-synthesizer", "done", {
+            selected: selected.length,
+          });
+          return toJsonSafeStepOutput(selected);
+        },
+      );
 
-      const articlesToScrape = await step.run("dedupe-research-candidates", async () => {
-        if (selectedArticles.length === 0) {
-          return toJsonSafeStepOutput([]);
-        }
+      const articlesToScrape = await step.run(
+        "dedupe-research-candidates",
+        async () => {
+          if (selectedArticles.length === 0) {
+            return toJsonSafeStepOutput([]);
+          }
 
-        const sessionSources = await listResearchSourcesByChatSessionId(
-          input.chatSessionId,
-        );
-        const existingKeys = researchUrlKeysFromSources(sessionSources);
-        const deduped = dedupeSelectedArticlesForSession(
-          selectedArticles,
-          existingKeys,
-        );
+          const sessionSources = await listResearchSourcesByChatSessionId(
+            input.chatSessionId,
+          );
+          const existingKeys = researchUrlKeysFromSources(sessionSources);
+          const deduped = dedupeSelectedArticlesForSession(
+            selectedArticles,
+            existingKeys,
+          );
 
-        pipelineLog("dedupe-research-candidates", "done", {
-          before: selectedArticles.length,
-          after: deduped.length,
-        });
-        return toJsonSafeStepOutput(deduped);
-      });
+          pipelineLog("dedupe-research-candidates", "done", {
+            before: selectedArticles.length,
+            after: deduped.length,
+          });
+          return toJsonSafeStepOutput(deduped);
+        },
+      );
 
       const newResearchRows = await step.run(
         "firecrawl-and-save-research",
@@ -405,30 +414,36 @@ export const messageChatPipelineFunction = inngest.createFunction(
             count: articlesToScrape.length,
           });
 
-          const saved = await mapConcurrent(articlesToScrape, 3, async (article) => {
-            let content = "";
-            try {
-              const scraped = await firecrawlClient.scrape({ url: article.url });
-              content = scrapeMarkdownFromFirecrawl(scraped)?.trim() ?? "";
-            } catch {
-              content = "";
-            }
+          const saved = await mapConcurrent(
+            articlesToScrape,
+            3,
+            async (article) => {
+              let content = "";
+              try {
+                const scraped = await firecrawlClient.scrape({
+                  url: article.url,
+                });
+                content = scrapeMarkdownFromFirecrawl(scraped)?.trim() ?? "";
+              } catch {
+                content = "";
+              }
 
-            if (!content) {
-              content = article.title;
-            }
+              if (!content) {
+                content = article.title;
+              }
 
-            const row = await createResearchSource({
-              chatSessionId: input.chatSessionId,
-              url: article.url,
-              domain: article.domain,
-              title: article.title,
-              content: content.slice(0, 50_000),
-              sourceType: article.sourceType,
-            });
+              const row = await createResearchSource({
+                chatSessionId: input.chatSessionId,
+                url: article.url,
+                domain: article.domain,
+                title: article.title,
+                content: content.slice(0, 50_000),
+                sourceType: article.sourceType,
+              });
 
-            return mapResearchSourceForChatModel(row);
-          });
+              return mapResearchSourceForChatModel(row);
+            },
+          );
 
           pipelineLog("firecrawl-and-save-research", "done", {
             saved: saved.length,
@@ -442,69 +457,77 @@ export const messageChatPipelineFunction = inngest.createFunction(
         newResearchRows,
       );
 
-      const assistantMarkdown = await step.run("generate-assistant-reply", async () => {
-        pipelineLog("generate-assistant-reply", "start");
-        const historyRows = await listRecentChatMessagesByChatSessionId(
-          input.chatSessionId,
-          10,
-        );
-        const chatHistory = sliceChatHistoryForModel(
-          historyRows
-            .filter((row) => row.id !== chatContext.userMessage.id)
-            .map((row) => ({
-              role: roleForChatModel(row.role),
-              content: row.content,
-            })),
-        );
+      const assistantMarkdown = await step.run(
+        "generate-assistant-reply",
+        async () => {
+          pipelineLog("generate-assistant-reply", "start");
+          const historyRows = await listRecentChatMessagesByChatSessionId(
+            input.chatSessionId,
+            10,
+          );
+          const chatHistory = sliceChatHistoryForModel(
+            historyRows
+              .filter((row) => row.id !== chatContext.userMessage.id)
+              .map((row) => ({
+                role: roleForChatModel(row.role),
+                content: row.content,
+              })),
+          );
 
-        const markdown = await runChatModelAgent({
-          prompt: chatContext.userMessage.content,
-          serpData: {
-            researchPrompt: chatContext.userMessage.content,
-            normalizedHits: serpHits,
-            scrapedResearchSources: researchContext,
-          },
-          chatHistory,
-          abortSignal: AbortSignal.timeout(300_000),
-        });
-
-        pipelineLog("generate-assistant-reply", "done", {
-          length: markdown.length,
-        });
-        return toJsonSafeStepOutput(markdown);
-      });
-
-      const assistantMessage = await step.run("save-assistant-message", async () => {
-        const again = await findAssistantReplyAfterUserMessage(
-          input.chatSessionId,
-          input.chatMessageId,
-        );
-        if (again) {
-          pipelineLog("save-assistant-message", "skipped", { id: again.id });
-          return toJsonSafeStepOutput({
-            id: again.id,
-            role: again.role,
-            content: again.content,
-            createdAt: again.createdAt.toISOString(),
+          const markdown = await runChatModelAgent({
+            prompt: chatContext.userMessage.content,
+            serpData: {
+              researchPrompt: chatContext.userMessage.content,
+              normalizedHits: serpHits,
+              scrapedResearchSources: researchContext,
+            },
+            chatHistory,
+            abortSignal: AbortSignal.timeout(300_000),
           });
-        }
 
-        pipelineLog("save-assistant-message", "start");
-        const saved = await createChatMessage({
-          chatSessionId: input.chatSessionId,
-          role: "agent",
-          content: assistantMarkdown,
-        });
-        pipelineLog("save-assistant-message", "done", { id: saved.id });
-        return toJsonSafeStepOutput({
-          id: saved.id,
-          role: saved.role,
-          content: saved.content,
-          createdAt: saved.createdAt.toISOString(),
-        });
+          pipelineLog("generate-assistant-reply", "done", {
+            length: markdown.length,
+          });
+          return toJsonSafeStepOutput(markdown);
+        },
+      );
+
+      const assistantMessage = await step.run(
+        "save-assistant-message",
+        async () => {
+          const again = await findAssistantReplyAfterUserMessage(
+            input.chatSessionId,
+            input.chatMessageId,
+          );
+          if (again) {
+            pipelineLog("save-assistant-message", "skipped", { id: again.id });
+            return toJsonSafeStepOutput({
+              id: again.id,
+              role: again.role,
+              content: again.content,
+              createdAt: again.createdAt.toISOString(),
+            });
+          }
+
+          pipelineLog("save-assistant-message", "start");
+          const saved = await createChatMessage({
+            chatSessionId: input.chatSessionId,
+            role: "agent",
+            content: assistantMarkdown,
+          });
+          pipelineLog("save-assistant-message", "done", { id: saved.id });
+          return toJsonSafeStepOutput({
+            id: saved.id,
+            role: saved.role,
+            content: saved.content,
+            createdAt: saved.createdAt.toISOString(),
+          });
+        },
+      );
+
+      pipelineLog("run", "finished", {
+        assistantMessageId: assistantMessage.id,
       });
-
-      pipelineLog("run", "finished", { assistantMessageId: assistantMessage.id });
       return assistantMessage;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

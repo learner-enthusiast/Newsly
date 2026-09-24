@@ -86,12 +86,12 @@ const PRODUCT_META_PATTERNS = [
 const GUARDRAIL_SYSTEM = [
   "You are a guardrail classifier for a financial, economic, and business research product.",
   "",
-  "Answer ONLY: \"Is this request within the product's research domain?\"",
-  "Do NOT ask: \"Is this explicitly an investment or stock-ticker question?\"",
+  'Answer ONLY: "Is this request within the product\'s research domain?"',
+  'Do NOT ask: "Is this explicitly an investment or stock-ticker question?"',
   "Company and business research is in scope even with no ticker, price, valuation, or investment angle.",
   "",
   "Your job is scope and safety — not whether we currently have data, nor entity disambiguation.",
-  "Ambiguous company names (e.g. \"What is WinWin?\") are ALLOWED; downstream search resolves entities.",
+  'Ambiguous company names (e.g. "What is WinWin?") are ALLOWED; downstream search resolves entities.',
   "",
   "ALLOW (allowed yes) — including but not limited to:",
   "1) Public companies: business model, products, ownership, HQ, subsidiaries, margins, earnings, filings.",
@@ -102,14 +102,14 @@ const GUARDRAIL_SYSTEM = [
   "6) Market/financial research: prices, revenue, valuation, dividends, statements, performance, analyst context.",
   "",
   "Examples that MUST be allowed:",
-  "- \"What is Quality Power?\" / \"Where is Quality Power headquartered?\"",
-  "- \"What does WinWin do?\" / \"Quality Power is buying WinWin — what does WinWin manufacture?\"",
-  "- \"Why is Quality Power buying WinWin?\" / \"What could this acquisition mean?\" / \"Strategic importance of this acquisition?\"",
-  "- \"Who owns this company?\" / export margins / diesel exports / macro trade statistics.",
+  '- "What is Quality Power?" / "Where is Quality Power headquartered?"',
+  '- "What does WinWin do?" / "Quality Power is buying WinWin — what does WinWin manufacture?"',
+  '- "Why is Quality Power buying WinWin?" / "What could this acquisition mean?" / "Strategic importance of this acquisition?"',
+  '- "Who owns this company?" / export margins / diesel exports / macro trade statistics.',
   "",
   "Principles:",
   "- Short, ambiguous, or multi-part company/transaction questions: ALLOW.",
-  "- Analytical \"why / what does it mean / is it important\" on business events: ALLOW (research analysis, not personalized investment advice).",
+  '- Analytical "why / what does it mean / is it important" on business events: ALLOW (research analysis, not personalized investment advice).',
   "- Do not block because the prompt lacks stock-market vocabulary.",
   "",
   'Brief greetings / \"what can you do\" → product_meta, allowed yes.',
@@ -167,8 +167,7 @@ const POLICY_VIOLATION_RULES: Array<{
   userMessage: string;
 }> = [
   {
-    pattern:
-      /\bhow (?:do|can|to) i (?:commit |do )?insider trad/i,
+    pattern: /\bhow (?:do|can|to) i (?:commit |do )?insider trad/i,
     reason: "Request for insider trading instructions.",
     userMessage:
       "I can't help with instructions for illegal market activity. Ask for factual research instead.",
@@ -195,7 +194,8 @@ const POLICY_VIOLATION_RULES: Array<{
   {
     pattern: /\b(sk-[A-Za-z0-9_-]{10,}|api[_-]?key\s*[:=]\s*\S+)/i,
     reason: "Possible secret or API key in prompt.",
-    userMessage: "Please remove secrets from your message and ask a research question.",
+    userMessage:
+      "Please remove secrets from your message and ask a research question.",
   },
 ];
 
@@ -289,7 +289,9 @@ export function classifyClearlyInScopePrompt(
     return "company_research";
   }
 
-  if (/\b(reliance|tcs|apple|microsoft|company|corporate|business)\b/.test(prompt)) {
+  if (
+    /\b(reliance|tcs|apple|microsoft|company|corporate|business)\b/.test(prompt)
+  ) {
     return "company_research";
   }
 
