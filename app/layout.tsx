@@ -35,13 +35,15 @@ export default function RootLayout({
         fontMono.variable,
       )}
     >
-      <body className="flex min-h-full flex-col bg-background text-foreground">
+      <body className="h-dvh overflow-hidden bg-background text-foreground">
         <ClerkProvider>
           <TooltipProvider>
-            <SyncLocalUser />
-            <SiteHeader />
-            <div className="flex flex-1 flex-col">{children}</div>
-            <SiteFooter />
+            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+              <SyncLocalUser />
+              <SiteHeader />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
+              <SiteFooter />
+            </div>
           </TooltipProvider>
         </ClerkProvider>
       </body>

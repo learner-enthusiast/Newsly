@@ -142,6 +142,7 @@ model ChatMessage {
   role          String
   content       String   @db.Text
   createdAt     DateTime @default(now()) @map("created_at")
+  scriptId      String?  @map("script_id") @db.Uuid
 
   chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
 
@@ -189,6 +190,7 @@ model Script {
   status          String
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
+  researchSourceIds String[] @default([]) @map("research_source_ids") @db.Uuid
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)

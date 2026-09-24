@@ -7,5 +7,9 @@ type PageProps = {
 export default async function ChatSessionPage({ params }: PageProps) {
   const { chatSessionId } = await params;
 
-  return <ChatWorkspace chatSessionId={chatSessionId} />;
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <ChatWorkspace chatSessionId={chatSessionId} />
+    </div>
+  );
 }

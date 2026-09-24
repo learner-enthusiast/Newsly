@@ -273,18 +273,18 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
   );
 
   return (
-    <div className="flex min-h-[calc(100dvh-4.5rem)] w-full bg-background">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-background md:flex-row">
       <aside
         className={cn(
-          "hidden border-r bg-muted/20 transition-[width] duration-200 md:flex md:flex-col",
-          sidebarOpen ? "w-72" : "w-0 overflow-hidden border-r-0",
+          "hidden min-h-0 border-r bg-muted/20 transition-[width] duration-200 md:flex md:flex-col",
+          sidebarOpen ? "w-72 shrink-0" : "w-0 overflow-hidden border-r-0",
         )}
       >
         {sidebarOpen ? sidebar : null}
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b px-3 py-2">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger
               render={
@@ -352,7 +352,7 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
         </main>
 
         {state ? (
-          <footer className="border-t p-3">
+          <footer className="shrink-0 border-t p-3">
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
               <Textarea
                 placeholder={composerPlaceholder}

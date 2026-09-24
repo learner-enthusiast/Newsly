@@ -1,6 +1,6 @@
 export default function HomePage() {
   return (
-    <main className="landing-section flex flex-1 flex-col items-center justify-center py-24 text-center">
+    <main className="landing-section flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto py-24 text-center">
       <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">
         Stock Market Search Engine
       </h1>

@@ -11,7 +11,7 @@ import { Button } from "./ui/button";
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-50 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
+    <header className="z-50 shrink-0 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="landing-section flex items-center justify-between gap-3 py-4">
         <Link href="/" className="font-brand shrink-0 text-xl text-foreground">
           Stock Search
