@@ -33,6 +33,8 @@ const researchArticleLinkSchema = z.union([
     source: z.string().min(1).optional(),
     /** Serp channel / origin, e.g. google_news, google_search. */
     sourceType: z.string().min(1).optional(),
+    /** Rank boost for AI-overview follow-up hits (e.g. 1.3 = 30% higher priority). */
+    selectionWeight: z.number().positive().optional(),
   }),
 ]);
 
@@ -80,6 +82,7 @@ type Candidate = {
   snippet?: string;
   source?: string;
   sourceType?: string;
+  selectionWeight?: number;
 };
 
 type SelectorDecision = z.infer<typeof selectorModelOutputSchema>["articles"][number];
@@ -139,6 +142,10 @@ function toCandidate(
     snippet: link.snippet,
     source: link.source,
     sourceType: link.sourceType,
+    selectionWeight:
+      typeof link === "object" && link.selectionWeight != null
+        ? link.selectionWeight
+        : undefined,
   };
 }
 
@@ -174,7 +181,11 @@ export function dedupeArticleLinks(
       continue;
     }
 
-    seen.set(candidate.url, { ...candidate, key: candidate.url });
+    seen.set(candidate.url, {
+      ...candidate,
+      key: candidate.url,
+      selectionWeight: candidate.selectionWeight,
+    });
   }
 
   return [...seen.values()];
@@ -208,7 +219,11 @@ function selectTopArticles(
     }
   }
 
-  const ranked = [...best.entries()].sort(([, left], [, right]) => left.rank - right.rank);
+  const ranked = [...best.entries()].sort(([leftKey, left], [rightKey, right]) => {
+    const leftWeight = allowed.get(leftKey)?.selectionWeight ?? 1;
+    const rightWeight = allowed.get(rightKey)?.selectionWeight ?? 1;
+    return left.rank / leftWeight - right.rank / rightWeight;
+  });
   const count = keepCount(ranked.length, topPercent);
 
   return selectedResearchArticleSchema.array().parse(
@@ -233,6 +248,7 @@ function buildSystemPrompt(): string {
     "Set relevant to true only when the page is on-topic and a full Firecrawl scrape is needed to capture the article, announcement, filing, or primary report. A title or snippet is not enough.",
     "Set relevant to false for off-topic pages, homepages, section indexes, search pages, login walls, and link lists.",
     "rank 1 is the most important page to scrape. Give every candidate a rank.",
+    "Candidates may include selectionWeight above 1 (for example 1.3). Treat them as higher priority: rank them higher when relevance is comparable.",
     "When relevant is true, reason is one concise sentence on why Firecrawl should scrape this URL: name the development, announcement, or reporting the full page is expected to contain.",
     "When relevant is false, reason is one short sentence on why the URL was dropped.",
   ].join("\n");
@@ -260,13 +276,16 @@ async function runSelector(
     system: parsed.system ?? buildSystemPrompt(),
     prompt: parsed.userPrompt,
     extraContext: {
-      candidates: candidates.map(({ url, title, snippet, source, sourceType }) => ({
-        url,
-        title,
-        snippet,
-        source,
-        sourceType,
-      })),
+      candidates: candidates.map(
+        ({ url, title, snippet, source, sourceType, selectionWeight }) => ({
+          url,
+          title,
+          snippet,
+          source,
+          sourceType,
+          selectionWeight: selectionWeight ?? null,
+        }),
+      ),
     },
     schemaName: "ResearchArticleSelectorOutput",
     schemaDescription:

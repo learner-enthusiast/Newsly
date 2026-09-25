@@ -45,7 +45,6 @@ import {
   type ValidatedSerpToolCall,
 } from "@/Agents/chat/smallDeterminerAgent";
 import { inngest } from "@/clients/inngestClient";
-import { firecrawlClient } from "@/clients/FireCrawlClient";
 import {
   findAssistantReplyAfterUserMessage,
   createChatMessage,
@@ -69,11 +68,10 @@ import {
 } from "@/services/chat/dedupeResearchArticles";
 import {
   fetchSerpPayloadsForCalls,
-  mapConcurrent,
   normalizeSerpCallResults,
   roleForChatModel,
-  scrapeMarkdownFromFirecrawl,
 } from "@/services/chat/chatSerpResearch";
+import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import {
   mapResearchSourceForChatModel,
@@ -414,36 +412,29 @@ export const messageChatPipelineFunction = inngest.createFunction(
             count: articlesToScrape.length,
           });
 
-          const saved = await mapConcurrent(
-            articlesToScrape,
-            3,
-            async (article) => {
-              let content = "";
-              try {
-                const scraped = await firecrawlClient.scrape({
-                  url: article.url,
-                });
-                content = scrapeMarkdownFromFirecrawl(scraped)?.trim() ?? "";
-              } catch {
-                content = "";
-              }
-
-              if (!content) {
-                content = article.title;
-              }
-
-              const row = await createResearchSource({
-                chatSessionId: input.chatSessionId,
-                url: article.url,
-                domain: article.domain,
-                title: article.title,
-                content: content.slice(0, 50_000),
-                sourceType: article.sourceType,
-              });
-
-              return mapResearchSourceForChatModel(row);
-            },
+          const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
+            articlesToScrape.map((article) => article.url),
           );
+          const saved = [];
+          for (let index = 0; index < articlesToScrape.length; index += 1) {
+            const article = articlesToScrape[index];
+            let content = scrapedMarkdown[index]?.trim() ?? "";
+
+            if (!content) {
+              content = article.title;
+            }
+
+            const row = await createResearchSource({
+              chatSessionId: input.chatSessionId,
+              url: article.url,
+              domain: article.domain,
+              title: article.title,
+              content: content.slice(0, 50_000),
+              sourceType: article.sourceType,
+            });
+
+            saved.push(mapResearchSourceForChatModel(row));
+          }
 
           pipelineLog("firecrawl-and-save-research", "done", {
             saved: saved.length,

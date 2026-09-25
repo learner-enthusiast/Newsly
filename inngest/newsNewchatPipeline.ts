@@ -41,19 +41,19 @@ import {
 } from "@/Agents/chat/smallDeterminerAgent";
 import { GuardrailBlockedError } from "@/Agents/chat/guardrails";
 import { inngest } from "@/clients/inngestClient";
-import { firecrawlClient } from "@/clients/FireCrawlClient";
-import { createChatMessage } from "@/repositories/chatMessage";
+import {
+  createChatMessage,
+  listRecentChatMessagesByChatSessionId,
+} from "@/repositories/chatMessage";
 import { getChatSessionByIdForUser } from "@/repositories/chatSession";
 import { listNewsSourcesByIdsForStory } from "@/repositories/newsSource";
 import { getNewsStoryWithSourcesById } from "@/repositories/newsStory";
 import { createResearchSource } from "@/repositories/researchSource";
-import { listRecentChatMessagesByChatSessionId } from "@/repositories/chatMessage";
 import {
   fetchAndNormalizeSerp,
-  mapConcurrent,
   roleForChatModel,
-  scrapeMarkdownFromFirecrawl,
 } from "@/services/chat/chatSerpResearch";
+import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import { loadRecentMessagesForQueryEnhancer } from "@/services/chat/recentChatMessagesForPipeline";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
@@ -293,43 +293,36 @@ export const chatPipelineFunction = inngest.createFunction(
             count: selectedArticles.length,
           });
 
-          const rows = await mapConcurrent(
-            selectedArticles,
-            3,
-            async (article) => {
-              let content = "";
-              try {
-                const scraped = await firecrawlClient.scrape({
-                  url: article.url,
-                });
-                content = scrapeMarkdownFromFirecrawl(scraped)?.trim() ?? "";
-              } catch {
-                content = "";
-              }
-
-              if (!content) {
-                content = article.title;
-              }
-
-              const saved = await createResearchSource({
-                chatSessionId: input.chatSessionId,
-                url: article.url,
-                domain: article.domain,
-                title: article.title,
-                content: content.slice(0, 50_000),
-                sourceType: article.sourceType,
-              });
-
-              return {
-                id: saved.id,
-                url: saved.url,
-                domain: saved.domain,
-                title: saved.title,
-                sourceType: saved.sourceType,
-                contentExcerpt: saved.content.slice(0, 4000),
-              };
-            },
+          const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
+            selectedArticles.map((article) => article.url),
           );
+          const rows = [];
+          for (let index = 0; index < selectedArticles.length; index += 1) {
+            const article = selectedArticles[index];
+            let content = scrapedMarkdown[index]?.trim() ?? "";
+
+            if (!content) {
+              content = article.title;
+            }
+
+            const saved = await createResearchSource({
+              chatSessionId: input.chatSessionId,
+              url: article.url,
+              domain: article.domain,
+              title: article.title,
+              content: content.slice(0, 50_000),
+              sourceType: article.sourceType,
+            });
+
+            rows.push({
+              id: saved.id,
+              url: saved.url,
+              domain: saved.domain,
+              title: saved.title,
+              sourceType: saved.sourceType,
+              contentExcerpt: saved.content.slice(0, 4000),
+            });
+          }
 
           pipelineLog("scrape-and-persist-sources", "done", {
             saved: rows.length,

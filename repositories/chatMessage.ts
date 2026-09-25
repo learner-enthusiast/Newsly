@@ -3,11 +3,13 @@ import { prisma } from "@/db";
 
 const chatMessageIdSchema = z.uuid("id must be a uuid");
 const chatSessionIdSchema = z.uuid("chatSessionId must be a uuid");
+const scriptIdSchema = z.uuid("scriptId must be a uuid");
 
 const chatMessageWriteSchema = z.object({
   chatSessionId: chatSessionIdSchema,
   role: z.string().min(1),
   content: z.string().min(1),
+  scriptId: scriptIdSchema.nullable().optional(),
 });
 
 const chatMessagePutSchema = chatMessageWriteSchema.omit({ chatSessionId: true });

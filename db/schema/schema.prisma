@@ -63,7 +63,8 @@ model NewsRequest {
   completedAt     DateTime? @map("completed_at")
 
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stories NewsStory[]
+  stories     NewsStory[]
+  loadingLogs String[] @default([]) @map("loading_logs")
 
   @@index([userId])
   @@index([status])
@@ -106,6 +107,7 @@ model NewsSource {
   publishedAt     DateTime? @map("published_at")
   sourceType      String    @map("source_type")
   createdAt       DateTime  @default(now()) @map("created_at")
+  transcript      String?   @db.Text
 
   newsStory NewsStory @relation(fields: [newsStoryId], references: [id], onDelete: Cascade)
 

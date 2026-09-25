@@ -12,6 +12,7 @@ const newsSourceWriteSchema = z.object({
   scrapedContent: z.string().nullable().optional(),
   publishedAt: z.coerce.date().nullable().optional(),
   sourceType: z.string().min(1),
+  transcript: z.string().nullable().optional(),
 });
 
 const newsSourcePutSchema = newsSourceWriteSchema.omit({ newsStoryId: true });

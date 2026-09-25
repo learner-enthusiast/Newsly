@@ -1,34 +1,92 @@
 /**
- * Daily news request pipeline
+ * Daily news request pipeline (Inngest)
  *
- * Event: news/pipeline.requested
- * Input: { userId, newsRequestId, date, scope, location? }
+ * Event: `news/pipeline.requested`
  *
- * Purpose: Fulfill a user’s “news for date/region” request — plan Serp queries,
- * fetch and normalize articles, select and scrape the best links, cluster them
- * into NewsStory rows with NewsSource children, and mark the request success or
- * failed.
+ * Input:
+ * - `userId` — app user (Clerk-backed row in `users`)
+ * - `newsRequestId` — `NewsRequest` UUID to fulfill
+ * - `date` — calendar day for coverage (YYYY-MM-DD)
+ * - `scope` — `local` | `world`
+ * - `location` — optional; required in practice for `local` scope
  *
- * Steps:
- * 1. load-news-request — Verify the request exists for the user.
- * 2. plan-search-queries — Build Google News + web news tab query strings.
- * 3. save-search-queries — Store planned queries on the NewsRequest row.
- * 4. fetch-and-normalize-serp — Call Serp, normalize hits, filter by request date.
- * 5. select-articles — LLM picks relevant article URLs to scrape.
- * 6. scrape-selected-articles — Firecrawl each selected URL.
- * 7. synthesize-stories — LLM groups scraped articles into story summaries.
- * 8. persist-stories-and-sources — Write NewsStory + NewsSource records.
- * 9. mark-request-success — Set request status success and completedAt.
- * 10. load-stories — Return persisted stories (function output).
- * 11. mark-request-failed — On error, set request status failed with message.
+ * Purpose:
+ * Fulfill a user’s daily stock-market / economic news request. The pipeline
+ * searches Google News, Google web news, and YouTube; optionally expands Google
+ * search using AI Overview follow-up queries; selects and scrapes web articles;
+ * extracts and analyzes YouTube transcripts; merges everything into ranked
+ * `NewsStory` rows with `NewsSource` children (including optional `transcript`
+ * on sources), then marks the request `success` or `failed`.
+ *
+ * Shared prompt:
+ * `buildResearchPrompt()` drives article selection, YouTube video selection,
+ * transcript analysis, transcript fact synthesis, and final story clustering.
+ *
+ * ── Happy-path steps ───────────────────────────────────────────────────────
+ *
+ * 1. load-news-request
+ *    Verify `NewsRequest` exists for `userId` + `newsRequestId`.
+ *
+ * 2. plan-search-queries
+ *    `buildNewsSearchQuery()` — separate strings for Google News (`channel: news`)
+ *    and web news tab (`channel: search`), from date, scope, and location.
+ *
+ * 3. save-search-queries
+ *    Persist `{ news, search }` query strings on `NewsRequest.searchQuery` (JSON).
+ *
+ * 4. fetch-and-normalize-serp
+ *    Parallel Serp:
+ *    - `searchGoogleNews` (news query)
+ *    - `searchGoogle` with `tbm: nws` (search query)
+ *    - `searchYoutube` (search query, top video_results kept for later)
+ *    If the Google search payload has `ai_overview`, run
+ *    `runGaiOverviewSearchGeneratorAgent`, fetch extra `searchGoogle` (news tab)
+ *    hits per generated query, and merge into the base search payload.
+ *    Normalize news + search into article links; filter by request date window.
+ *    URLs that appear **only** in AI-overview follow-up Serp results get
+ *    `selectionWeight: 1.3` (30% boost in the article selector).
+ *    Step output: `{ articles, youtubeSerpPayload }` (≤10 video rows).
+ *
+ * 5–8. YouTube branch (runs in parallel with article branch after step 4)
+ *    select-youtube-videos → fetch-youtube-transcripts → analyze-youtube-transcripts
+ *    → synthesize-youtube-transcript-facts (same agents/helpers as before).
+ *
+ * 9–10. Article branch (runs in parallel with YouTube branch after step 4)
+ *    select-articles → scrape-selected-articles (same agents/helpers as before).
+ *
+ * 11. synthesize-stories (waits for both branches)
+ *     `runNewsSynthesizerAgent` on Firecrawl articles plus YouTube rows built by
+ *     `buildYoutubeArticlesForSynthesizer` (synthesis facts + transcript excerpt).
+ *     Passes `youtubeTranscriptSynthesis`; aims for ≥4 distinct stories when
+ *     sources support it; YouTube-derived evidence weighted higher in clustering.
+ *
+ * 12. persist-stories-and-sources
+ *     Create `NewsStory` + `NewsSource` rows; patch `newsSourceIds` on each story.
+ *     YouTube watch URLs receive `transcript` from the fetch step when available.
+ *
+ * 13. mark-request-success
+ *     `NewsRequest.status = success`, `completedAt` set.
+ *
+ * 14. load-stories
+ *     Return persisted stories (function output).
+ *
+ * ── Failure path ─────────────────────────────────────────────────────────────
+ *
+ * mark-request-failed — On any thrown error in the try block: set request
+ * `failed`, store error message, set `completedAt`, rethrow for Inngest retries.
+ *
+ * Timeout: 45 minutes (`timeouts.finish`).
  */
 
-import { runNewsSynthesizerAgent } from "@/Agents/news/NewsSythesizeragent";
+import { runGaiOverviewSearchGeneratorAgent } from "@/Agents/news/GAIOverviewSearchGeneratorAgents";
+import {
+  runNewsSynthesizerAgent,
+  storyHasPrimaryArticleSource,
+} from "@/Agents/news/NewsSythesizeragent";
 import { runResearchArticleSelectorAgent } from "@/Agents/news/ResearchArticleSelectorAgent";
 import { buildNewsSearchQuery } from "@/Agents/news/searchPlanner";
 import { inngest } from "@/clients/inngestClient";
 import type { SelectedResearchArticle } from "@/Agents/news/ResearchArticleSelectorAgent";
-import { firecrawlClient } from "@/clients/FireCrawlClient";
 import {
   getNewsRequestByIdForUser,
   newsScopeSchema,
@@ -41,9 +99,24 @@ import {
   patchNewsStory,
 } from "@/repositories/newsStory";
 import { serpEngines } from "@/SERP/index";
+import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
+import { runYoutubeTranscriptSynthesizeAgent } from "@/Agents/news/YoutubeTranscriptSyntesizeAgent";
+import { youtubeTranscriptAnalysisSchema } from "@/Agents/news/YoutubeTranscriptAgent";
 import {
+  analyzeYoutubeTranscriptsInParallel,
+  buildYoutubeArticlesForSynthesizer,
+  extractTopYoutubeVideoResults,
+  fetchYoutubeTranscriptsByVideoIds,
+  selectYoutubeVideosForNewsResearch,
+} from "@/services/news/youtubeResearch";
+import {
+  applySelectionWeightBoosts,
+  appendGoogleSearchSerpResults,
+  extractAiOverviewTextFromSerpPayload,
   filterArticlesNearRequestDate,
+  followUpBoostedUrlKeys,
   normalizeSerpArticles,
+  serpPayloadHasAiOverview,
   slimSerpPayloadForNormalize,
   toJsonSafeStepOutput,
 } from "@/services/news/normalizeArticles";
@@ -60,24 +133,6 @@ export const newsPipelineEventDataSchema = z.object({
 });
 
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;
-
-function scrapeMarkdown(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") {
-    return null;
-  }
-  const record = payload as Record<string, unknown>;
-  if (typeof record.markdown === "string" && record.markdown.trim()) {
-    return record.markdown;
-  }
-  const data = record.data;
-  if (data && typeof data === "object") {
-    const markdown = (data as Record<string, unknown>).markdown;
-    if (typeof markdown === "string" && markdown.trim()) {
-      return markdown;
-    }
-  }
-  return null;
-}
 
 const PIPELINE_LOG_PREFIX = "[news-pipeline]";
 
@@ -173,7 +228,7 @@ export const newsPipelineFunction = inngest.createFunction(
       });
 
       pipelineLog("step", "entering fetch-and-normalize-serp");
-      const normalized = await step.run(
+      const serpBundle = await step.run(
         "fetch-and-normalize-serp",
         async () => {
           pipelineLog("fetch-and-normalize-serp", "start");
@@ -181,22 +236,86 @@ export const newsPipelineFunction = inngest.createFunction(
           const hl = plans.news.suggestedHl ?? "en";
           const shared = { num: 30, ...(gl ? { gl } : {}), hl };
 
-          const [googleNewsPayload, googleSearchPayload] = await Promise.all([
-            serpEngines.searchGoogleNews.fn({
-              q: plans.news.query,
-              ...shared,
-            }),
-            serpEngines.searchGoogle.fn({
-              q: plans.search.query,
-              tbm: "nws",
-              ...shared,
-            }),
-          ]);
+          const [googleNewsPayload, googleSearchPayload, youtubePayload] =
+            await Promise.all([
+              serpEngines.searchGoogleNews.fn({
+                q: plans.news.query,
+                ...shared,
+              }),
+              serpEngines.searchGoogle.fn({
+                q: plans.search.query,
+                tbm: "nws",
+                ...shared,
+              }),
+              serpEngines.searchYoutube.fn({
+                search_query: plans.search.query,
+                ...(gl ? { gl } : {}),
+                hl,
+              }),
+            ]);
+
+          let mergedGoogleSearchPayload: unknown = googleSearchPayload;
+          let followUpPayloads: unknown[] = [];
+
+          if (serpPayloadHasAiOverview(googleSearchPayload)) {
+            const aiOverviewText =
+              extractAiOverviewTextFromSerpPayload(googleSearchPayload);
+            if (aiOverviewText) {
+              pipelineLog(
+                "fetch-and-normalize-serp",
+                "ai-overview detected, generating follow-up queries",
+                { overviewTextLength: aiOverviewText.length },
+              );
+              const generated = await runGaiOverviewSearchGeneratorAgent({
+                aiOverviewText,
+                date: input.date,
+                location: location ?? undefined,
+                scope,
+                abortSignal: AbortSignal.timeout(120_000),
+              });
+              pipelineLog(
+                "fetch-and-normalize-serp",
+                "ai-overview follow-up queries ready",
+                {
+                  model: generated.model,
+                  queries: generated.queries.map((row) => ({
+                    q: row.query,
+                    rationale: row.rationale,
+                  })),
+                },
+              );
+
+              followUpPayloads = await Promise.all(
+                generated.queries.map((row) =>
+                  serpEngines.searchGoogle.fn({
+                    q: row.query,
+                    tbm: "nws",
+                    ...shared,
+                  }),
+                ),
+              );
+              pipelineLog(
+                "fetch-and-normalize-serp",
+                "ai-overview follow-up serp fetched",
+                { searchCount: followUpPayloads.length },
+              );
+
+              mergedGoogleSearchPayload = appendGoogleSearchSerpResults(
+                googleSearchPayload,
+                followUpPayloads,
+              );
+            } else {
+              pipelineLog(
+                "fetch-and-normalize-serp",
+                "ai-overview present but no extractable text; skipping follow-up serp",
+              );
+            }
+          }
 
           const articles = normalizeSerpArticles({
             googleNewsPayload: slimSerpPayloadForNormalize(googleNewsPayload),
             googleSearchPayload:
-              slimSerpPayloadForNormalize(googleSearchPayload),
+              slimSerpPayloadForNormalize(mergedGoogleSearchPayload),
             limitPerEngine: 15,
           });
 
@@ -205,109 +324,240 @@ export const newsPipelineFunction = inngest.createFunction(
             input.date,
             3,
           );
+          const boostedUrls = followUpBoostedUrlKeys(
+            googleSearchPayload,
+            followUpPayloads,
+          );
+          const weighted = applySelectionWeightBoosts(filtered, boostedUrls);
           pipelineLog("fetch-and-normalize-serp", "done", {
             rawCount: articles.length,
             afterDateFilter: filtered.length,
+            followUpBoostedUrls: boostedUrls.size,
+            youtubeVideoCount: extractTopYoutubeVideoResults(youtubePayload).length,
           });
-          return toJsonSafeStepOutput(filtered);
+          return toJsonSafeStepOutput({
+            articles: weighted,
+            youtubeSerpPayload: {
+              video_results: extractTopYoutubeVideoResults(youtubePayload, 10),
+            },
+          });
         },
       );
+
+      const normalized = serpBundle.articles;
+      const youtubeSerpPayload = serpBundle.youtubeSerpPayload;
 
       if (normalized.length === 0) {
         throw new Error("No articles returned from Serp normalization");
       }
-      pipelineLog("step", "entering select-articles");
-      const selected = await step.run("select-articles", async () => {
-        pipelineLog("select-articles", "start", {
-          candidateCount: Math.min(normalized.length, 12),
-        });
-        const links = normalized.slice(0, 12).map((article) => ({
-          url: article.url,
-          title: article.title,
-          snippet: article.snippet,
-          source: article.source,
-          sourceType: article.sourceType,
-        }));
 
-        const result = await runResearchArticleSelectorAgent({
-          userPrompt: buildResearchPrompt({
-            date: input.date,
-            location,
-            scope,
-          }),
-          links,
-          topPercent: 80,
-          abortSignal: AbortSignal.timeout(180_000),
-        });
-
-        pipelineLog("select-articles", "done", {
-          selectedCount: result.length,
-        });
-        return toJsonSafeStepOutput(result);
+      const researchPrompt = buildResearchPrompt({
+        date: input.date,
+        location,
+        scope,
       });
 
-      pipelineLog("step", "entering scrape-selected-articles");
-      const researched = await step.run(
-        "scrape-selected-articles",
-        async () => {
-          pipelineLog("scrape-selected-articles", "start", {
-            urlCount: selected.length,
-          });
-          const articles = [];
-          for (let index = 0; index < selected.length; index += 1) {
-            pipelineLog("scrape-selected-articles", "scraping", {
-              index: index + 1,
-              total: selected.length,
-              url: selected[index]?.url,
-            });
-            const article = selected[index] as SelectedResearchArticle;
-            const normalizedMatch = normalized.find(
-              (row) => row.url === article.url,
-            );
-            let scrapedContent: string | null = null;
-            try {
-              const scraped = await firecrawlClient.scrape({
-                url: article.url,
+      pipelineLog("step", "entering parallel research branches");
+      const [
+        { youtubeTranscripts, youtubeAnalyses, youtubeSynthesis },
+        { researched },
+      ] = await Promise.all([
+        (async () => {
+          pipelineLog("step", "entering select-youtube-videos");
+          const youtubeSelection = await step.run(
+            "select-youtube-videos",
+            async () => {
+              pipelineLog("select-youtube-videos", "start");
+              const selection = await selectYoutubeVideosForNewsResearch({
+                prompt: researchPrompt,
+                youtubeSerpPayload,
+                abortSignal: AbortSignal.timeout(120_000),
               });
-              scrapedContent = scrapeMarkdown(scraped);
-            } catch {
-              scrapedContent = null;
-            }
+              pipelineLog("select-youtube-videos", "done", {
+                candidateCount: selection.candidateCount,
+                selectedCount: selection.selectedVideos.length,
+              });
+              return toJsonSafeStepOutput(selection);
+            },
+          );
 
-            articles.push({
-              index: normalizedMatch?.index ?? index,
-              url: article.url,
-              domain: article.domain,
-              title: article.title,
-              sourceType: article.sourceType,
-              scrapedContent,
-              publishedAt: normalizedMatch?.publishedAt
-                ? new Date(normalizedMatch.publishedAt)
-                : null,
+          pipelineLog("step", "entering fetch-youtube-transcripts");
+          const youtubeTranscripts = await step.run(
+            "fetch-youtube-transcripts",
+            async () => {
+              const videoIds = youtubeSelection.selectedVideos.map(
+                (row) => row.videoId,
+              );
+              pipelineLog("fetch-youtube-transcripts", "start", {
+                videoIds,
+              });
+              const rows = await fetchYoutubeTranscriptsByVideoIds(videoIds);
+              pipelineLog("fetch-youtube-transcripts", "done", {
+                fetched: rows.length,
+                withTranscript: rows.filter((row) => row.transcript).length,
+              });
+              return toJsonSafeStepOutput(
+                rows.map(({ videoId, title, language, transcript }) => ({
+                  videoId,
+                  title,
+                  language,
+                  transcript,
+                })),
+              );
+            },
+          );
+
+          pipelineLog("step", "entering analyze-youtube-transcripts");
+          const youtubeAnalyses = await step.run(
+            "analyze-youtube-transcripts",
+            async () => {
+              pipelineLog("analyze-youtube-transcripts", "start", {
+                rows: youtubeTranscripts.length,
+              });
+              const analyses = await analyzeYoutubeTranscriptsInParallel({
+                prompt: researchPrompt,
+                transcripts: youtubeTranscripts.map((row) => ({
+                  videoId: row.videoId,
+                  title: row.title,
+                  language: row.language,
+                  transcript: row.transcript,
+                  raw: null,
+                })),
+                abortSignal: AbortSignal.timeout(600_000),
+              });
+              pipelineLog("analyze-youtube-transcripts", "done", {
+                analyzed: analyses.length,
+              });
+              return toJsonSafeStepOutput(analyses);
+            },
+          );
+
+          pipelineLog("step", "entering synthesize-youtube-transcript-facts");
+          const youtubeSynthesis = await step.run(
+            "synthesize-youtube-transcript-facts",
+            async () => {
+              if (youtubeAnalyses.length === 0) {
+                return toJsonSafeStepOutput({
+                  facts: [],
+                  overview: "No YouTube analyses available.",
+                });
+              }
+              pipelineLog("synthesize-youtube-transcript-facts", "start", {
+                videos: youtubeAnalyses.length,
+              });
+              const result = await runYoutubeTranscriptSynthesizeAgent({
+                prompt: researchPrompt,
+                analyses: youtubeAnalyses.map((row) => ({
+                  videoId: row.videoId,
+                  title: row.title,
+                  analysis: youtubeTranscriptAnalysisSchema.parse(row.analysis),
+                })),
+                abortSignal: AbortSignal.timeout(300_000),
+              });
+              pipelineLog("synthesize-youtube-transcript-facts", "done", {
+                factCount: result.facts.length,
+              });
+              return toJsonSafeStepOutput({
+                facts: result.facts,
+                overview: result.overview,
+              });
+            },
+          );
+
+          return { youtubeTranscripts, youtubeAnalyses, youtubeSynthesis };
+        })(),
+        (async () => {
+          pipelineLog("step", "entering select-articles");
+          const selected = await step.run("select-articles", async () => {
+            pipelineLog("select-articles", "start", {
+              candidateCount: Math.min(normalized.length, 12),
             });
-          }
-          pipelineLog("scrape-selected-articles", "done", {
-            scrapedCount: articles.length,
-            withContent: articles.filter((a) => a.scrapedContent).length,
+            const links = normalized.slice(0, 12).map((article) => ({
+              url: article.url,
+              title: article.title,
+              snippet: article.snippet,
+              source: article.source,
+              sourceType: article.sourceType,
+              selectionWeight: article.selectionWeight,
+            }));
+
+            const result = await runResearchArticleSelectorAgent({
+              userPrompt: researchPrompt,
+              links,
+              topPercent: 80,
+              abortSignal: AbortSignal.timeout(180_000),
+            });
+
+            pipelineLog("select-articles", "done", {
+              selectedCount: result.length,
+            });
+            return toJsonSafeStepOutput(result);
           });
-          return toJsonSafeStepOutput(articles);
-        },
-      );
+
+          pipelineLog("step", "entering scrape-selected-articles");
+          const researched = await step.run(
+            "scrape-selected-articles",
+            async () => {
+              pipelineLog("scrape-selected-articles", "start", {
+                urlCount: selected.length,
+              });
+              const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
+                selected.map((article) => article.url),
+              );
+              const articles = [];
+              for (let index = 0; index < selected.length; index += 1) {
+                pipelineLog("scrape-selected-articles", "scraping", {
+                  index: index + 1,
+                  total: selected.length,
+                  url: selected[index]?.url,
+                });
+                const article = selected[index] as SelectedResearchArticle;
+                const normalizedMatch = normalized.find(
+                  (row) => row.url === article.url,
+                );
+                const scrapedContent = scrapedMarkdown[index] ?? null;
+
+                articles.push({
+                  index: normalizedMatch?.index ?? index,
+                  url: article.url,
+                  domain: article.domain,
+                  title: article.title,
+                  sourceType: article.sourceType,
+                  scrapedContent,
+                  publishedAt: normalizedMatch?.publishedAt
+                    ? new Date(normalizedMatch.publishedAt)
+                    : null,
+                  isPrimaryStorySource: true,
+                });
+              }
+              pipelineLog("scrape-selected-articles", "done", {
+                scrapedCount: articles.length,
+                withContent: articles.filter((a) => a.scrapedContent).length,
+              });
+              return toJsonSafeStepOutput(articles);
+            },
+          );
+
+          return { researched };
+        })(),
+      ]);
 
       pipelineLog("step", "entering synthesize-stories");
       const synthesized = await step.run("synthesize-stories", async () => {
         pipelineLog("synthesize-stories", "start", {
           articleCount: researched.length,
+          youtubeFactCount: youtubeSynthesis.facts.length,
+        });
+        const youtubeArticles = buildYoutubeArticlesForSynthesizer({
+          transcripts: youtubeTranscripts,
+          synthesis: youtubeSynthesis,
         });
         const stories = await runNewsSynthesizerAgent({
           newsRequestId: newsRequest.id,
           location,
-          articles: researched,
-          userPrompt: buildResearchPrompt({
-            date: input.date,
-            location,
-            scope,
-          }),
+          articles: [...researched, ...youtubeArticles],
+          youtubeTranscriptSynthesis: youtubeSynthesis,
+          userPrompt: researchPrompt,
           abortSignal: AbortSignal.timeout(300_000),
         });
         pipelineLog("synthesize-stories", "done", {
@@ -321,7 +571,18 @@ export const newsPipelineFunction = inngest.createFunction(
         pipelineLog("persist-stories-and-sources", "start", {
           storyCount: synthesized.length,
         });
+        const transcriptByVideoId = new Map(
+          youtubeTranscripts.map((row) => [row.videoId, row.transcript]),
+        );
         for (const story of synthesized) {
+          if (!storyHasPrimaryArticleSource(story)) {
+            pipelineLog("persist-stories-and-sources", "skip story without primary article source", {
+              title: story.title,
+              sourceCount: story.sources.length,
+            });
+            continue;
+          }
+
           const savedStory = await createNewsStory({
             newsRequestId: newsRequest.id,
             title: story.title,
@@ -338,6 +599,13 @@ export const newsPipelineFunction = inngest.createFunction(
 
           const newsSourceIds: string[] = [];
           for (const source of story.sources) {
+            const videoIdMatch = /[?&]v=([^&]+)/.exec(source.url);
+            const videoId = videoIdMatch?.[1];
+            const transcriptFromYoutube =
+              (videoId && transcriptByVideoId.get(videoId)) ||
+              source.transcript ||
+              null;
+
             const savedSource = await createNewsSource({
               newsStoryId: savedStory.id,
               url: source.url,
@@ -346,6 +614,7 @@ export const newsPipelineFunction = inngest.createFunction(
               scrapedContent: source.scrapedContent,
               publishedAt: source.publishedAt,
               sourceType: source.sourceType,
+              transcript: transcriptFromYoutube,
             });
             newsSourceIds.push(savedSource.id);
           }
@@ -375,7 +644,10 @@ export const newsPipelineFunction = inngest.createFunction(
         pipelineLog("load-stories", "done", { count: rows.length });
         return rows;
       });
-      pipelineLog("run", "finished", { newsRequestId: newsRequest.id });
+      pipelineLog("run", "finished", {
+        newsRequestId: newsRequest.id,
+        youtubeAnalysisCount: youtubeAnalyses.length,
+      });
       return toJsonSafeStepOutput(stories);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

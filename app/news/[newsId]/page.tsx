@@ -1,5 +1,6 @@
 "use client";
 
+import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import {
   StorySourceLinks,
   type StorySourceLink,
@@ -14,6 +15,7 @@ type NewsStory = {
   title: string;
   summary: string;
   description: string | null;
+  content: string;
   category: string;
   importanceScore: number | null;
   sourceUrls: StorySourceLink[];
@@ -212,7 +214,14 @@ export default function NewsResultPage() {
             <p className="mt-2 text-sm font-medium leading-relaxed">
               {story.summary}
             </p>
-            {story.description ? (
+            {story.content?.trim() ? (
+              <div className="mt-4 border-t pt-4">
+                <ChatMarkdown
+                  content={story.content}
+                  className="text-foreground"
+                />
+              </div>
+            ) : story.description ? (
               <div className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
                 {story.description.split(/\n\n+/).map((paragraph, index) => (
                   <p key={index}>{paragraph}</p>

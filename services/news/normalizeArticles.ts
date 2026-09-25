@@ -27,6 +27,8 @@ export const normalizedArticleLinkSchema = z.object({
   sourceType: z.string().min(1),
   publishedAt: z.string().min(1).optional(),
   index: z.number().int().min(0),
+  /** Multiplier for article selector ranking (e.g. 1.3 = 30% boost). */
+  selectionWeight: z.number().positive().optional(),
 });
 
 export type NormalizedArticleLink = z.infer<typeof normalizedArticleLinkSchema>;
@@ -111,6 +113,158 @@ function extractNewsResults(payload: unknown): z.infer<typeof serpNewsItemSchema
     }
   }
   return rows;
+}
+
+function collectAiOverviewTextParts(value: unknown, parts: string[]): void {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) {
+      parts.push(trimmed);
+    }
+    return;
+  }
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ["snippet", "text", "title", "answer"]) {
+    collectAiOverviewTextParts(record[key], parts);
+  }
+  if (Array.isArray(record.text_blocks)) {
+    for (const block of record.text_blocks) {
+      collectAiOverviewTextParts(block, parts);
+    }
+  }
+  if (Array.isArray(record.list)) {
+    for (const item of record.list) {
+      collectAiOverviewTextParts(item, parts);
+    }
+  }
+  if (record.ai_overview) {
+    collectAiOverviewTextParts(record.ai_overview, parts);
+  }
+}
+
+/** Plain text from `searchGoogle` `ai_overview` for LLM follow-up query generation. */
+export function extractAiOverviewTextFromSerpPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const aiOverview = (payload as { ai_overview?: unknown }).ai_overview;
+  if (!aiOverview) {
+    return null;
+  }
+  const parts: string[] = [];
+  collectAiOverviewTextParts(aiOverview, parts);
+  const unique = [...new Set(parts)];
+  const text = unique.join("\n\n").trim();
+  return text.length > 0 ? text : null;
+}
+
+export function serpPayloadHasAiOverview(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  return (payload as { ai_overview?: unknown }).ai_overview != null;
+}
+
+/** Merge news/organic hits from extra `searchGoogle` calls into the base payload. */
+export function appendGoogleSearchSerpResults(
+  basePayload: unknown,
+  extraPayloads: unknown[],
+): Record<string, unknown> {
+  const base =
+    basePayload && typeof basePayload === "object"
+      ? { ...(basePayload as Record<string, unknown>) }
+      : {};
+
+  const news = Array.isArray(base.news_results)
+    ? [...(base.news_results as unknown[])]
+    : [];
+  const organic = Array.isArray(base.organic_results)
+    ? [...(base.organic_results as unknown[])]
+    : [];
+
+  for (const payload of extraPayloads) {
+    if (!payload || typeof payload !== "object") {
+      continue;
+    }
+    const record = payload as {
+      news_results?: unknown;
+      organic_results?: unknown;
+    };
+    if (Array.isArray(record.news_results)) {
+      news.push(...record.news_results);
+    }
+    if (Array.isArray(record.organic_results)) {
+      organic.push(...record.organic_results);
+    }
+  }
+
+  return {
+    ...base,
+    news_results: news,
+    ...(organic.length > 0 ? { organic_results: organic } : {}),
+  };
+}
+
+function urlKeysFromGoogleSearchPayload(payload: unknown): string[] {
+  const keys: string[] = [];
+  for (const item of extractNewsResults(payload)) {
+    const link = item.link?.trim();
+    if (!link) {
+      continue;
+    }
+    const key = canonicalKey(link);
+    if (key) {
+      keys.push(key);
+    }
+  }
+  for (const organic of extractOrganicResults(payload)) {
+    const link = organic.link?.trim();
+    if (!link) {
+      continue;
+    }
+    const key = canonicalKey(link);
+    if (key) {
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
+/** URLs that appear only in AI-overview follow-up Serp payloads (not the base search). */
+export function followUpBoostedUrlKeys(
+  baseGoogleSearchPayload: unknown,
+  followUpPayloads: unknown[],
+): Set<string> {
+  const base = new Set(urlKeysFromGoogleSearchPayload(baseGoogleSearchPayload));
+  const boosted = new Set<string>();
+  for (const payload of followUpPayloads) {
+    for (const key of urlKeysFromGoogleSearchPayload(payload)) {
+      if (!base.has(key)) {
+        boosted.add(key);
+      }
+    }
+  }
+  return boosted;
+}
+
+export const AI_OVERVIEW_FOLLOW_UP_SELECTION_WEIGHT = 1.3;
+
+export function applySelectionWeightBoosts(
+  articles: NormalizedArticleLink[],
+  boostedUrls: Set<string>,
+  weight = AI_OVERVIEW_FOLLOW_UP_SELECTION_WEIGHT,
+): NormalizedArticleLink[] {
+  if (boostedUrls.size === 0) {
+    return articles;
+  }
+  return articles.map((article) =>
+    boostedUrls.has(article.url)
+      ? { ...article, selectionWeight: weight }
+      : article,
+  );
 }
 
 function extractOrganicResults(payload: unknown): z.infer<typeof serpOrganicItemSchema>[] {

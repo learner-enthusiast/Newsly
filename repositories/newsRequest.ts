@@ -21,6 +21,7 @@ const newsRequestWriteSchema = z.object({
   status: newsRequestStatusSchema,
   error: z.string().nullable().optional(),
   completedAt: z.coerce.date().nullable().optional(),
+  loadingLogs: z.array(z.string()).optional(),
 });
 
 const newsRequestPutSchema = newsRequestWriteSchema.omit({ userId: true });

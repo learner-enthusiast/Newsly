@@ -14,6 +14,7 @@
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
+import { synthesizedTranscriptFactSchema } from "@/Agents/news/YoutubeTranscriptSyntesizeAgent";
 import { z } from "zod";
 
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid"]);
@@ -30,11 +31,21 @@ export const researchedArticleSchema = z.object({
   reason: z.string().min(1).optional(),
   /** Original position in the merged Serp result list (pipeline). */
   index: z.number().int().min(0).optional(),
+  transcript: z.string().nullable().optional(),
+  selectionWeight: z.number().positive().optional(),
+  /** Scraped web/news articles are primary; YouTube inputs are supporting only. */
+  isPrimaryStorySource: z.boolean().optional(),
 });
 
 export const newsSynthesizerParamsSchema = z.object({
   newsRequestId: z.uuid(),
   articles: z.array(researchedArticleSchema).min(1),
+  youtubeTranscriptSynthesis: z
+    .object({
+      facts: z.array(synthesizedTranscriptFactSchema),
+      overview: z.string().min(1),
+    })
+    .optional(),
   /** Used to rank relevance to location. */
   location: z.string().min(1).nullable().optional(),
   userPrompt: z.string().min(1).optional(),
@@ -55,6 +66,7 @@ export const synthesizedNewsSourceSchema = z.object({
   scrapedContent: z.string().nullable(),
   publishedAt: z.date().nullable(),
   sourceType: z.string().min(1),
+  transcript: z.string().nullable(),
 });
 
 /** Story fields from NewsStory, plus the sources that belong to that event. */
@@ -100,6 +112,17 @@ type IndexedArticle = ResearchedArticle & {
   key: string;
   domain: string;
 };
+
+function isPrimaryStorySource(article: IndexedArticle): boolean {
+  return article.isPrimaryStorySource !== false;
+}
+
+/** At least one non-YouTube source (article-backed story). */
+export function storyHasPrimaryArticleSource(story: {
+  sources: Array<{ sourceType: string }>;
+}): boolean {
+  return story.sources.some((source) => source.sourceType !== "youtube");
+}
 
 function resolveSynthesizerModel(override?: string): string {
   return resolveOpenAiModelId(override, process.env.NEWS_SYNTHESIZER_MODEL);
@@ -235,7 +258,13 @@ function toSource(article: IndexedArticle, newsStoryId: string): SynthesizedNews
     scrapedContent: article.scrapedContent ?? null,
     publishedAt: article.publishedAt ?? null,
     sourceType: article.sourceType,
+    transcript: article.transcript ?? null,
   };
+}
+
+function fallbackStoryMarkdownContent(article: IndexedArticle): string {
+  const body = article.scrapedContent?.trim() || article.title;
+  return `## What happened\n\n${body}`;
 }
 
 function fallbackStory(
@@ -246,6 +275,7 @@ function fallbackStory(
 ): SynthesizedNewsStory {
   const id = crypto.randomUUID();
   const body = article.scrapedContent?.trim() || article.title;
+  const markdownContent = fallbackStoryMarkdownContent(article);
 
   return {
     id,
@@ -254,7 +284,7 @@ function fallbackStory(
     slug: uniqueSlug(article.title, usedSlugs),
     summary: article.reason?.trim() || body.slice(0, 400),
     description: body.slice(0, 4000),
-    content: body,
+    content: markdownContent,
     category: "general",
     location,
     publishedAt: article.publishedAt ?? null,
@@ -279,8 +309,9 @@ function claimStories(
   );
 
   for (const modelStory of ranked) {
-    const sources: SynthesizedNewsSource[] = [];
     const id = crypto.randomUUID();
+    const matchedArticles: IndexedArticle[] = [];
+    const matchedKeys: string[] = [];
 
     for (const sourceUrl of modelStory.sourceUrls) {
       const key = canonicalUrlKey(sourceUrl);
@@ -289,18 +320,25 @@ function claimStories(
         continue;
       }
 
-      claimed.add(key);
-      sources.push(toSource(article, id));
+      matchedArticles.push(article);
+      matchedKeys.push(key);
     }
 
-    if (sources.length === 0) {
+    if (matchedArticles.length === 0) {
       continue;
     }
 
-    const grouped = sources.flatMap((source) => {
-      const article = byKey.get(source.url);
-      return article ? [article] : [];
-    });
+    if (!matchedArticles.some(isPrimaryStorySource)) {
+      continue;
+    }
+
+    for (const key of matchedKeys) {
+      claimed.add(key);
+    }
+
+    const sources = matchedArticles.map((article) => toSource(article, id));
+
+    const grouped = matchedArticles;
 
     stories.push({
       id,
@@ -319,21 +357,45 @@ function claimStories(
   }
 
   for (const article of articles) {
-    if (!claimed.has(article.key)) {
-      stories.push(fallbackStory(article, newsRequestId, location, usedSlugs));
+    if (claimed.has(article.key) || !isPrimaryStorySource(article)) {
+      continue;
     }
+    claimed.add(article.key);
+    stories.push(fallbackStory(article, newsRequestId, location, usedSlugs));
   }
 
   return stories.sort((left, right) => right.importanceScore - left.importanceScore);
 }
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(hasYoutubeFacts: boolean): string {
+  const youtubeSection = hasYoutubeFacts
+    ? [
+        "Primary vs supporting sources:",
+        "- Inputs with isPrimaryStorySource true are scraped news/web articles. Stories are created only from these primary sources.",
+        "- Inputs with isPrimaryStorySource false are YouTube watch URLs (transcript-derived). They are supporting evidence only.",
+        "- YouTube transcript facts in extraContext.youtubeTranscriptSynthesis can corroborate or add context to an article-backed story (~30% weight boost when relevant). They must not override stronger article evidence.",
+        "- Attach a YouTube watch URL to sourceUrls only when it supports an existing article-backed story.",
+        "- Never create a story whose sourceUrls contain only YouTube URLs.",
+        "- Never use a YouTube video ID, default YouTube title, or channel name as a story title.",
+        "- Unused YouTube sources do not need to appear in any story.",
+        "Coverage rules:",
+        "- Every synthesized story must be backed by at least one primary scraped news/web source in sourceUrls.",
+        "- Supporting YouTube sources may be attached to an article-backed story when relevant.",
+        "- Do not force every input URL into a story.",
+      ]
+    : [
+        "Scraped news/web articles (isPrimaryStorySource true) are the only sources from which stories are created.",
+        "Every synthesized story must include at least one primary source URL in sourceUrls.",
+      ];
+
   return [
-    "You are the news synthesizer. You receive scraped articles and cluster them into distinct events.",
-    "Articles about the same event become one story. Example: 3 articles about one development are one story, 2 articles about another development are a second story, and 1 unrelated article is a third story.",
-    "Do not merge different events. Do not split one event across stories.",
-    "Every input URL must appear in exactly one story. Copy source URLs exactly. Do not invent URLs.",
-    "Write each story only from its sources. If sources disagree, say so in the content. Do not add facts that are not in the articles.",
+    "You are the news synthesizer. Cluster scraped news/web articles into distinct market and economic events.",
+    "Aim for at least four distinct stories when the source material supports that many separate developments.",
+    "Do not invent extra stories; fewer than four is acceptable when sources only support fewer events.",
+    ...youtubeSection,
+    "Articles about the same event become one story. Do not merge different events. Do not split one event across stories.",
+    "Copy source URLs exactly in sourceUrls. Do not invent URLs. sourceUrls is the canonical machine-readable source list.",
+    "Write each story only from its assigned sources. If sources disagree, say so. Do not add facts from outside the supplied research.",
     "Rank every story with importanceScore from 0 to 100 (100 is the most important). Use all of these criteria:",
     "- importance: how much the event matters to markets, policy, or the public",
     "- recency: newer reporting ranks higher",
@@ -341,9 +403,26 @@ function buildSystemPrompt(): string {
     "- relevance to location: prefer the requested location when one is provided",
     "- source quality: official announcements, primary reporting, and several independent sources beat thin rewrites",
     "- uniqueness: a distinct event should not be buried inside a larger story",
-    "summary is a short teaser (2–3 sentences) for list views.",
-    "description is a detailed account of the story: what happened, key actors, numbers and dates from sources, market or economic impact, and relevant context. Use several paragraphs; stay factual and source-bound.",
-    "content is the full article-style write-up (can overlap with description but may include more structure such as bullet points where sources support it).",
+    "summary: plain-text teaser (2–3 sentences) for list views.",
+    "description: plain-text detailed account (what happened, actors, numbers, dates, impact). Several paragraphs; factual and source-bound.",
+    "content: the full story as valid, readable Markdown (not plain text). Structure naturally when the evidence supports it, for example:",
+    "## What happened",
+    "(Clear explanation of the event.)",
+    "## Key details",
+    "- **Label:** fact from sources",
+    "## Why it matters",
+    "(Significance and implications supported by sources.)",
+    "## What to watch",
+    "- development to monitor",
+    "## Sources",
+    "- [Publisher or article title](https://article-url)",
+    "- [Watch the video](https://www.youtube.com/watch?v=...)",
+    "Markdown rules for content:",
+    "- Use headings, lists, and **bold** for key figures or entities where useful.",
+    "- Use Markdown links with the actual supplied URLs when naming sources inside content; do not replace sourceUrls.",
+    "- Do not repeat the story title as the first heading.",
+    "- Do not use HTML or tables unless a table materially helps.",
+    "- Skip sections that the sources cannot support; avoid rigid filler.",
     "category is a short label such as markets, economy, policy, companies, commodities, or geopolitics.",
     "publishedAt is the event time in ISO-8601, or null when the sources do not give one.",
     "location is the place the event concerns, or null.",
@@ -368,29 +447,34 @@ async function runSynthesizer(
 
   const location = parsed.location ?? null;
   const model = resolveSynthesizerModel(parsed.model);
+  const youtubeFacts = parsed.youtubeTranscriptSynthesis?.facts ?? [];
   const raw = await generate({
     model,
-    system: parsed.system ?? buildSystemPrompt(),
+    system: parsed.system ?? buildSystemPrompt(youtubeFacts.length > 0),
     prompt:
       parsed.userPrompt ??
       "Cluster these researched articles into events and rank the stories.",
     extraContext: {
       newsRequestId: parsed.newsRequestId,
       location,
+      youtubeTranscriptSynthesis: parsed.youtubeTranscriptSynthesis ?? null,
       articles: articles.map((article) => ({
         index: article.index ?? null,
         url: article.url,
         domain: article.domain,
         title: article.title,
         sourceType: article.sourceType,
+        isPrimaryStorySource: isPrimaryStorySource(article),
         publishedAt: article.publishedAt?.toISOString() ?? null,
         reason: article.reason ?? null,
+        selectionWeight: article.selectionWeight ?? null,
+        hasTranscript: Boolean(article.transcript?.trim()),
         scrapedContent: excerpt(article.scrapedContent),
       })),
     },
     schemaName: "NewsSynthesizerOutput",
     schemaDescription:
-      "Stories clustered from scraped articles, ranked by importance, recency, impact, location relevance, source quality, and uniqueness.",
+      "Article-backed stories (each with at least one primary scraped source in sourceUrls), optional supporting YouTube URLs, ranked by importance; content is Markdown.",
     output: synthesizerModelOutputSchema,
     temperature: 0,
     maxOutputTokens: outputTokenBudget(articles.length),

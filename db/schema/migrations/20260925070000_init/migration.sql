@@ -1,8 +1,37 @@
+-- Enable pgvector (shadow DB may not run docker/init.sql)
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateEnum
 CREATE TYPE "news_scope" AS ENUM ('local', 'world');
 
 -- CreateEnum
 CREATE TYPE "news_request_status" AS ENUM ('pending', 'failed', 'success');
+
+-- CreateTable
+CREATE TABLE "users" (
+    "id" TEXT NOT NULL,
+    "clerkId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "firstName" TEXT,
+    "lastName" TEXT,
+    "username" TEXT,
+    "imageUrl" TEXT,
+    "hasImage" BOOLEAN NOT NULL DEFAULT false,
+    "primaryEmailAddressId" TEXT,
+    "lastSignInAt" TIMESTAMP(3),
+    "lastActiveAt" TIMESTAMP(3),
+    "banned" BOOLEAN NOT NULL DEFAULT false,
+    "locked" BOOLEAN NOT NULL DEFAULT false,
+    "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "locale" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateTable
 CREATE TABLE "news_requests" (
@@ -16,6 +45,7 @@ CREATE TABLE "news_requests" (
     "error" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "completed_at" TIMESTAMP(3),
+    "loading_logs" TEXT[] DEFAULT ARRAY[]::TEXT[],
 
     CONSTRAINT "news_requests_pkey" PRIMARY KEY ("id")
 );
@@ -25,6 +55,7 @@ CREATE TABLE "news_stories" (
     "id" UUID NOT NULL,
     "news_request_id" UUID NOT NULL,
     "title" TEXT NOT NULL,
+    "description" TEXT,
     "slug" TEXT NOT NULL,
     "summary" TEXT NOT NULL,
     "content" TEXT NOT NULL,
@@ -34,6 +65,7 @@ CREATE TABLE "news_stories" (
     "importance_score" DECIMAL(10,4),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
+    "news_source_ids" UUID[] DEFAULT ARRAY[]::UUID[],
 
     CONSTRAINT "news_stories_pkey" PRIMARY KEY ("id")
 );
@@ -49,6 +81,7 @@ CREATE TABLE "news_sources" (
     "published_at" TIMESTAMP(3),
     "source_type" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "transcript" TEXT,
 
     CONSTRAINT "news_sources_pkey" PRIMARY KEY ("id")
 );
@@ -58,11 +91,12 @@ CREATE TABLE "chat_sessions" (
     "id" UUID NOT NULL,
     "user_id" TEXT NOT NULL,
     "news_story_id" UUID,
+    "news_source_id" UUID[] DEFAULT ARRAY[]::UUID[],
     "title" TEXT,
     "topic" TEXT,
-    "status" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
+    "is_from_news_story" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "chat_sessions_pkey" PRIMARY KEY ("id")
 );
@@ -74,6 +108,7 @@ CREATE TABLE "chat_messages" (
     "role" TEXT NOT NULL,
     "content" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "script_id" UUID,
 
     CONSTRAINT "chat_messages_pkey" PRIMARY KEY ("id")
 );
@@ -85,11 +120,22 @@ CREATE TABLE "research_sources" (
     "url" TEXT NOT NULL,
     "domain" TEXT NOT NULL,
     "title" TEXT NOT NULL,
+    "description" TEXT,
     "content" TEXT NOT NULL,
     "source_type" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "research_sources_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "chat_description_embeddings" (
+    "id" UUID NOT NULL,
+    "chat_session_id" UUID NOT NULL,
+    "description" TEXT NOT NULL,
+    "embedding" vector(1536) NOT NULL,
+
+    CONSTRAINT "chat_description_embeddings_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -104,9 +150,16 @@ CREATE TABLE "scripts" (
     "status" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
+    "research_source_ids" UUID[] DEFAULT ARRAY[]::UUID[],
 
     CONSTRAINT "scripts_pkey" PRIMARY KEY ("id")
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_clerkId_key" ON "users"("clerkId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
 CREATE INDEX "news_requests_user_id_idx" ON "news_requests"("user_id");
@@ -139,6 +192,9 @@ CREATE INDEX "chat_messages_chat_session_id_idx" ON "chat_messages"("chat_sessio
 CREATE INDEX "research_sources_chat_session_id_idx" ON "research_sources"("chat_session_id");
 
 -- CreateIndex
+CREATE INDEX "chat_description_embeddings_chat_session_id_idx" ON "chat_description_embeddings"("chat_session_id");
+
+-- CreateIndex
 CREATE INDEX "scripts_user_id_idx" ON "scripts"("user_id");
 
 -- CreateIndex
@@ -166,7 +222,11 @@ ALTER TABLE "chat_messages" ADD CONSTRAINT "chat_messages_chat_session_id_fkey" 
 ALTER TABLE "research_sources" ADD CONSTRAINT "research_sources_chat_session_id_fkey" FOREIGN KEY ("chat_session_id") REFERENCES "chat_sessions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "chat_description_embeddings" ADD CONSTRAINT "chat_description_embeddings_chat_session_id_fkey" FOREIGN KEY ("chat_session_id") REFERENCES "chat_sessions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "scripts" ADD CONSTRAINT "scripts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "scripts" ADD CONSTRAINT "scripts_chat_session_id_fkey" FOREIGN KEY ("chat_session_id") REFERENCES "chat_sessions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
