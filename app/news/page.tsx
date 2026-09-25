@@ -1,5 +1,6 @@
 "use client";
 
+import { CountryAutocomplete } from "@/components/news/CountryAutocomplete";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -100,12 +101,10 @@ export default function NewsRequestPage() {
         {scope === "local" ? (
           <label className="flex flex-col gap-1 text-sm">
             Location
-            <input
-              type="text"
+            <CountryAutocomplete
               required
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              className="rounded-md border px-3 py-2"
+              onChange={setLocation}
               placeholder="India"
             />
           </label>
