@@ -15,6 +15,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { synthesizedTranscriptFactSchema } from "@/Agents/news/YoutubeTranscriptSyntesizeAgent";
+import { isTradingRecommendationArticle } from "@/services/news/normalizeArticles";
 import { z } from "zod";
 
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid"]);
@@ -332,6 +333,19 @@ function claimStories(
       continue;
     }
 
+    if (
+      !matchedArticles.some(
+        (article) =>
+          isPrimaryStorySource(article) &&
+          !isTradingRecommendationArticle({
+            title: article.title,
+            scrapedContent: article.scrapedContent,
+          }),
+      )
+    ) {
+      continue;
+    }
+
     for (const key of matchedKeys) {
       claimed.add(key);
     }
@@ -358,6 +372,14 @@ function claimStories(
 
   for (const article of articles) {
     if (claimed.has(article.key) || !isPrimaryStorySource(article)) {
+      continue;
+    }
+    if (
+      isTradingRecommendationArticle({
+        title: article.title,
+        scrapedContent: article.scrapedContent,
+      })
+    ) {
       continue;
     }
     claimed.add(article.key);
@@ -396,6 +418,7 @@ function buildSystemPrompt(hasYoutubeFacts: boolean): string {
     "Articles about the same event become one story. Do not merge different events. Do not split one event across stories.",
     "Copy source URLs exactly in sourceUrls. Do not invent URLs. sourceUrls is the canonical machine-readable source list.",
     "Write each story only from its assigned sources. If sources disagree, say so. Do not add facts from outside the supplied research.",
+    "Do not build stories from stock recommendations, buy/sell calls, target/stop-loss trading guides, or similar tip content.",
     "Rank every story with importanceScore from 0 to 100 (100 is the most important). Use all of these criteria:",
     "- importance: how much the event matters to markets, policy, or the public",
     "- recency: newer reporting ranks higher",

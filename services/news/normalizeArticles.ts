@@ -403,32 +403,110 @@ export function toJsonSafeStepOutput<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function addDaysIsoDate(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  utc.setUTCDate(utc.getUTCDate() + days);
+  return utc.toISOString().slice(0, 10);
+}
+
+function utcCalendarDay(isoTimestamp: string): string | null {
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 /**
- * Prefer articles near the requested calendar day; keep undated rows.
- * Reduces stale Serp hits and shrinks the selector LLM payload.
+ * Matches the news request calendar day used in search planning (`after:DATE before:DATE+1`).
+ * Uses `publishedAt` ISO timestamps (not URL date strings).
+ * Accepts the request UTC day, or late-evening UTC on the previous calendar day (timezone spillover).
+ */
+export function articlePublishedMatchesRequestDate(
+  publishedAtIso: string,
+  requestDateIso: string,
+): boolean {
+  const pubDay = utcCalendarDay(publishedAtIso);
+  if (!pubDay) {
+    return false;
+  }
+  if (pubDay === requestDateIso) {
+    return true;
+  }
+  const previousDay = addDaysIsoDate(requestDateIso, -1);
+  if (pubDay === previousDay) {
+    const published = new Date(publishedAtIso);
+    return published.getUTCHours() >= 18;
+  }
+  return false;
+}
+
+const TRADING_RECOMMENDATION_PATTERNS: RegExp[] = [
+  /\bstock\s+recommendations?\b/i,
+  /\bmarket\s+trading\s+guide\b/i,
+  /\btrading\s+guide\b/i,
+  /\bstocks?\s+to\s+(?:buy|sell|watch)\b/i,
+  /\bstock\s+picks?\b/i,
+  /\bbuy\s+(?:at|above|below|price)\b/i,
+  /\btarget\s+(?:price|of)\b/i,
+  /\bstop[\s-]?loss\b/i,
+  /\bintraday\s+(?:call|trade|pick)?\b/i,
+  /\boptions?\s+calls?\b/i,
+  /\bmultibagger\b/i,
+  /\bportfolio\s+(?:advice|pick|recommend)/i,
+  /\btechnical\s+(?:trading\s+)?setups?\b/i,
+  /\b(?:top\s+)?(?:3|three|5|five)\s+stock\s+recommendations?\b/i,
+  /\b(?:buy|sell)\s+(?:call|recommendation)\b/i,
+];
+
+/** Heuristic filter for trading tips / buy-sell-call pages (title, snippet, scrape). */
+export function isTradingRecommendationArticle(input: {
+  title?: string | null;
+  snippet?: string | null;
+  scrapedContent?: string | null;
+}): boolean {
+  const title = input.title?.trim() ?? "";
+  const snippet = input.snippet?.trim() ?? "";
+  const scrapeHead = input.scrapedContent?.trim().slice(0, 4000) ?? "";
+  const haystack = [title, snippet, scrapeHead].filter(Boolean).join("\n");
+  if (!haystack) {
+    return false;
+  }
+  return TRADING_RECOMMENDATION_PATTERNS.some((pattern) => pattern.test(haystack));
+}
+
+/**
+ * Keep articles whose Serp `publishedAt` matches the request day (or undated rows).
+ * Drops out-of-window dated hits (e.g. next-day publish for a prior request date).
  */
 export function filterArticlesNearRequestDate(
   articles: NormalizedArticleLink[],
   requestDateIso: string,
-  windowDays = 3,
+  _windowDays?: number,
 ): NormalizedArticleLink[] {
-  const requestMs = Date.parse(`${requestDateIso}T12:00:00.000Z`);
-  if (Number.isNaN(requestMs)) {
-    return articles;
-  }
-
-  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  void _windowDays;
   const filtered = articles.filter((article) => {
     if (!article.publishedAt) {
       return true;
     }
-    const publishedMs = Date.parse(article.publishedAt);
-    if (Number.isNaN(publishedMs)) {
-      return true;
-    }
-    return Math.abs(publishedMs - requestMs) <= windowMs;
+    return articlePublishedMatchesRequestDate(
+      article.publishedAt,
+      requestDateIso,
+    );
   });
 
-  const pool = filtered.length > 0 ? filtered : articles;
-  return pool.map((article, index) => ({ ...article, index }));
+  return filtered.map((article, index) => ({ ...article, index }));
+}
+
+export function excludeTradingRecommendationArticles<
+  T extends { title?: string; snippet?: string },
+>(articles: T[]): T[] {
+  return articles.filter(
+    (article) =>
+      !isTradingRecommendationArticle({
+        title: article.title,
+        snippet: article.snippet,
+      }),
+  );
 }

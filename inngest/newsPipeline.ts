@@ -112,9 +112,11 @@ import {
 import {
   applySelectionWeightBoosts,
   appendGoogleSearchSerpResults,
+  excludeTradingRecommendationArticles,
   extractAiOverviewTextFromSerpPayload,
   filterArticlesNearRequestDate,
   followUpBoostedUrlKeys,
+  isTradingRecommendationArticle,
   normalizeSerpArticles,
   serpPayloadHasAiOverview,
   slimSerpPayloadForNormalize,
@@ -319,19 +321,17 @@ export const newsPipelineFunction = inngest.createFunction(
             limitPerEngine: 15,
           });
 
-          const filtered = filterArticlesNearRequestDate(
-            articles,
-            input.date,
-            3,
-          );
+          const filtered = filterArticlesNearRequestDate(articles, input.date);
+          const eligible = excludeTradingRecommendationArticles(filtered);
           const boostedUrls = followUpBoostedUrlKeys(
             googleSearchPayload,
             followUpPayloads,
           );
-          const weighted = applySelectionWeightBoosts(filtered, boostedUrls);
+          const weighted = applySelectionWeightBoosts(eligible, boostedUrls);
           pipelineLog("fetch-and-normalize-serp", "done", {
             rawCount: articles.length,
             afterDateFilter: filtered.length,
+            afterTradingFilter: eligible.length,
             followUpBoostedUrls: boostedUrls.size,
             youtubeVideoCount: extractTopYoutubeVideoResults(youtubePayload).length,
           });
@@ -469,10 +469,13 @@ export const newsPipelineFunction = inngest.createFunction(
         (async () => {
           pipelineLog("step", "entering select-articles");
           const selected = await step.run("select-articles", async () => {
+            const candidates = excludeTradingRecommendationArticles(
+              normalized.slice(0, 12),
+            );
             pipelineLog("select-articles", "start", {
-              candidateCount: Math.min(normalized.length, 12),
+              candidateCount: candidates.length,
             });
-            const links = normalized.slice(0, 12).map((article) => ({
+            const links = candidates.map((article) => ({
               url: article.url,
               title: article.title,
               snippet: article.snippet,
@@ -481,12 +484,17 @@ export const newsPipelineFunction = inngest.createFunction(
               selectionWeight: article.selectionWeight,
             }));
 
-            const result = await runResearchArticleSelectorAgent({
-              userPrompt: researchPrompt,
-              links,
-              topPercent: 80,
-              abortSignal: AbortSignal.timeout(180_000),
-            });
+            const result = (
+              await runResearchArticleSelectorAgent({
+                userPrompt: researchPrompt,
+                links,
+                topPercent: 80,
+                abortSignal: AbortSignal.timeout(180_000),
+              })
+            ).filter(
+              (article) =>
+                !isTradingRecommendationArticle({ title: article.title }),
+            );
 
             pipelineLog("select-articles", "done", {
               selectedCount: result.length,
@@ -516,6 +524,18 @@ export const newsPipelineFunction = inngest.createFunction(
                   (row) => row.url === article.url,
                 );
                 const scrapedContent = scrapedMarkdown[index] ?? null;
+
+                if (
+                  isTradingRecommendationArticle({
+                    title: article.title,
+                    scrapedContent,
+                  })
+                ) {
+                  pipelineLog("scrape-selected-articles", "skip trading recommendation", {
+                    url: article.url,
+                  });
+                  continue;
+                }
 
                 articles.push({
                   index: normalizedMatch?.index ?? index,
