@@ -236,7 +236,7 @@ export const newsPipelineFunction = inngest.createFunction(
             scope,
           }),
           links,
-          topPercent: 50,
+          topPercent: 80,
           abortSignal: AbortSignal.timeout(180_000),
         });
 

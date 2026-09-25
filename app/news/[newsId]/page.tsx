@@ -118,13 +118,17 @@ export default function NewsResultPage() {
     setError(null);
     try {
       const response = await fetch(`/api/news/${newsId}`, { method: "POST" });
-      const payload = (await response.json()) as PollPayload & { error?: string };
+      const payload = (await response.json()) as PollPayload & {
+        error?: string;
+      };
       if (!response.ok) {
         throw new Error(payload.error ?? "Retry failed");
       }
       setData(payload);
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "Retry failed");
+      setError(
+        retryError instanceof Error ? retryError.message : "Retry failed",
+      );
     } finally {
       setRetrying(false);
     }
@@ -135,10 +139,15 @@ export default function NewsResultPage() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-12">
       <div>
-        <Link href="/news" className="text-sm text-muted-foreground hover:underline">
+        <Link
+          href="/news"
+          className="text-sm text-muted-foreground hover:underline"
+        >
           ← New request
         </Link>
-        <h1 className="font-display mt-2 text-2xl font-semibold">News results</h1>
+        <h1 className="font-display mt-2 text-2xl font-semibold">
+          News results
+        </h1>
         {data?.newsRequest ? (
           <p className="mt-1 text-sm text-muted-foreground">
             {data.newsRequest.date} · {data.newsRequest.scope}
@@ -165,7 +174,9 @@ export default function NewsResultPage() {
       {status === "failed" ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm">
           <p className="font-medium text-red-800">Pipeline failed</p>
-          <p className="mt-1 text-red-700">{data?.newsRequest.error ?? "Unknown error"}</p>
+          <p className="mt-1 text-red-700">
+            {data?.newsRequest.error ?? "Unknown error"}
+          </p>
           <button
             type="button"
             onClick={onRetry}
@@ -178,7 +189,9 @@ export default function NewsResultPage() {
       ) : null}
 
       {status === "success" && data?.stories.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No stories were generated.</p>
+        <p className="text-sm text-muted-foreground">
+          No stories were generated.
+        </p>
       ) : null}
 
       <ul className="flex flex-col gap-4">

@@ -4,11 +4,23 @@ import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { Loader2, Menu, MessageSquarePlus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Loader2,
+  Menu,
+  MessageSquarePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -88,10 +100,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div
-      className={cn(
-        "flex w-full",
-        assistant ? "justify-start" : "justify-end",
-      )}
+      className={cn("flex w-full", assistant ? "justify-start" : "justify-end")}
     >
       <div
         className={cn(
@@ -141,7 +150,9 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
     if (!response.ok) {
       return;
     }
-    const payload = (await response.json()) as { sessions: ChatSessionSummary[] };
+    const payload = (await response.json()) as {
+      sessions: ChatSessionSummary[];
+    };
     setSessions(payload.sessions);
   }, []);
 
@@ -178,7 +189,9 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
       } catch (pollError) {
         if (!cancelled) {
           setError(
-            pollError instanceof Error ? pollError.message : "Failed to load chat",
+            pollError instanceof Error
+              ? pollError.message
+              : "Failed to load chat",
           );
         }
       }
@@ -196,10 +209,12 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
 
   const title = state?.chatSession.title ?? "Chat";
 
-  const visibleMessages = useMemo(() => state?.messages ?? [], [state?.messages]);
+  const visibleMessages = useMemo(
+    () => state?.messages ?? [],
+    [state?.messages],
+  );
 
-  const showResearching =
-    state != null && state.status === "initializing";
+  const showResearching = state != null && state.status === "initializing";
 
   const composerPlaceholder =
     state?.status === "ready"
@@ -209,9 +224,7 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
       : "Waiting for the assistant reply…";
 
   const canSend =
-    state?.status === "ready" &&
-    !sending &&
-    draft.trim().length > 0;
+    state?.status === "ready" && !sending && draft.trim().length > 0;
 
   async function handleSend() {
     const content = draft.trim();
@@ -237,7 +250,9 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
       await loadState();
     } catch (sendError) {
       setError(
-        sendError instanceof Error ? sendError.message : "Failed to send message",
+        sendError instanceof Error
+          ? sendError.message
+          : "Failed to send message",
       );
     } finally {
       setSending(false);
@@ -326,7 +341,12 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger
               render={
-                <Button variant="ghost" size="icon-sm" className="md:hidden" aria-label="Open chats" />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="md:hidden"
+                  aria-label="Open chats"
+                />
               }
             >
               <Menu className="size-4" />
@@ -355,17 +375,19 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
           </Button>
 
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-base font-semibold">{title}</h1>
+            <h1 className="truncate font-display text-base font-semibold">
+              {title}
+            </h1>
             {showResearching ? (
-              <p className="text-xs text-muted-foreground">Research in progress…</p>
+              <p className="text-xs text-muted-foreground">
+                Research in progress…
+              </p>
             ) : null}
           </div>
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          {error ? (
-            <p className="p-4 text-sm text-red-600">{error}</p>
-          ) : null}
+          {error ? <p className="p-4 text-sm text-red-600">{error}</p> : null}
 
           {!state && !error ? (
             <div className="space-y-3 p-4">
@@ -382,7 +404,8 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
               {showResearching ? <ResearchingState /> : null}
               {state.status === "failed" ? (
                 <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-                  The last research step failed. You can send another message to try again.
+                  The last research step failed. You can send another message to
+                  try again.
                 </Card>
               ) : null}
             </div>
@@ -413,7 +436,10 @@ export function ChatWorkspace({ chatSessionId }: { chatSessionId: string }) {
                 >
                   {sending ? (
                     <>
-                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                      <Loader2
+                        className="mr-2 size-4 animate-spin"
+                        aria-hidden
+                      />
                       Sending…
                     </>
                   ) : (

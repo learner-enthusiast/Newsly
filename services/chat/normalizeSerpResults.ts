@@ -116,7 +116,9 @@ function hitsFromPayload(payload: unknown, engine: string, limit: number) {
     });
   }
 
-  return hits.map((hit, index) => normalizedSerpHitSchema.parse({ ...hit, index }));
+  return hits.map((hit, index) =>
+    normalizedSerpHitSchema.parse({ ...hit, index }),
+  );
 }
 
 /** Normalize up to `limitPerEngine` link rows from one Serp engine response. */

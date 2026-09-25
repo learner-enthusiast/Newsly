@@ -148,11 +148,7 @@ function normalizeExistingResearch(
   researchSourceCount: number,
   raw: SmallDeterminerModelOutput,
 ): { useExistingResearch: boolean; existingResearchQuery: string | null } {
-  if (
-    isNewsStory ||
-    researchSourceCount === 0 ||
-    !raw.useExistingResearch
-  ) {
+  if (isNewsStory || researchSourceCount === 0 || !raw.useExistingResearch) {
     return { useExistingResearch: false, existingResearchQuery: null };
   }
 
@@ -166,7 +162,10 @@ function normalizeExistingResearch(
 
 function normalizeDeterminerModelOutput(
   raw: SmallDeterminerModelOutput,
-  research: { useExistingResearch: boolean; existingResearchQuery: string | null },
+  research: {
+    useExistingResearch: boolean;
+    existingResearchQuery: string | null;
+  },
 ): SmallDeterminerRawOutput {
   if (raw.useTools === "no") {
     return {
@@ -279,16 +278,16 @@ function buildDeterminerSystemPrompt(
           "Fresh SerpAPI tools may still be required when useTools is yes.",
         ]
       : [
-        `This chat session has ${researchSourceCount} indexed research description(s) available for vector retrieval.`,
-        "Also set useExistingResearch and existingResearchQuery. These are independent of useTools.",
-        "useExistingResearch does not disable fresh web search. Both may be true when stored research supplies background and SerpAPI is still needed for freshness.",
-        "Set useExistingResearch true only when information already stored for this chat session would help answer the current question: follow-ups, clarifications, prior sources, or references such as \"this\", \"they\", \"the second point\", or \"what you mentioned earlier\".",
-        "Do not set it true merely because the session has research. Set it false when stored research would not help, such as \"what happened today\" with no prior topic, a greeting, or a new subject.",
-        "When useExistingResearch is true, existingResearchQuery is one concise semantic-search phrase for matching ResearchSource.description.",
-        "Describe the underlying information to retrieve. Preserve entities, companies, people, events, and relationships. Resolve obvious references from the recent conversation. Do not copy conversational wording, invent facts, or answer the question.",
-        "When useExistingResearch is false, existingResearchQuery must be null.",
-        "You do not search the vector database. The caller embeds existingResearchQuery and runs pgvector similarity search on ResearchSource.description for this chat session.",
-      ];
+          `This chat session has ${researchSourceCount} indexed research description(s) available for vector retrieval.`,
+          "Also set useExistingResearch and existingResearchQuery. These are independent of useTools.",
+          "useExistingResearch does not disable fresh web search. Both may be true when stored research supplies background and SerpAPI is still needed for freshness.",
+          'Set useExistingResearch true only when information already stored for this chat session would help answer the current question: follow-ups, clarifications, prior sources, or references such as "this", "they", "the second point", or "what you mentioned earlier".',
+          'Do not set it true merely because the session has research. Set it false when stored research would not help, such as "what happened today" with no prior topic, a greeting, or a new subject.',
+          "When useExistingResearch is true, existingResearchQuery is one concise semantic-search phrase for matching ResearchSource.description.",
+          "Describe the underlying information to retrieve. Preserve entities, companies, people, events, and relationships. Resolve obvious references from the recent conversation. Do not copy conversational wording, invent facts, or answer the question.",
+          "When useExistingResearch is false, existingResearchQuery must be null.",
+          "You do not search the vector database. The caller embeds existingResearchQuery and runs pgvector similarity search on ResearchSource.description for this chat session.",
+        ];
 
   return [
     "You are a small determiner agent for a stock-market search product.",

@@ -55,16 +55,25 @@ export default function NewsRequestPage() {
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col gap-6 px-4 py-12">
       <div>
-        <Link href="/" className="text-sm text-muted-foreground hover:underline">
+        <Link
+          href="/"
+          className="text-sm text-muted-foreground hover:underline"
+        >
           ← Home
         </Link>
-        <h1 className="font-display mt-2 text-2xl font-semibold">News research</h1>
+        <h1 className="font-display mt-2 text-2xl font-semibold">
+          News research
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Request market news for a date and region. Results load on the next page.
+          Request market news for a date and region. Results load on the next
+          page.
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-4 rounded-lg border p-4">
+      <form
+        onSubmit={onSubmit}
+        className="flex flex-col gap-4 rounded-lg border p-4"
+      >
         <label className="flex flex-col gap-1 text-sm">
           Date
           <input

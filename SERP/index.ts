@@ -109,6 +109,92 @@ type GoogleAiModeSearchParams = SerpEngineSearchParams & {
   output?: "json" | "html" | "md";
 };
 
+type GoogleAiOverviewFollowUpParams = Partial<
+  Pick<SerpEngineSearchParams, "no_cache" | "async" | "output" | "timeout">
+>;
+
+/** `ai_overview.page_token` from a Google web search (expires ~1 minute). */
+function extractGoogleAiOverviewPageToken(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const aiOverview = (payload as Record<string, unknown>).ai_overview;
+  if (!aiOverview || typeof aiOverview !== "object") {
+    return null;
+  }
+  const pageToken = (aiOverview as Record<string, unknown>).page_token;
+  if (typeof pageToken !== "string") {
+    return null;
+  }
+  const trimmed = pageToken.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Follow-up SerpAPI call (engine=google_ai_overview). Not a standalone catalog tool —
+ * invoked automatically from `searchGoogle` when the web SERP returns a page token.
+ * @see https://serpapi.com/google-ai-overview-api
+ */
+async function fetchGoogleAiOverview(
+  pageToken: string,
+  options: GoogleAiOverviewFollowUpParams,
+  client = serpClient,
+): Promise<unknown> {
+  return client.search({
+    engine: "google_ai_overview",
+    page_token: pageToken,
+    ...(typeof options.no_cache === "boolean"
+      ? { no_cache: options.no_cache }
+      : {}),
+    ...(typeof options.async === "boolean" ? { async: options.async } : {}),
+    ...(options.output === "json" ||
+    options.output === "html" ||
+    options.output === "md"
+      ? { output: options.output }
+      : {}),
+    ...(typeof options.timeout === "number" ? { timeout: options.timeout } : {}),
+  });
+}
+
+async function enrichGoogleSearchWithAiOverview(
+  basePayload: unknown,
+  followUpParams: GoogleAiOverviewFollowUpParams,
+  client = serpClient,
+): Promise<unknown> {
+  const pageToken = extractGoogleAiOverviewPageToken(basePayload);
+  if (!pageToken) {
+    return basePayload;
+  }
+
+  try {
+    const overviewPayload = await fetchGoogleAiOverview(
+      pageToken,
+      followUpParams,
+      client,
+    );
+    const baseRecord =
+      basePayload && typeof basePayload === "object"
+        ? (basePayload as Record<string, unknown>)
+        : {};
+    const stub =
+      baseRecord.ai_overview && typeof baseRecord.ai_overview === "object"
+        ? (baseRecord.ai_overview as Record<string, unknown>)
+        : {};
+
+    return {
+      ...baseRecord,
+      ai_overview: {
+        ...stub,
+        ...(overviewPayload && typeof overviewPayload === "object"
+          ? (overviewPayload as Record<string, unknown>)
+          : { payload: overviewPayload }),
+      },
+    };
+  } catch {
+    return basePayload;
+  }
+}
+
 async function searchGoogle<T = unknown>(
   params: SerpEngineSearchParams,
   responseSchema?: z.ZodType<T>,
@@ -117,10 +203,30 @@ async function searchGoogle<T = unknown>(
   const { tbm: _tbm, ...rest } = params as SerpEngineSearchParams & {
     tbm?: unknown;
   };
-  return client.search(
-    { ...withGoogleWebQuery(rest), engine: "google" },
-    responseSchema,
+  const followUpParams: GoogleAiOverviewFollowUpParams = {
+    ...(typeof rest.no_cache === "boolean" ? { no_cache: rest.no_cache } : {}),
+    ...(typeof rest.async === "boolean" ? { async: rest.async } : {}),
+    ...(rest.output === "json" || rest.output === "html" || rest.output === "md"
+      ? { output: rest.output }
+      : {}),
+    ...(typeof rest.timeout === "number" ? { timeout: rest.timeout } : {}),
+  };
+
+  const basePayload = await client.search({
+    ...withGoogleWebQuery(rest),
+    engine: "google",
+  });
+
+  const enriched = await enrichGoogleSearchWithAiOverview(
+    basePayload,
+    followUpParams,
+    client,
   );
+
+  if (responseSchema) {
+    return responseSchema.parse(enriched);
+  }
+  return enriched as T;
 }
 
 async function searchGoogleFinance<T = unknown>(
@@ -171,6 +277,65 @@ async function searchGoogleAiMode<T = unknown>(
   );
 }
 
+type YoutubeSearchParams = SerpEngineSearchParams & {
+  search_query?: string;
+  sp?: string;
+};
+
+function withYoutubeSearchQuery(
+  params: YoutubeSearchParams,
+): YoutubeSearchParams & { search_query: string } {
+  const search_query =
+    (typeof params.search_query === "string"
+      ? params.search_query.trim()
+      : "") ||
+    (typeof params.q === "string" ? params.q.trim() : "");
+  if (!search_query) {
+    throw new Error("youtube requires search_query");
+  }
+  const { q: _q, ...rest } = params;
+  return { ...rest, search_query };
+}
+
+async function searchYoutube<T = unknown>(
+  params: YoutubeSearchParams,
+  responseSchema?: z.ZodType<T>,
+  client = serpClient,
+): Promise<T> {
+  return client.search(
+    { ...withYoutubeSearchQuery(params), engine: "youtube" },
+    responseSchema,
+  );
+}
+
+type YoutubeVideoTranscriptParams = SerpEngineSearchParams & {
+  v?: string;
+  language_code?: string;
+  title?: string;
+  type?: string;
+};
+
+function withYoutubeVideoId(
+  params: YoutubeVideoTranscriptParams,
+): YoutubeVideoTranscriptParams & { v: string } {
+  const v = typeof params.v === "string" ? params.v.trim() : "";
+  if (!v) {
+    throw new Error("youtube_video_transcript requires v (video id)");
+  }
+  return { ...params, v };
+}
+
+async function searchYoutubeVideoTranscript<T = unknown>(
+  params: YoutubeVideoTranscriptParams,
+  responseSchema?: z.ZodType<T>,
+  client = serpClient,
+): Promise<T> {
+  return client.search(
+    { ...withYoutubeVideoId(params), engine: "youtube_video_transcript" },
+    responseSchema,
+  );
+}
+
 const googleInputSchema = z.looseObject({
   q: z.string().min(1),
   start: z.number().int().min(0).optional(),
@@ -191,6 +356,7 @@ const googleOutputSchema = serpCommonOutputSchema.extend({
       }),
     )
     .optional(),
+  ai_overview: z.record(z.string(), z.unknown()).optional(),
   knowledge_graph: z.record(z.string(), z.unknown()).optional(),
   answer_box: z.record(z.string(), z.unknown()).optional(),
   related_questions: z.array(z.unknown()).optional(),
@@ -199,9 +365,7 @@ const googleOutputSchema = serpCommonOutputSchema.extend({
 
 const googleFinanceInputSchema = z.looseObject({
   q: z.string().min(1),
-  window: z
-    .enum(["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"])
-    .optional(),
+  window: z.enum(["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX"]).optional(),
   hl: serpSharedInputShape.hl,
   no_cache: serpSharedInputShape.no_cache,
   async: serpSharedInputShape.async,
@@ -287,10 +451,7 @@ const googleNewsInputSchema = z
         message: "Do not combine q with token parameters",
       });
     }
-    if (
-      tokens.includes("kgmid") &&
-      tokens.some((t) => t !== "kgmid")
-    ) {
+    if (tokens.includes("kgmid") && tokens.some((t) => t !== "kgmid")) {
       ctx.addIssue({
         code: "custom",
         message: "kgmid can only be used alone",
@@ -377,13 +538,63 @@ const googleAiModeOutputSchema = serpCommonOutputSchema.extend({
   subsequent_request_token: z.string().optional(),
 });
 
+const youtubeInputSchema = z
+  .looseObject({
+    search_query: z.string().min(1).optional(),
+    q: z.string().min(1).optional(),
+    sp: z.string().min(1).optional(),
+    gl: serpSharedInputShape.gl,
+    hl: serpSharedInputShape.hl,
+    no_cache: serpSharedInputShape.no_cache,
+    async: serpSharedInputShape.async,
+    output: serpSharedInputShape.output,
+    timeout: serpSharedInputShape.timeout,
+  })
+  .superRefine((data, ctx) => {
+    if (!data.search_query?.trim() && !data.q?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide search_query (or q as alias)",
+      });
+    }
+  });
+
+const youtubeOutputSchema = serpCommonOutputSchema.extend({
+  search_information: z.record(z.string(), z.unknown()).optional(),
+  video_results: z.array(z.record(z.string(), z.unknown())).optional(),
+  channel_results: z.array(z.record(z.string(), z.unknown())).optional(),
+  shorts_results: z.array(z.record(z.string(), z.unknown())).optional(),
+  pagination: z.record(z.string(), z.unknown()).optional(),
+  serpapi_pagination: z.record(z.string(), z.unknown()).optional(),
+});
+
+const youtubeVideoTranscriptInputSchema = z.looseObject({
+  v: z.string().min(1),
+  language_code: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+  type: z.string().min(1).optional(),
+  no_cache: serpSharedInputShape.no_cache,
+  async: serpSharedInputShape.async,
+  output: serpSharedInputShape.output,
+  timeout: serpSharedInputShape.timeout,
+});
+
+const youtubeVideoTranscriptOutputSchema = serpCommonOutputSchema.extend({
+  video_id: z.string().optional(),
+  title: z.string().optional(),
+  language: z.string().optional(),
+  available_languages: z.array(z.record(z.string(), z.unknown())).optional(),
+  transcript: z.array(z.record(z.string(), z.unknown())).optional(),
+});
+
 export const serpEngines = {
   searchGoogle: {
     description: [
       "Google Web Search (engine=google). General web SERP.",
+      "When the SERP includes ai_overview.page_token, this tool automatically performs the follow-up Google AI Overview request (engine=google_ai_overview) and merges the result into ai_overview (token expires ~1 minute; fetched immediately).",
       "Input: q (required); optional start, num, safe, hl, gl, location, google_domain, device, no_cache, async, output, timeout.",
-      "Output: organic_results (title, link, snippet), knowledge_graph, answer_box, related_questions, related_searches, search_metadata; error on failure.",
-      "Docs: https://serpapi.com/search-api",
+      "Output: organic_results, ai_overview (inline or fetched via page_token), knowledge_graph, answer_box, related_questions, related_searches, search_metadata.",
+      "Docs: https://serpapi.com/search-api and https://serpapi.com/google-ai-overview-api",
     ].join(" "),
     fn: searchGoogle,
     inputSchema: googleInputSchema,
@@ -432,5 +643,27 @@ export const serpEngines = {
     fn: searchGoogleAiMode,
     inputSchema: googleAiModeInputSchema,
     outputSchema: googleAiModeOutputSchema,
+  },
+  searchYoutube: {
+    description: [
+      "YouTube Search (engine=youtube). Video titles, links, channels, shorts, pagination.",
+      "Input: search_query (required); optional sp, gl, hl, no_cache, async, output, timeout.",
+      "Output: video_results, channel_results, shorts_results, pagination, search_metadata.",
+      "Docs: https://serpapi.com/youtube-search-api",
+    ].join(" "),
+    fn: searchYoutube,
+    inputSchema: youtubeInputSchema,
+    outputSchema: youtubeOutputSchema,
+  },
+  searchYoutubeVideoTranscript: {
+    description: [
+      "YouTube Video Transcript (engine=youtube_video_transcript).",
+      "Input: v (required, video id); optional language_code, title, type, no_cache, async, output, timeout.",
+      "Output: transcript segments, video_id, language, available_languages, search_metadata.",
+      "Docs: https://serpapi.com/youtube-video-transcript",
+    ].join(" "),
+    fn: searchYoutubeVideoTranscript,
+    inputSchema: youtubeVideoTranscriptInputSchema,
+    outputSchema: youtubeVideoTranscriptOutputSchema,
   },
 } as const;
