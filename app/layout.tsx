@@ -16,8 +16,8 @@ import { SyncLocalUser } from "./sync-local-user";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Stock Market Search Engine",
-  description: "Stock market search — coming soon.",
+  title: "Newsly",
+  description: "Generate and explore daily news briefings.",
 };
 
 export default function RootLayout({

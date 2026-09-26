@@ -13,8 +13,8 @@ export function SiteHeader() {
   return (
     <header className="z-50 shrink-0 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="landing-section flex items-center justify-between gap-3 py-4">
-        <Link href="/" className="font-brand shrink-0 text-xl text-foreground">
-          Stock Search
+        <Link href="/news" className="font-brand shrink-0 text-xl text-foreground">
+          Newsly
         </Link>
         <Show when="signed-in">
           <nav className="hidden items-center gap-4 sm:flex">
