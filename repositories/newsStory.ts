@@ -19,6 +19,7 @@ const newsStoryWriteSchema = z.object({
   publishedAt: z.coerce.date().nullable().optional(),
   importanceScore: z.coerce.number().nullable().optional(),
   newsSourceIds: z.array(newsSourceIdSchema).optional(),
+  imageUrl: z.string().url().nullable().optional(),
 });
 
 export const newsStorySourceUrlSchema = z.object({
@@ -97,6 +98,7 @@ const trendingStorySelect = {
   importanceScore: true,
   upvotes: true,
   downvotes: true,
+  imageUrl: true,
   createdAt: true,
   sources: {
     select: { id: true, url: true, title: true, domain: true },

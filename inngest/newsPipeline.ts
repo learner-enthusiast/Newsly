@@ -130,7 +130,12 @@ import {
   patchNewsStory,
 } from "@/repositories/newsStory";
 import { serpEngines } from "@/SERP/index";
-import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
+import {
+  resolveArticleImageUrl,
+  resolveNewsStoryImageUrl,
+} from "@/services/news/articleImageUrl";
+import { scrapeUrlsWithFirecrawlRaw } from "@/services/firecrawl/scrapeUrls";
+import { canonicalResearchUrl } from "@/services/chat/normalizeSerpResults";
 import { runYoutubeTranscriptSynthesizeAgent } from "@/Agents/news/YoutubeTranscriptSyntesizeAgent";
 import { youtubeTranscriptAnalysisSchema } from "@/Agents/news/YoutubeTranscriptAgent";
 import {
@@ -584,7 +589,7 @@ export const newsPipelineFunction = inngest.createFunction(
               pipelineLog("scrape-selected-articles", "start", {
                 urlCount: selected.length,
               });
-              const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
+              const scrapedBundles = await scrapeUrlsWithFirecrawlRaw(
                 selected.map((article) => article.url),
               );
 
@@ -598,7 +603,8 @@ export const newsPipelineFunction = inngest.createFunction(
                   const normalizedMatch = normalized.find(
                     (row) => row.url === article.url,
                   );
-                  const rawScrape = scrapedMarkdown[index]?.trim() ?? "";
+                  const scrapeBundle = scrapedBundles[index];
+                  const rawScrape = scrapeBundle?.markdown?.trim() ?? "";
 
                   if (!rawScrape) {
                     pipelineLog(
@@ -647,6 +653,11 @@ export const newsPipelineFunction = inngest.createFunction(
                     return null;
                   }
 
+                  const imageUrl = resolveArticleImageUrl({
+                    firecrawlPayload: scrapeBundle?.raw,
+                    serpImageUrl: normalizedMatch?.imageUrl ?? null,
+                  });
+
                   return {
                     index: normalizedMatch?.index ?? index,
                     url: article.url,
@@ -658,6 +669,7 @@ export const newsPipelineFunction = inngest.createFunction(
                       ? new Date(normalizedMatch.publishedAt)
                       : null,
                     isPrimaryStorySource: true,
+                    imageUrl,
                   };
                 }),
               );
@@ -726,6 +738,13 @@ export const newsPipelineFunction = inngest.createFunction(
         const transcriptByVideoId = new Map(
           youtubeTranscripts.map((row) => [row.videoId, row.transcript]),
         );
+        const imageByUrl = new Map<string, string | null>();
+        for (const article of researched) {
+          const key = canonicalResearchUrl(article.url);
+          if (key) {
+            imageByUrl.set(key, article.imageUrl ?? null);
+          }
+        }
         for (const story of synthesized) {
           if (!storyHasPrimaryArticleSource(story)) {
             pipelineLog(
@@ -739,6 +758,11 @@ export const newsPipelineFunction = inngest.createFunction(
             continue;
           }
 
+          const storyImageUrl = resolveNewsStoryImageUrl({
+            sources: story.sources,
+            imageByUrl,
+          });
+
           const savedStory = await createNewsStory({
             newsRequestId: newsRequest.id,
             title: story.title,
@@ -751,6 +775,7 @@ export const newsPipelineFunction = inngest.createFunction(
             publishedAt: story.publishedAt,
             importanceScore: story.importanceScore,
             newsSourceIds: [],
+            imageUrl: storyImageUrl,
           });
 
           const newsSourceIds: string[] = [];

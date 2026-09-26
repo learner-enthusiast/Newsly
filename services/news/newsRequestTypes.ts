@@ -38,6 +38,7 @@ export type SerializedTrendingNewsStory = {
   upvotes: number;
   downvotes: number;
   importanceScore: number | null;
+  imageUrl: string | null;
   sourceUrls: SerializedStorySourceLink[];
 };
 
@@ -52,6 +53,7 @@ export type SerializedNewsStory = {
   location: string | null;
   publishedAt: string | null;
   importanceScore: number | null;
+  imageUrl: string | null;
   sourceUrls: SerializedStorySourceLink[];
   upvotes: number;
   downvotes: number;

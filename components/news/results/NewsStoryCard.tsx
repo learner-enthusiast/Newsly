@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { SignInButton } from "@clerk/nextjs";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 type NewsStoryCardProps = {
   story: SerializedNewsStory;
@@ -84,6 +85,33 @@ export function NewsStoryCard({
   const actionsVisible = showActions || guestActionsVisible;
   const guestGated = guestActionsVisible && !showActions;
   const redirectUrl = signInRedirectForStory(story.id, signInRedirectUrl);
+  const storyImageUrl = story.imageUrl?.trim() || null;
+  const categoryLabel = story.category?.trim() || "";
+
+  let categoryMarker: ReactNode = null;
+  if (storyImageUrl) {
+    categoryMarker = (
+      <span
+        className="inline-flex h-5 w-8 shrink-0 overflow-hidden rounded-4xl border border-border bg-muted"
+        title={categoryLabel || undefined}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary publisher URLs */}
+        <img
+          src={storyImageUrl}
+          alt=""
+          className="size-full object-cover"
+          loading="lazy"
+          decoding="async"
+        />
+      </span>
+    );
+  } else if (categoryLabel) {
+    categoryMarker = (
+      <Badge variant="outline" className={categoryBadgeClass(categoryLabel)}>
+        {categoryLabel}
+      </Badge>
+    );
+  }
 
   return (
     <article
@@ -116,14 +144,7 @@ export function NewsStoryCard({
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap gap-1.5">
-                {story.category?.trim() ? (
-                  <Badge
-                    variant="outline"
-                    className={categoryBadgeClass(story.category)}
-                  >
-                    {story.category}
-                  </Badge>
-                ) : null}
+                {categoryMarker}
                 {story.location?.trim() ? (
                   <Badge variant="outline">{story.location}</Badge>
                 ) : null}

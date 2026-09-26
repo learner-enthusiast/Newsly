@@ -30,6 +30,7 @@ function serializeTrendingStory(
     downvotes: story.downvotes,
     importanceScore:
       story.importanceScore != null ? Number(story.importanceScore) : null,
+    imageUrl: story.imageUrl ?? null,
     sourceUrls,
   };
 }

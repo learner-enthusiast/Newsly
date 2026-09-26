@@ -1,3 +1,4 @@
+import { extractSerpRowImageUrl } from "@/services/news/articleImageUrl";
 import { z } from "zod";
 
 const serpNewsItemSchema = z.looseObject({
@@ -7,6 +8,9 @@ const serpNewsItemSchema = z.looseObject({
   date: z.string().optional(),
   iso_date: z.string().optional(),
   published_at: z.string().optional(),
+  thumbnail: z.unknown().optional(),
+  image: z.string().optional(),
+  imageUrl: z.string().optional(),
   source: z
     .union([z.string(), z.looseObject({ name: z.string().optional() })])
     .optional(),
@@ -16,6 +20,9 @@ const serpOrganicItemSchema = z.looseObject({
   link: z.string().optional(),
   title: z.string().optional(),
   snippet: z.string().optional(),
+  thumbnail: z.unknown().optional(),
+  image: z.string().optional(),
+  imageUrl: z.string().optional(),
 });
 
 /** JSON-safe for Inngest step output (no Date instances). */
@@ -31,6 +38,8 @@ export const normalizedArticleLinkSchema = z.object({
   selectionWeight: z.number().positive().optional(),
   /** True when the URL came from AI-overview follow-up Google search. */
   fromAiOverviewFollowUp: z.boolean().optional(),
+  /** Serp thumbnail/image when present (fallback after Firecrawl metadata). */
+  imageUrl: z.string().url().nullable().optional(),
 });
 
 export type NormalizedArticleLink = z.infer<typeof normalizedArticleLinkSchema>;
@@ -148,6 +157,8 @@ function toLink(
     ? SOURCE_TYPE_GOOGLE_SEARCH_AI_OVERVIEW
     : sourceType;
 
+  const serpImageUrl = extractSerpRowImageUrl(item);
+
   const parsed = normalizedArticleLinkSchema.omit({ index: true }).safeParse({
     url,
     title: item.title?.trim() || undefined,
@@ -159,6 +170,7 @@ function toLink(
     selectionWeight: fromAiOverviewFollowUp
       ? AI_OVERVIEW_FOLLOW_UP_SELECTION_WEIGHT
       : undefined,
+    imageUrl: serpImageUrl,
   });
   return parsed.success ? parsed.data : null;
 }
@@ -457,6 +469,9 @@ function slimSerpNewsRow(row: unknown) {
     iso_date: item.iso_date,
     published_at: item.published_at,
     source: item.source,
+    thumbnail: item.thumbnail,
+    image: item.image,
+    imageUrl: item.imageUrl,
     ...(item[SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY] === true
       ? { [SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY]: true }
       : {}),
@@ -472,6 +487,9 @@ function slimSerpOrganicRow(row: unknown) {
     link: item.link,
     title: item.title,
     snippet: item.snippet,
+    thumbnail: item.thumbnail,
+    image: item.image,
+    imageUrl: item.imageUrl,
     ...(item[SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY] === true
       ? { [SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY]: true }
       : {}),

@@ -97,6 +97,7 @@ model NewsStory {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   newsSourceIds   String[]  @default([]) @map("news_source_ids") @db.Uuid
+  imageUrl        String?   @map("image_url") @db.Text
 
   newsRequest  NewsRequest     @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
   sources      NewsSource[]

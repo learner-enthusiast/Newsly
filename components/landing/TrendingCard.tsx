@@ -8,12 +8,14 @@ import type { SerializedTrendingNewsStory } from "@/services/news/newsRequestTyp
 import { cn } from "@/lib/utils";
 import { ArrowUp } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 export type TrendingCardData = {
   id: string;
   newsRequestId: string;
   category: string;
   categoryTone: string;
+  imageUrl: string | null;
   title: string;
   description: string;
   timeLabel: string;
@@ -38,6 +40,7 @@ export function trendingStoryToCardData(
     newsRequestId: story.newsRequestId,
     category: story.category,
     categoryTone: categoryToneForTrending(story.category),
+    imageUrl: story.imageUrl,
     title: story.title,
     description: blurb,
     timeLabel: publishedLabel,
@@ -53,6 +56,34 @@ type TrendingCardProps = {
 };
 
 export function TrendingCard({ story, className }: TrendingCardProps) {
+  const storyImageUrl = story.imageUrl?.trim() || null;
+  const categoryLabel = story.category?.trim() || "";
+
+  let categoryMarker: ReactNode = null;
+  if (storyImageUrl) {
+    categoryMarker = (
+      <span
+        className="inline-flex h-5 w-8 shrink-0 overflow-hidden rounded-4xl border border-border bg-muted"
+        title={categoryLabel || undefined}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary publisher URLs */}
+        <img
+          src={storyImageUrl}
+          alt=""
+          className="size-full object-cover"
+          loading="lazy"
+          decoding="async"
+        />
+      </span>
+    );
+  } else if (categoryLabel) {
+    categoryMarker = (
+      <Badge variant="outline" className="w-fit text-[10px]">
+        {categoryLabel}
+      </Badge>
+    );
+  }
+
   return (
     <Link
       href={`/newsStory/${story.id}`}
@@ -80,9 +111,7 @@ export function TrendingCard({ story, className }: TrendingCardProps) {
         </div>
         <CardHeader className="gap-2 pb-2">
           <div className="flex items-center justify-between gap-2">
-            <Badge variant="outline" className="w-fit text-[10px]">
-              {story.category}
-            </Badge>
+            {categoryMarker}
             <span className="inline-flex items-center gap-0.5 text-sm font-semibold text-[#c85d3f]">
               <ArrowUp className="size-4" aria-hidden />
               <span className="tabular-nums">{story.upvotes}</span>

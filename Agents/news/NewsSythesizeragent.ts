@@ -36,6 +36,7 @@ export const researchedArticleSchema = z.object({
   selectionWeight: z.number().positive().optional(),
   /** Scraped web/news articles are primary; YouTube inputs are supporting only. */
   isPrimaryStorySource: z.boolean().optional(),
+  imageUrl: z.string().url().nullable().optional(),
 });
 
 export const newsSynthesizerParamsSchema = z.object({
@@ -245,8 +246,21 @@ function indexArticles(articles: ResearchedArticle[]): IndexedArticle[] {
     const existing = byKey.get(key);
     const nextLength = next.scrapedContent?.length ?? 0;
     const existingLength = existing?.scrapedContent?.length ?? 0;
-    if (!existing || nextLength > existingLength) {
+    if (!existing) {
       byKey.set(key, next);
+      continue;
+    }
+    const merged: IndexedArticle = {
+      ...existing,
+      ...next,
+      scrapedContent:
+        nextLength > existingLength
+          ? next.scrapedContent
+          : existing.scrapedContent,
+      imageUrl: existing.imageUrl ?? next.imageUrl ?? null,
+    };
+    if (nextLength > existingLength || !existing.imageUrl) {
+      byKey.set(key, merged);
     }
   }
 

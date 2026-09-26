@@ -57,6 +57,7 @@ function serializeStoryBase(story: ListedStory) {
     publishedAt: story.publishedAt?.toISOString() ?? null,
     importanceScore:
       story.importanceScore != null ? Number(story.importanceScore) : null,
+    imageUrl: story.imageUrl ?? null,
     upvotes: story.upvotes,
     downvotes: story.downvotes,
     sourceUrls: story.sourceUrls,
