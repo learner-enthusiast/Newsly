@@ -2,6 +2,10 @@
 
 import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
 import {
+  StoryVoteControls,
+  type StoryVoteState,
+} from "@/components/news/StoryVoteControls";
+import {
   StorySourceLinks,
   type StorySourceLink,
 } from "@/components/news/StorySourceLinks";
@@ -19,6 +23,10 @@ type NewsStory = {
   category: string;
   importanceScore: number | null;
   sourceUrls: StorySourceLink[];
+  upvotes: number;
+  downvotes: number;
+  netVotes: number;
+  userVote: "UP" | "DOWN" | null;
 };
 
 type PollPayload = {
@@ -43,6 +51,8 @@ export default function NewsResultPage() {
   const [retrying, setRetrying] = useState(false);
   const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
   const [deepDiveError, setDeepDiveError] = useState<string | null>(null);
+  const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState<string | null>(null);
   const router = useRouter();
 
   const fetchStatus = useCallback(async () => {
@@ -115,6 +125,50 @@ export default function NewsResultPage() {
     }
   }
 
+  async function onStoryVote(storyId: string, desiredVote: "UP" | "DOWN") {
+    setVoteError(null);
+    setVotingStoryId(storyId);
+    try {
+      const response = await fetch(`/api/news/stories/${storyId}/vote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vote: desiredVote }),
+      });
+      const payload = (await response.json()) as StoryVoteState & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to save vote");
+      }
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          stories: current.stories.map((story) =>
+            story.id === storyId
+              ? {
+                  ...story,
+                  upvotes: payload.upvotes,
+                  downvotes: payload.downvotes,
+                  netVotes: payload.netVotes,
+                  userVote: payload.userVote,
+                }
+              : story,
+          ),
+        };
+      });
+    } catch (voteErr) {
+      setVoteError(
+        voteErr instanceof Error ? voteErr.message : "Failed to save vote",
+      );
+    } finally {
+      setVotingStoryId(null);
+    }
+  }
+
   async function onRetry() {
     setRetrying(true);
     setError(null);
@@ -166,6 +220,7 @@ export default function NewsResultPage() {
       {deepDiveError ? (
         <p className="text-sm text-red-600">{deepDiveError}</p>
       ) : null}
+      {voteError ? <p className="text-sm text-red-600">{voteError}</p> : null}
 
       {status === "pending" ? (
         <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -229,7 +284,7 @@ export default function NewsResultPage() {
               </div>
             ) : null}
             {status === "success" ? (
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -239,6 +294,17 @@ export default function NewsResultPage() {
                 >
                   {deepDiveStoryId === story.id ? "Starting…" : "Deep dive"}
                 </Button>
+                <StoryVoteControls
+                  storyId={story.id}
+                  vote={{
+                    upvotes: story.upvotes ?? 0,
+                    downvotes: story.downvotes ?? 0,
+                    netVotes: story.netVotes ?? 0,
+                    userVote: story.userVote ?? null,
+                  }}
+                  onVote={onStoryVote}
+                  voting={votingStoryId === story.id}
+                />
               </div>
             ) : null}
           </li>
