@@ -1,18 +1,18 @@
 "use client";
 
-import { NewsRequestContextCard } from "@/components/news/NewsRequestContextCard";
-import { NewsRequestProgress } from "@/components/news/NewsRequestProgress";
-import { NewsStoryListItem } from "@/components/news/NewsStoryListItem";
+import { NewsResultsView } from "@/components/news/results/NewsResultsView";
 import type { StoryVoteState } from "@/components/news/StoryVoteControls";
-import {
-  activeProgressStepLabel,
-  sanitizeNewsRequestError,
-} from "@/services/news/newsRequestProgress";
-import type { NewsRequestResultPayload } from "@/services/news/newsRequestTypes";
 import { useNewsRequestPolling } from "@/hooks/useNewsRequestPolling";
-import Link from "next/link";
+import type { NewsRequestResultPayload } from "@/services/news/newsRequestTypes";
+import {
+  applyCounterDelta,
+  buildNewsStoryVoteSummary,
+  resolveVoteCounterDelta,
+  resolveVoteMutation,
+} from "@/services/news/storyVoteLogic";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 
 export default function NewsResultPage() {
   const params = useParams<{ newsId: string }>();
@@ -38,12 +38,10 @@ export default function NewsResultPage() {
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
-  const [deepDiveError, setDeepDiveError] = useState<string | null>(null);
   const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
-  const [voteError, setVoteError] = useState<string | null>(null);
+  const voteLockRef = useRef<Set<string>>(new Set());
 
   async function onDeepDive(storyId: string) {
-    setDeepDiveError(null);
     setDeepDiveStoryId(storyId);
     try {
       const response = await fetch("/api/newsStoryChat", {
@@ -60,7 +58,7 @@ export default function NewsResultPage() {
       }
       router.push(`/chat/${payload.chatSessionId}`);
     } catch (deepDiveErr) {
-      setDeepDiveError(
+      toast.error(
         deepDiveErr instanceof Error ? deepDiveErr.message : "Deep dive failed",
       );
     } finally {
@@ -68,51 +66,111 @@ export default function NewsResultPage() {
     }
   }
 
-  async function onStoryVote(storyId: string, desiredVote: "UP" | "DOWN") {
-    setVoteError(null);
-    setVotingStoryId(storyId);
-    try {
-      const response = await fetch(`/api/news/stories/${storyId}/vote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vote: desiredVote }),
-      });
-      const payload = (await response.json()) as StoryVoteState & {
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to save vote");
+  const onStoryVote = useCallback(
+    async (storyId: string, desiredVote: "UP" | "DOWN") => {
+      if (voteLockRef.current.has(storyId)) {
+        return;
       }
+      voteLockRef.current.add(storyId);
+
+      const snapshotRef: { current: NewsRequestResultPayload | null } = {
+        current: null,
+      };
 
       setData((current) => {
         if (!current) {
           return current;
         }
+        snapshotRef.current = current;
+        const story = current.stories.find((item) => item.id === storyId);
+        if (!story) {
+          return current;
+        }
+        const existingVote = story.userVote ?? null;
+        const mutation = resolveVoteMutation(existingVote, desiredVote);
+        const delta = resolveVoteCounterDelta(existingVote, desiredVote);
+        const counters = applyCounterDelta(
+          { upvotes: story.upvotes, downvotes: story.downvotes },
+          delta,
+        );
+        const nextUserVote: StoryVoteState["userVote"] =
+          mutation.action === "delete" ? null : desiredVote;
+        const summary = buildNewsStoryVoteSummary({
+          ...counters,
+          userVote: nextUserVote,
+        });
         return {
           ...current,
-          stories: current.stories.map((story) =>
-            story.id === storyId
-              ? {
-                  ...story,
-                  upvotes: payload.upvotes,
-                  downvotes: payload.downvotes,
-                  netVotes: payload.netVotes,
-                  userVote: payload.userVote,
-                }
-              : story,
+          stories: current.stories.map((item) =>
+            item.id === storyId ? { ...item, ...summary } : item,
           ),
         };
       });
-    } catch (voteErr) {
-      setVoteError(
-        voteErr instanceof Error ? voteErr.message : "Failed to save vote",
-      );
-    } finally {
-      setVotingStoryId(null);
-    }
-  }
+
+      setVotingStoryId(storyId);
+      try {
+        const storyBefore = snapshotRef.current?.stories.find(
+          (item) => item.id === storyId,
+        );
+        const willClear = storyBefore?.userVote === desiredVote;
+
+        const response = await fetch(
+          willClear
+            ? `/api/news/stories/${storyId}/vote`
+            : `/api/news/stories/${storyId}/vote`,
+          {
+            method: willClear ? "DELETE" : "POST",
+            headers: willClear
+              ? undefined
+              : { "Content-Type": "application/json" },
+            body: willClear ? undefined : JSON.stringify({ vote: desiredVote }),
+          },
+        );
+        const payload = (await response.json()) as StoryVoteState & {
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to save vote");
+        }
+
+        setData((current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            stories: current.stories.map((story) =>
+              story.id === storyId
+                ? {
+                    ...story,
+                    upvotes: payload.upvotes,
+                    downvotes: payload.downvotes,
+                    netVotes: payload.netVotes,
+                    userVote: payload.userVote,
+                  }
+                : story,
+            ),
+          };
+        });
+      } catch (voteErr) {
+        if (snapshotRef.current) {
+          setData(snapshotRef.current);
+        }
+        toast.error(
+          voteErr instanceof Error ? voteErr.message : "Failed to save vote",
+        );
+      } finally {
+        voteLockRef.current.delete(storyId);
+        setVotingStoryId(null);
+      }
+    },
+    [setData],
+  );
 
   async function onRetry() {
+    if (!newsId) {
+      return;
+    }
     setRetrying(true);
     setRetryError(null);
     try {
@@ -130,124 +188,50 @@ export default function NewsResultPage() {
       restartPolling();
     } catch (err) {
       setRetryError(err instanceof Error ? err.message : "Retry failed");
+      toast.error(err instanceof Error ? err.message : "Retry failed");
     } finally {
       setRetrying(false);
     }
   }
 
-  const request = data?.newsRequest;
-  const stories = data?.stories ?? [];
-  const requestedCount = request?.storyCount ?? 0;
-  const foundCount = stories.length;
-
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-12">
-      <div>
-        <Link
-          href="/news"
-          className="text-sm text-muted-foreground hover:underline"
-        >
-          ← New request
-        </Link>
-        <h1 className="font-display mt-2 text-2xl font-semibold">
-          {isPending ? "News briefing in progress" : "News results"}
-        </h1>
-        {isPending && request ? (
-          <p className="mt-1 text-sm text-muted-foreground">
-            {activeProgressStepLabel(request.loadingLogs, request.status) ??
-              "Preparing your request"}
-            …
-          </p>
-        ) : null}
-      </div>
-
+    <>
       {!newsId ? (
-        <p className="text-sm text-red-600">Invalid news request link.</p>
+        <p className="px-4 py-8 text-sm text-destructive">Invalid news request link.</p>
       ) : null}
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading your request…</p>
+        <p className="px-4 py-8 text-sm text-muted-foreground">
+          Loading your request…
+        </p>
       ) : null}
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <p className="px-4 py-2 text-sm text-destructive">{error}</p>
+      ) : null}
       {pollWarning ? (
-        <p className="text-sm text-amber-700">{pollWarning}</p>
+        <p className="px-4 py-2 text-sm text-amber-800">{pollWarning}</p>
       ) : null}
-      {retryError ? <p className="text-sm text-red-600">{retryError}</p> : null}
-      {deepDiveError ? (
-        <p className="text-sm text-red-600">{deepDiveError}</p>
+      {retryError ? (
+        <p className="px-4 py-2 text-sm text-destructive">{retryError}</p>
       ) : null}
-      {voteError ? <p className="text-sm text-red-600">{voteError}</p> : null}
 
-      {request ? (
-        <NewsRequestContextCard
-          date={request.date}
-          scope={request.scope}
-          location={request.location}
-          categories={request.categories}
-          storyCount={request.storyCount}
-          customQuery={request.customQuery}
-          language={request.language}
-          sources={request.sources}
-          status={request.status}
+      {newsId && data ? (
+        <NewsResultsView
+          newsId={newsId}
+          data={data}
+          isPending={isPending}
+          isSuccess={isSuccess}
+          isFailed={isFailed}
+          showActions={isSuccess}
+          deepDiveStoryId={deepDiveStoryId}
+          votingStoryId={votingStoryId}
+          onDeepDive={onDeepDive}
+          onVote={onStoryVote}
+          onRetry={onRetry}
+          retrying={retrying}
         />
       ) : null}
-
-      {isPending && request ? (
-        <NewsRequestProgress
-          loadingLogs={request.loadingLogs}
-          status={request.status}
-        />
-      ) : null}
-
-      {isFailed && request ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm">
-          <p className="font-medium text-red-800">
-            We couldn&apos;t complete this news request.
-          </p>
-          <p className="mt-1 text-red-700">
-            {sanitizeNewsRequestError(request.error)}
-          </p>
-          <button
-            type="button"
-            onClick={onRetry}
-            disabled={retrying}
-            className="mt-3 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-60"
-          >
-            {retrying ? "Retrying…" : "Try again"}
-          </button>
-        </div>
-      ) : null}
-
-      {isSuccess ? (
-        <p className="text-sm text-muted-foreground">
-          {foundCount === 0
-            ? "No sufficiently relevant stories were found for this request."
-            : foundCount < requestedCount
-              ? `${foundCount} relevant ${foundCount === 1 ? "story" : "stories"} found (you requested ${requestedCount}).`
-              : `${foundCount} relevant ${foundCount === 1 ? "story" : "stories"} ready.`}
-        </p>
-      ) : null}
-
-      {isSuccess && foundCount === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Try broadening categories, adjusting the date, or changing scope.
-        </p>
-      ) : null}
-
-      <ul className="flex flex-col gap-4">
-        {stories.map((story) => (
-          <NewsStoryListItem
-            key={story.id}
-            story={story}
-            showActions={isSuccess}
-            deepDiveStoryId={deepDiveStoryId}
-            votingStoryId={votingStoryId}
-            onDeepDive={onDeepDive}
-            onVote={onStoryVote}
-          />
-        ))}
-      </ul>
-    </main>
+    </>
   );
 }

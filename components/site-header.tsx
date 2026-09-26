@@ -50,19 +50,53 @@ export function SiteHeader() {
         </Show>
 
         <Show when="signed-in">
-          <nav className="hidden flex-1 items-center justify-center gap-4 md:flex">
-            <Link
-              href="/news"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              News
-            </Link>
-            <Link
-              href="/chat"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Chat
-            </Link>
+          <nav
+            className="hidden flex-1 items-center justify-center gap-5 md:flex"
+            aria-label="App"
+          >
+            {(
+              [
+                { href: "/", label: "Home", match: (p: string) => p === "/" },
+                {
+                  href: "/news",
+                  label: "News",
+                  match: (p: string) => p === "/news" || p.startsWith("/news/"),
+                },
+                {
+                  href: "/chat",
+                  label: "Chat",
+                  match: (p: string) => p === "/chat" || p.startsWith("/chat/"),
+                },
+                {
+                  href: "/news",
+                  label: "Saved",
+                  match: () => false,
+                  disabled: true,
+                },
+              ] as const
+            ).map((link) =>
+              "disabled" in link && link.disabled ? (
+                <span
+                  key={link.label}
+                  className="cursor-not-allowed text-sm text-muted-foreground/50"
+                >
+                  {link.label}
+                </span>
+              ) : (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  aria-current={link.match(pathname) ? "page" : undefined}
+                  className={
+                    link.match(pathname)
+                      ? "text-sm font-medium text-foreground"
+                      : "text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  }
+                >
+                  {link.label}
+                </Link>
+              ),
+            )}
           </nav>
         </Show>
 

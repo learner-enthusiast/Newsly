@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   fontBrand,
@@ -45,6 +46,7 @@ export default function RootLayout({
                 {children}
               </div>
               <SiteFooter />
+              <Toaster richColors closeButton position="top-center" />
             </div>
           </TooltipProvider>
         </ClerkProvider>
