@@ -102,6 +102,7 @@ export function HeroSection() {
             variant="outline"
             size="lg"
             className="rounded-full"
+            nativeButton={false}
             render={<Link href="#how-it-works" />}
           >
             <Play data-icon="inline-start" className="fill-current" />

@@ -46,6 +46,7 @@ import {
   createChatMessage,
   listRecentChatMessagesByChatSessionId,
 } from "@/repositories/chatMessage";
+import { CHAT_PIPELINE_RECENT_MESSAGE_LIMIT } from "@/services/chat/recentChatMessagesForPipeline";
 import { getChatSessionByIdForUser } from "@/repositories/chatSession";
 import { listNewsSourcesByIdsForStory } from "@/repositories/newsSource";
 import { getNewsStoryWithSourcesById } from "@/repositories/newsStory";
@@ -59,7 +60,6 @@ import {
 } from "@/services/chat/chatSerpResearch";
 import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
-import { loadRecentMessagesForQueryEnhancer } from "@/services/chat/recentChatMessagesForPipeline";
 import { researchUrlKeysFromSources } from "@/services/chat/dedupeResearchArticles";
 import { mergeDirectFirecrawlTargets } from "@/services/chat/directUrlResearch";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
@@ -76,6 +76,39 @@ export const chatPipelineEventDataSchema = z.object({
 export type ChatPipelineEventData = z.infer<typeof chatPipelineEventDataSchema>;
 
 const PIPELINE_LOG_PREFIX = "[chat-pipeline]";
+const RESEARCH_SOURCE_INSERT_CONCURRENCY = 4;
+
+function createStepTimer(): () => number {
+  const startedAt = Date.now();
+  return () => Date.now() - startedAt;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index]!, index);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
+}
 
 function pipelineLog(
   step: string,
@@ -103,42 +136,57 @@ export const chatPipelineFunction = inngest.createFunction(
     });
 
     try {
-      const session = await step.run("load-chat-session", async () => {
-        pipelineLog("load-chat-session", "start");
-        const row = await getChatSessionByIdForUser(
-          input.chatSessionId,
-          input.userId,
-        );
-        if (!row) {
-          throw new Error("Chat session not found for user");
-        }
-        return toJsonSafeStepOutput(row);
-      });
+      const pipelineStartedAt = Date.now();
 
-      const userMessage = await step.run("load-user-message", async () => {
-        const messages = await listRecentChatMessagesByChatSessionId(
-          input.chatSessionId,
-          20,
-        );
-        const message = messages.find((row) => row.id === input.userMessageId);
-        if (!message) {
-          throw new Error("User message not found on chat session");
-        }
-        return toJsonSafeStepOutput({
-          id: message.id,
-          content: message.content,
-          role: message.role,
-        });
-      });
+      const [session, userMessage] = await Promise.all([
+        step.run("load-chat-session", async () => {
+          const elapsed = createStepTimer();
+          pipelineLog("load-chat-session", "start");
+          const row = await getChatSessionByIdForUser(
+            input.chatSessionId,
+            input.userId,
+          );
+          if (!row) {
+            throw new Error("Chat session not found for user");
+          }
+          pipelineLog("load-chat-session", "done", { durationMs: elapsed() });
+          return toJsonSafeStepOutput(row);
+        }),
+        step.run("load-user-message", async () => {
+          const elapsed = createStepTimer();
+          pipelineLog("load-user-message", "start");
+          const messages = await listRecentChatMessagesByChatSessionId(
+            input.chatSessionId,
+            20,
+          );
+          const message = messages.find(
+            (row) => row.id === input.userMessageId,
+          );
+          if (!message) {
+            throw new Error("User message not found on chat session");
+          }
+          pipelineLog("load-user-message", "done", { durationMs: elapsed() });
+          return toJsonSafeStepOutput({
+            id: message.id,
+            content: message.content,
+            role: message.role,
+          });
+        }),
+      ]);
 
       const researchPrompt = await step.run(
         "build-research-prompt",
         async () => {
+          const elapsed = createStepTimer();
           pipelineLog("build-research-prompt", "start", {
             isFromNewsStory: session.isFromNewsStory,
           });
 
           if (!session.newsStoryId || !session.isFromNewsStory) {
+            pipelineLog("build-research-prompt", "done", {
+              durationMs: elapsed(),
+              promptLength: userMessage.content.trim().length,
+            });
             return toJsonSafeStepOutput({
               newsStoryId: null as string | null,
               researchPrompt: userMessage.content.trim(),
@@ -183,6 +231,7 @@ export const chatPipelineFunction = inngest.createFunction(
           });
 
           pipelineLog("build-research-prompt", "done", {
+            durationMs: elapsed(),
             promptLength: result.researchPrompt.length,
           });
 
@@ -193,11 +242,37 @@ export const chatPipelineFunction = inngest.createFunction(
         },
       );
 
+      type DeterminerStepSuccess = {
+        blocked: false;
+        outcome: SmallDeterminerRunResult;
+        chatHistoryForModel: ReturnType<typeof sliceChatHistoryForModel>;
+      };
+
       const determinerResult = await step.run("run-determiner", async () => {
-        const recentMessages = await loadRecentMessagesForQueryEnhancer(
+        const elapsed = createStepTimer();
+        const historyRows = await listRecentChatMessagesByChatSessionId(
           input.chatSessionId,
-          input.userMessageId,
+          CHAT_PIPELINE_RECENT_MESSAGE_LIMIT + 1,
         );
+        const historyWithoutCurrent = historyRows.filter(
+          (row) => row.id !== input.userMessageId,
+        );
+        const recentMessages = historyWithoutCurrent
+          .slice(-CHAT_PIPELINE_RECENT_MESSAGE_LIMIT)
+          .map((row) => ({
+            role: row.role,
+            content: row.content,
+          }));
+        const chatHistoryForModel = sliceChatHistoryForModel(
+          historyRows
+            .slice(-CHAT_PIPELINE_RECENT_MESSAGE_LIMIT)
+            .filter((row) => row.id !== input.userMessageId)
+            .map((row) => ({
+              role: roleForChatModel(row.role),
+              content: row.content,
+            })),
+        );
+
         pipelineLog("run-determiner", "start", {
           recentMessageCount: recentMessages.length,
           isFromNewsStory: session.isFromNewsStory,
@@ -210,6 +285,7 @@ export const chatPipelineFunction = inngest.createFunction(
             abortSignal: AbortSignal.timeout(120_000),
           });
           pipelineLog("run-determiner", "done", {
+            durationMs: elapsed(),
             useTools: outcome.determiner.useTools,
             callCount:
               outcome.determiner.useTools === "yes"
@@ -217,9 +293,17 @@ export const chatPipelineFunction = inngest.createFunction(
                 : 0,
             firecrawlUrlCount: outcome.determiner.firecrawlUrls.length,
           });
-          return toJsonSafeStepOutput(outcome);
+          return toJsonSafeStepOutput({
+            blocked: false as const,
+            outcome,
+            chatHistoryForModel,
+          } satisfies DeterminerStepSuccess);
         } catch (error) {
           if (error instanceof GuardrailBlockedError) {
+            pipelineLog("run-determiner", "done", {
+              durationMs: elapsed(),
+              blocked: true,
+            });
             return toJsonSafeStepOutput({
               blocked: true as const,
               reason: error.message,
@@ -243,12 +327,15 @@ export const chatPipelineFunction = inngest.createFunction(
         return toJsonSafeStepOutput({ assistantMessageId: blockedMessage.id });
       }
 
-      const determinerOutcome = determinerResult as SmallDeterminerRunResult;
-      const determiner = determinerOutcome.determiner;
+      const determinerStep = determinerResult as DeterminerStepSuccess;
+      const determiner = determinerStep.outcome.determiner;
+      const chatHistoryForModel = determinerStep.chatHistoryForModel;
 
       const serpHits = await step.run("fetch-and-normalize-serp", async () => {
+        const elapsed = createStepTimer();
         if (determiner.useTools !== "yes" || determiner.calls.length === 0) {
           pipelineLog("fetch-and-normalize-serp", "skipped", {
+            durationMs: elapsed(),
             reason: "no serp calls",
           });
           return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
@@ -262,82 +349,115 @@ export const chatPipelineFunction = inngest.createFunction(
           determiner.calls as ValidatedSerpToolCall[],
         );
         pipelineLog("fetch-and-normalize-serp", "done", {
+          durationMs: elapsed(),
           hitCount: merged.length,
         });
         return toJsonSafeStepOutput(merged);
       });
 
-      const selectedArticles = await step.run("select-articles", async () => {
-        if (serpHits.length === 0) {
-          return toJsonSafeStepOutput([]);
-        }
-        pipelineLog("select-articles", "start", {
-          candidates: serpHits.length,
-        });
-        const selected = await runArticleSynthesizerAgent({
-          userPrompt: researchPrompt.researchPrompt,
-          hits: serpHits,
-          topPercent: 40,
-          maxArticles: 6,
-          abortSignal: AbortSignal.timeout(120_000),
-        });
-        pipelineLog("select-articles", "done", { selected: selected.length });
-        return toJsonSafeStepOutput(selected);
-      });
+      const [selectedArticles, preloadedSessionSources] = await Promise.all([
+        step.run("select-articles", async () => {
+          const elapsed = createStepTimer();
+          if (serpHits.length === 0) {
+            pipelineLog("select-articles", "skipped", {
+              durationMs: elapsed(),
+            });
+            return toJsonSafeStepOutput([]);
+          }
+          pipelineLog("select-articles", "start", {
+            candidates: serpHits.length,
+          });
+          const selected = await runArticleSynthesizerAgent({
+            userPrompt: researchPrompt.researchPrompt,
+            hits: serpHits,
+            topPercent: 40,
+            maxArticles: 6,
+            abortSignal: AbortSignal.timeout(120_000),
+          });
+          pipelineLog("select-articles", "done", {
+            durationMs: elapsed(),
+            selected: selected.length,
+          });
+          return toJsonSafeStepOutput(selected);
+        }),
+        step.run("preload-existing-research-sources", async () => {
+          const elapsed = createStepTimer();
+          const sessionSources = await listResearchSourcesByChatSessionId(
+            input.chatSessionId,
+          );
+          pipelineLog("preload-existing-research-sources", "done", {
+            durationMs: elapsed(),
+            count: sessionSources.length,
+            preloadedDuringSynthesizer: true,
+          });
+          return toJsonSafeStepOutput(sessionSources);
+        }),
+      ]);
 
       const scrapedSources = await step.run(
         "scrape-and-persist-sources",
         async () => {
-          const existingKeys = researchUrlKeysFromSources(
-            await listResearchSourcesByChatSessionId(input.chatSessionId),
+          const elapsed = createStepTimer();
+          const freshSessionSources = await listResearchSourcesByChatSessionId(
+            input.chatSessionId,
           );
+          const existingKeys = researchUrlKeysFromSources(freshSessionSources);
           const toScrape = mergeDirectFirecrawlTargets(
             selectedArticles,
             determiner.firecrawlUrls,
             existingKeys,
           );
 
-          if (toScrape.length === 0) {
-            return toJsonSafeStepOutput([]);
-          }
-
           pipelineLog("scrape-and-persist-sources", "start", {
             count: toScrape.length,
             directUrls: determiner.firecrawlUrls.length,
+            preloadedCount: preloadedSessionSources.length,
           });
+
+          if (toScrape.length === 0) {
+            pipelineLog("scrape-and-persist-sources", "done", {
+              durationMs: elapsed(),
+              saved: 0,
+            });
+            return toJsonSafeStepOutput([]);
+          }
 
           const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
             toScrape.map((article) => article.url),
           );
-          const rows = [];
-          for (let index = 0; index < toScrape.length; index += 1) {
-            const article = toScrape[index];
-            let content = scrapedMarkdown[index]?.trim() ?? "";
 
-            if (!content) {
-              content = article.title;
-            }
+          const rows = await mapWithConcurrency(
+            toScrape,
+            RESEARCH_SOURCE_INSERT_CONCURRENCY,
+            async (article, index) => {
+              let content = scrapedMarkdown[index]?.trim() ?? "";
 
-            const saved = await createResearchSource({
-              chatSessionId: input.chatSessionId,
-              url: article.url,
-              domain: article.domain,
-              title: article.title,
-              content: content.slice(0, 50_000),
-              sourceType: article.sourceType,
-            });
+              if (!content) {
+                content = article.title;
+              }
 
-            rows.push({
-              id: saved.id,
-              url: saved.url,
-              domain: saved.domain,
-              title: saved.title,
-              sourceType: saved.sourceType,
-              contentExcerpt: saved.content.slice(0, 4000),
-            });
-          }
+              const saved = await createResearchSource({
+                chatSessionId: input.chatSessionId,
+                url: article.url,
+                domain: article.domain,
+                title: article.title,
+                content: content.slice(0, 50_000),
+                sourceType: article.sourceType,
+              });
+
+              return {
+                id: saved.id,
+                url: saved.url,
+                domain: saved.domain,
+                title: saved.title,
+                sourceType: saved.sourceType,
+                contentExcerpt: saved.content.slice(0, 4000),
+              };
+            },
+          );
 
           pipelineLog("scrape-and-persist-sources", "done", {
+            durationMs: elapsed(),
             saved: rows.length,
           });
           return toJsonSafeStepOutput(rows);
@@ -347,19 +467,8 @@ export const chatPipelineFunction = inngest.createFunction(
       const assistantMarkdown = await step.run(
         "generate-assistant-reply",
         async () => {
+          const elapsed = createStepTimer();
           pipelineLog("generate-assistant-reply", "start");
-          const historyRows = await listRecentChatMessagesByChatSessionId(
-            input.chatSessionId,
-            10,
-          );
-          const chatHistory = sliceChatHistoryForModel(
-            historyRows
-              .filter((row) => row.id !== input.userMessageId)
-              .map((row) => ({
-                role: roleForChatModel(row.role),
-                content: row.content,
-              })),
-          );
 
           const markdown = await runChatModelAgent({
             prompt: userMessage.content,
@@ -368,11 +477,12 @@ export const chatPipelineFunction = inngest.createFunction(
               normalizedHits: serpHits,
               scrapedResearchSources: scrapedSources,
             },
-            chatHistory,
+            chatHistory: chatHistoryForModel,
             abortSignal: AbortSignal.timeout(300_000),
           });
 
           pipelineLog("generate-assistant-reply", "done", {
+            durationMs: elapsed(),
             length: markdown.length,
           });
           return toJsonSafeStepOutput(markdown);
@@ -400,6 +510,7 @@ export const chatPipelineFunction = inngest.createFunction(
 
       pipelineLog("run", "finished", {
         assistantMessageId: assistantMessage.id,
+        totalDurationMs: Date.now() - pipelineStartedAt,
       });
       return assistantMessage;
     } catch (error) {

@@ -26,6 +26,21 @@ export type SerializedNewsRequest = {
   completedAt: string | null;
 };
 
+export type SerializedTrendingNewsStory = {
+  id: string;
+  newsRequestId: string;
+  title: string;
+  description: string | null;
+  summary: string;
+  category: string;
+  location: string | null;
+  publishedAt: string | null;
+  upvotes: number;
+  downvotes: number;
+  importanceScore: number | null;
+  sourceUrls: SerializedStorySourceLink[];
+};
+
 export type SerializedNewsStory = {
   id: string;
   newsRequestId: string;
@@ -42,9 +57,24 @@ export type SerializedNewsStory = {
   downvotes: number;
   netVotes: number;
   userVote: "UP" | "DOWN" | null;
+  userSaved: boolean;
 };
 
 export type NewsRequestResultPayload = {
   newsRequest: SerializedNewsRequest;
   stories: SerializedNewsStory[];
+};
+
+export type NewsStoryPagePayload = {
+  newsRequest: SerializedNewsRequest;
+  story: SerializedNewsStory;
+  canViewFullBriefing: boolean;
+};
+
+export type NewsStoriesListPayload = {
+  stories: SerializedNewsStory[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 };

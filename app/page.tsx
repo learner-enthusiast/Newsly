@@ -1,7 +1,7 @@
+import { NewslyDashboardPage } from "@/components/landing/NewslyDashboardPage";
 import { NewslyLandingPage } from "@/components/landing/NewslyLandingPage";
 import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Newsly — Personalized News That Actually Matters",
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default async function HomePage() {
   const { userId } = await auth();
   if (userId) {
-    redirect("/news");
+    return <NewslyDashboardPage />;
   }
 
   return <NewslyLandingPage />;

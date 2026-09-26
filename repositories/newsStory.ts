@@ -85,6 +85,171 @@ export async function getNewsStoryWithSourcesById(id: string) {
   return { ...story, sources: ordered };
 }
 
+const trendingStorySelect = {
+  id: true,
+  newsRequestId: true,
+  title: true,
+  description: true,
+  summary: true,
+  category: true,
+  location: true,
+  publishedAt: true,
+  importanceScore: true,
+  upvotes: true,
+  downvotes: true,
+  createdAt: true,
+  sources: {
+    select: { id: true, url: true, title: true, domain: true },
+    orderBy: { createdAt: "asc" as const },
+    take: 3,
+  },
+} as const;
+
+/** Recent stories from successful briefings, ranked by community upvotes. */
+/** Story from a completed briefing (public story page). */
+export async function getPublishedNewsStoryWithSources(storyId: string) {
+  const row = await prisma.newsStory.findFirst({
+    where: {
+      id: newsStoryIdSchema.parse(storyId),
+      newsRequest: { status: "success" },
+    },
+    include: {
+      newsRequest: true,
+      sources: {
+        select: { id: true, url: true, title: true, domain: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!row) {
+    return null;
+  }
+
+  const { sources, newsRequest, ...story } = row;
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const ordered =
+    story.newsSourceIds.length > 0
+      ? story.newsSourceIds
+          .map((sourceId) => byId.get(sourceId))
+          .filter((source): source is (typeof sources)[number] => source != null)
+      : sources;
+
+  return {
+    newsRequest,
+    story: {
+      ...story,
+      sourceUrls: ordered.map((source) =>
+        newsStorySourceUrlSchema.parse({
+          id: source.id,
+          url: source.url,
+          title: source.title,
+          domain: source.domain,
+        }),
+      ),
+    },
+  };
+}
+
+const publishedStoryWhere = {
+  newsRequest: { status: "success" as const },
+};
+
+const publishedStoryOrderBy = [
+  { upvotes: "desc" as const },
+  { publishedAt: "desc" as const },
+  { createdAt: "desc" as const },
+];
+
+function mapStoryRowWithSources<
+  T extends {
+    newsSourceIds: string[];
+    sources: {
+      id: string;
+      url: string;
+      title: string;
+      domain: string;
+    }[];
+  },
+>(row: T) {
+  const { sources, ...story } = row;
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const ordered =
+    story.newsSourceIds.length > 0
+      ? story.newsSourceIds
+          .map((sourceId) => byId.get(sourceId))
+          .filter((source): source is (typeof sources)[number] => source != null)
+      : sources;
+
+  return {
+    ...story,
+    sourceUrls: ordered.map((source) =>
+      newsStorySourceUrlSchema.parse({
+        id: source.id,
+        url: source.url,
+        title: source.title,
+        domain: source.domain,
+      }),
+    ),
+  };
+}
+
+/** Paginated published stories (successful briefings), ranked by votes then recency. */
+export async function listPublishedNewsStoriesPaginated(input: {
+  page: number;
+  limit: number;
+}) {
+  const page = Math.max(1, input.page);
+  const limit = Math.min(Math.max(1, input.limit), 50);
+  const skip = (page - 1) * limit;
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.newsStory.count({ where: publishedStoryWhere }),
+    prisma.newsStory.findMany({
+      where: publishedStoryWhere,
+      orderBy: publishedStoryOrderBy,
+      skip,
+      take: limit,
+      include: {
+        sources: {
+          select: { id: true, url: true, title: true, domain: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    page,
+    limit,
+    total,
+    stories: rows.map((row) => mapStoryRowWithSources(row)),
+  };
+}
+
+export async function listTrendingNewsStories(input: {
+  since: Date;
+  limit: number;
+}) {
+  const limit = Math.min(Math.max(1, input.limit), 20);
+
+  return prisma.newsStory.findMany({
+    where: {
+      newsRequest: { status: "success" },
+      OR: [
+        { publishedAt: { gte: input.since } },
+        {
+          publishedAt: null,
+          createdAt: { gte: input.since },
+        },
+      ],
+    },
+    orderBy: [{ upvotes: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
+    take: limit,
+    select: trendingStorySelect,
+  });
+}
+
 export async function listNewsStoriesByNewsRequestId(newsRequestId: string) {
   const rows = await prisma.newsStory.findMany({
     where: { newsRequestId: newsRequestIdSchema.parse(newsRequestId) },
@@ -97,27 +262,7 @@ export async function listNewsStoriesByNewsRequestId(newsRequestId: string) {
     },
   });
 
-  return rows.map(({ sources, ...story }) => {
-    const byId = new Map(sources.map((source) => [source.id, source]));
-    const ordered =
-      story.newsSourceIds.length > 0
-        ? story.newsSourceIds
-            .map((id) => byId.get(id))
-            .filter((source): source is (typeof sources)[number] => source != null)
-        : sources;
-
-    return {
-      ...story,
-      sourceUrls: ordered.map((source) =>
-        newsStorySourceUrlSchema.parse({
-          id: source.id,
-          url: source.url,
-          title: source.title,
-          domain: source.domain,
-        }),
-      ),
-    };
-  });
+  return rows.map((row) => mapStoryRowWithSources(row));
 }
 
 export async function putNewsStory(id: string, input: NewsStoryPutInput) {

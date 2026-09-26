@@ -54,20 +54,27 @@ export function NewsCategoryTabs({
       onValueChange={(next) => onValueChange(String(next))}
       className={cn("w-full min-w-0", className)}
     >
-      <div ref={listWrapRef} className="w-full min-w-0 overflow-x-auto">
-      <TabsList
-        variant="line"
-        className="h-auto w-full max-w-full flex-wrap justify-start gap-1 bg-transparent p-0"
-      >
-        <TabsTrigger value={ALL_STORIES_TAB} className="shrink-0">
-          All Stories ({total})
-        </TabsTrigger>
-        {[...counts.entries()].map(([category, count]) => (
-          <TabsTrigger key={category} value={category} className="shrink-0">
-            {category} ({count})
+      <div ref={listWrapRef} className="w-full min-w-0">
+        <TabsList
+          variant="line"
+          className="h-auto w-full max-w-full flex-wrap justify-start gap-x-3 gap-y-1 bg-transparent p-0 pb-1.5"
+        >
+          <TabsTrigger
+            value={ALL_STORIES_TAB}
+            className="h-auto shrink-0 flex-none py-2"
+          >
+            All Stories ({total})
           </TabsTrigger>
-        ))}
-      </TabsList>
+          {[...counts.entries()].map(([category, count]) => (
+            <TabsTrigger
+              key={category}
+              value={category}
+              className="h-auto shrink-0 flex-none py-2"
+            >
+              {category} ({count})
+            </TabsTrigger>
+          ))}
+        </TabsList>
       </div>
     </Tabs>
   );

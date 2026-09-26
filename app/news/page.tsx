@@ -70,7 +70,7 @@ export default function NewsRequestPage() {
   const [storyCount, setStoryCount] = useState(DEFAULT_STORY_COUNT);
   const [language, setLanguage] = useState("English");
   const [sourcesText, setSourcesText] = useState("");
-  const [advancedOpen, setAdvancedOpen] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [recentRequests, setRecentRequests] = useState<SerializedNewsRequest[]>(
@@ -209,9 +209,9 @@ export default function NewsRequestPage() {
   const needsLocation = scope === "local" || scope === "both";
 
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-[1600px] grid-cols-1 gap-6 px-4 py-4 md:px-6 md:pb-6 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
+    <div className="mx-auto grid w-full min-w-0 max-w-[1600px] grid-cols-1 gap-6 px-4 pt-3 pb-4 md:px-6 md:pb-6 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start lg:pt-3 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
       <div className="min-w-0 max-w-full">
-        <div className="mb-6 flex flex-col gap-2">
+        <div className="mb-5 flex flex-col gap-1.5">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>/</span>
             <span>News</span>
@@ -234,13 +234,13 @@ export default function NewsRequestPage() {
 
         <Card className="min-w-0 max-w-full overflow-hidden">
           <form onSubmit={onSubmit} className="min-w-0">
-            <CardHeader className="border-b">
+            <CardHeader className="border-b pb-1">
               <CardTitle className="text-base">Request settings</CardTitle>
               <CardDescription>
                 Required fields are marked with an asterisk. *
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex min-w-0 flex-col gap-6 pt-6">
+            <CardContent className="flex min-w-0 flex-col gap-3 pt-3">
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium" htmlFor="news-date">
                   Date <span className="text-destructive">*</span>
@@ -464,7 +464,7 @@ export default function NewsRequestPage() {
           </form>
         </Card>
 
-        <p className="mt-4 text-xs text-muted-foreground lg:hidden">
+        <p className="mt-3 text-xs text-muted-foreground lg:hidden">
           Tip: try a quick preset from the list below on smaller screens.
         </p>
         <div className="mt-4 flex flex-col gap-4 lg:hidden">

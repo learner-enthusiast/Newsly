@@ -78,6 +78,22 @@ export function useScrollRevealSection(
     );
 
     observer.observe(section);
+
+    const revealNow = () => {
+      gsap.to(targets, {
+        opacity: 1,
+        y: 0,
+        duration: 0.55,
+        stagger: staggerSelector ? 0.08 : 0,
+        ease: "power2.out",
+      });
+      observer.disconnect();
+    };
+
+    if (section.getBoundingClientRect().top < window.innerHeight * 0.92) {
+      revealNow();
+    }
+
     return () => observer.disconnect();
   }, [sectionRef, staggerSelector]);
 }

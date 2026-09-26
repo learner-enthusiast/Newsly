@@ -18,17 +18,25 @@ import {
   primaryStoryDomain,
 } from "@/services/news/newsRequestDisplay";
 import type { SerializedNewsStory } from "@/services/news/newsRequestTypes";
+import { StorySaveButton } from "@/components/news/StorySaveButton";
 import { cn } from "@/lib/utils";
-import { ArrowRight, Bookmark } from "lucide-react";
+import { SignInButton } from "@clerk/nextjs";
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 
 type NewsStoryCardProps = {
   story: SerializedNewsStory;
   rank: number;
   showActions: boolean;
+  /** Show action row for signed-out users (sign-in gated). */
+  guestActionsVisible?: boolean;
+  signInRedirectUrl?: string;
   deepDiveStoryId: string | null;
   votingStoryId: string | null;
+  savingStoryId?: string | null;
   onDeepDive: (storyId: string) => void;
   onVote: (storyId: string, vote: "UP" | "DOWN") => Promise<void>;
+  onSaveToggle?: (storyId: string, nextSaved: boolean) => Promise<void>;
   className?: string;
 };
 
@@ -42,21 +50,40 @@ function categoryBadgeClass(category: string): string {
   return variants[hash % variants.length]!;
 }
 
+function signInRedirectForStory(
+  storyId: string,
+  explicit?: string,
+): string {
+  if (explicit) {
+    return explicit;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/newsStory/${storyId}`;
+  }
+  return `/newsStory/${storyId}`;
+}
+
 export function NewsStoryCard({
   story,
   rank,
   showActions,
+  guestActionsVisible = false,
+  signInRedirectUrl,
   deepDiveStoryId,
   votingStoryId,
+  savingStoryId = null,
   onDeepDive,
   onVote,
+  onSaveToggle,
   className,
 }: NewsStoryCardProps) {
   const domain = primaryStoryDomain(story.sourceUrls);
   const publishedMeta = formatStoryPublishedMeta(story.publishedAt, domain);
-  const description =
-    story.description?.trim() || story.summary?.trim() || "";
-  const primarySourceTitle = story.sourceUrls[0]?.title?.trim();
+  const description = story.description?.trim() || story.summary?.trim() || "";
+  const primarySourceTitle = story.sourceUrls[0]?.title?.trim() || "";
+  const actionsVisible = showActions || guestActionsVisible;
+  const guestGated = guestActionsVisible && !showActions;
+  const redirectUrl = signInRedirectForStory(story.id, signInRedirectUrl);
 
   return (
     <article
@@ -103,7 +130,12 @@ export function NewsStoryCard({
               </div>
 
               <h2 className="font-display mt-2 text-xl leading-snug font-semibold text-balance">
-                {story.title}
+                <Link
+                  href={`/newsStory/${story.id}`}
+                  className="transition-colors hover:text-primary"
+                >
+                  {story.title}
+                </Link>
               </h2>
 
               {description ? (
@@ -116,26 +148,44 @@ export function NewsStoryCard({
                 <p className="mt-2 text-xs text-muted-foreground">
                   {publishedMeta}
                   {publishedMeta && primarySourceTitle ? " · " : null}
-                  {primarySourceTitle && !publishedMeta ? primarySourceTitle : null}
+                  {primarySourceTitle && !publishedMeta
+                    ? primarySourceTitle
+                    : null}
                 </p>
               ) : null}
             </div>
           </div>
 
-          {showActions ? (
+          {actionsVisible ? (
             <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
               <div className="flex flex-wrap items-center gap-2">
-                <NewsTakeaways content={story.content} />
+                {guestGated ? (
+                  <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+                    <Button type="button" variant="ghost" size="sm">
+                      Key Takeaways
+                    </Button>
+                  </SignInButton>
+                ) : (
+                  <NewsTakeaways content={story.content} />
+                )}
                 <NewsStorySources sources={story.sourceUrls ?? []} />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={deepDiveStoryId === story.id}
-                  onClick={() => onDeepDive(story.id)}
-                >
-                  {deepDiveStoryId === story.id ? "Starting…" : "Deep Dive"}
-                </Button>
+                {guestGated ? (
+                  <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+                    <Button type="button" variant="ghost" size="sm">
+                      Deep Dive
+                    </Button>
+                  </SignInButton>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={deepDiveStoryId === story.id}
+                    onClick={() => onDeepDive(story.id)}
+                  >
+                    {deepDiveStoryId === story.id ? "Starting…" : "Deep Dive"}
+                  </Button>
+                )}
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -149,45 +199,66 @@ export function NewsStoryCard({
                   }}
                   onVote={onVote}
                   voting={votingStoryId === story.id}
+                  signInRedirectUrl={guestGated ? redirectUrl : undefined}
                 />
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled
-                    title="Save coming soon"
-                    aria-label="Save story (coming soon)"
-                  >
-                    <Bookmark data-icon="inline-start" />
-                    Save
-                  </Button>
+                  {onSaveToggle ? (
+                    <StorySaveButton
+                      storyId={story.id}
+                      saved={story.userSaved ?? false}
+                      onToggle={onSaveToggle}
+                      saving={savingStoryId === story.id}
+                      signInRedirectUrl={guestGated ? redirectUrl : undefined}
+                    />
+                  ) : null}
 
                   {story.content?.trim() ? (
-                    <Sheet>
-                      <SheetTrigger
-                        render={
-                          <Button type="button" variant="link" size="sm" className="gap-1 px-0">
-                            Read full story
-                            <ArrowRight className="size-4" aria-hidden />
-                          </Button>
-                        }
-                      />
-                      <SheetContent side="right" className="w-full sm:max-w-lg">
-                        <SheetHeader>
-                          <SheetTitle className="font-display text-left text-xl leading-snug">
-                            {story.title}
-                          </SheetTitle>
-                        </SheetHeader>
-                        <div className="mt-4 max-h-[calc(100dvh-8rem)] overflow-y-auto pr-1">
-                          <ChatMarkdown
-                            content={story.content}
-                            className="text-foreground"
-                          />
-                        </div>
-                      </SheetContent>
-                    </Sheet>
+                    guestGated ? (
+                      <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="gap-1 px-0"
+                        >
+                          Read full story
+                          <ArrowRight className="size-4" aria-hidden />
+                        </Button>
+                      </SignInButton>
+                    ) : (
+                      <Sheet>
+                        <SheetTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="link"
+                              size="sm"
+                              className="gap-1 px-0"
+                            >
+                              Read full story
+                              <ArrowRight className="size-4" aria-hidden />
+                            </Button>
+                          }
+                        />
+                        <SheetContent
+                          side="right"
+                          className="w-full sm:max-w-lg px-3 mx-3"
+                        >
+                          <SheetHeader>
+                            <SheetTitle className="font-display text-left text-xl leading-snug">
+                              {story.title}
+                            </SheetTitle>
+                          </SheetHeader>
+                          <div className="mt-4 max-h-[calc(100dvh-8rem)] overflow-y-auto pr-1">
+                            <ChatMarkdown
+                              content={story.content}
+                              className="text-foreground"
+                            />
+                          </div>
+                        </SheetContent>
+                      </Sheet>
+                    )
                   ) : null}
                 </div>
               </div>

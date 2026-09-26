@@ -36,8 +36,10 @@ type NewsResultsViewProps = {
   showActions: boolean;
   deepDiveStoryId: string | null;
   votingStoryId: string | null;
+  savingStoryId?: string | null;
   onDeepDive: (storyId: string) => void;
   onVote: (storyId: string, vote: "UP" | "DOWN") => Promise<void>;
+  onSaveToggle?: (storyId: string, nextSaved: boolean) => Promise<void>;
   onRetry?: () => void;
   retrying?: boolean;
 };
@@ -51,8 +53,10 @@ export function NewsResultsView({
   showActions,
   deepDiveStoryId,
   votingStoryId,
+  savingStoryId = null,
   onDeepDive,
   onVote,
+  onSaveToggle,
   onRetry,
   retrying,
 }: NewsResultsViewProps) {
@@ -145,7 +149,12 @@ export function NewsResultsView({
         <Sheet>
           <SheetTrigger
             render={
-              <Button type="button" variant="outline" size="sm" className="flex-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+              >
                 <ListFilter data-icon="inline-start" />
                 Recent requests
               </Button>
@@ -168,13 +177,21 @@ export function NewsResultsView({
         <Sheet>
           <SheetTrigger
             render={
-              <Button type="button" variant="outline" size="sm" className="flex-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+              >
                 <PanelRight data-icon="inline-start" />
                 Summary
               </Button>
             }
           />
-          <SheetContent side="right" className="w-[min(100%,360px)] overflow-y-auto">
+          <SheetContent
+            side="right"
+            className="w-[min(100%,360px)] overflow-y-auto"
+          >
             <SheetHeader>
               <SheetTitle>Request details</SheetTitle>
             </SheetHeader>
@@ -184,7 +201,10 @@ export function NewsResultsView({
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
-        <div ref={leftRef as RefObject<HTMLDivElement>} className="hidden lg:block">
+        <div
+          ref={leftRef as RefObject<HTMLDivElement>}
+          className="hidden lg:block"
+        >
           <NewsRecentRequestsSidebar
             recentRequests={recentRequests}
             recentLoading={recentLoading}
@@ -203,12 +223,14 @@ export function NewsResultsView({
 
           {isPending ? (
             <p className="text-sm text-muted-foreground" aria-live="polite">
-              Your briefing is still being prepared. Stories will appear here when
-              ready.
+              Your briefing is still being prepared. Stories will appear here
+              when ready.
             </p>
           ) : null}
 
-          {isSuccess && storyCountFound === 0 ? <NewsResultsEmptyState /> : null}
+          {isSuccess && storyCountFound === 0 ? (
+            <NewsResultsEmptyState />
+          ) : null}
 
           {isSuccess && storyCountFound > 0 ? (
             <>
@@ -226,8 +248,10 @@ export function NewsResultsView({
                     showActions={showActions}
                     deepDiveStoryId={deepDiveStoryId}
                     votingStoryId={votingStoryId}
+                    savingStoryId={savingStoryId}
                     onDeepDive={onDeepDive}
                     onVote={onVote}
+                    onSaveToggle={onSaveToggle}
                   />
                 ))}
               </div>

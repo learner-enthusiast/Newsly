@@ -6,7 +6,8 @@ import { ProductDifference } from "@/components/landing/ProductDifference";
 import { ProductJourney } from "@/components/landing/ProductJourney";
 import { TrendingSection } from "@/components/landing/TrendingSection";
 
-export function NewslyLandingPage() {
+/** Signed-in home dashboard (marketing layout + live trending). */
+export function NewslyDashboardPage() {
   return (
     <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-background">
       <HeroSection />

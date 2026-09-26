@@ -12,25 +12,19 @@
  * Steps:
  * 1. check-existing-assistant-reply — Skip work if this user message already has
  *    an assistant reply (Inngest retry idempotency).
- * 2. fetch-chat-context — Load session, validate user message, last 10 prior turns
- *    for query enhancer / determiner.
- * 3. count-research-embeddings — How many indexed descriptions exist for this chat
- *    (controls whether vector retrieval is allowed).
- * 4. run-determiner — Guardrails, query enhance, decide useExistingResearch,
+ * 2. fetch-chat-context + count-research-embeddings (parallel) — Session/message
+ *    validation, recent turns for determiner + final model, embedding inventory.
+ * 3. run-determiner — Guardrails, query enhance, decide useExistingResearch,
  *    useTools, and Serp tool calls.
- * 5. save-guardrail-message — If blocked, save a short agent refusal and stop.
- * 6. retrieve-existing-research — Similarity search on session embeddings when
- *    determiner asked for existing research.
- * 7. load-existing-research-sources — Load full ResearchSource rows for matched ids.
- * 8. execute-serp-tools — Run SerpAPI when determiner returned useTools yes.
- * 9. normalize-serp-results — Flatten Serp payloads into normalized hits.
- * 10. run-article-synthesizer — Pick best URLs to scrape from Serp hits.
- * 11. dedupe-research-candidates — Drop URLs already stored on this chat session.
- * 12. firecrawl-and-save-research — Scrape new URLs, save ResearchSource rows
- *     (description/embedding indexed asynchronously elsewhere).
- * 13. generate-assistant-reply — Chat model Markdown using history + research context.
- * 14. save-assistant-message — Persist agent message (idempotent on retry).
- * 15. save-error-message — On failure, save a failure agent message when appropriate.
+ * 4. save-guardrail-message — If blocked, save a short agent refusal and stop.
+ * 5. vector-research-branch + serp-research-branch (parallel) — Vector retrieval +
+ *    load rows; Serp execute + normalize.
+ * 6. run-article-synthesizer + preload-session-research-sources (parallel).
+ * 7. dedupe-research-candidates — Fresh session URL keys before scrape selection.
+ * 8. firecrawl-and-save-research — Batch Firecrawl, concurrent ResearchSource inserts.
+ * 9. generate-assistant-reply — Chat model Markdown using history + research context.
+ * 10. save-assistant-message — Persist agent message (idempotent on retry).
+ * 11. save-error-message — On failure, save a failure agent message when appropriate.
  */
 
 import { runArticleSynthesizerAgent } from "@/Agents/chat/ArticleSythesizerAgent";
@@ -51,7 +45,7 @@ import {
   getUserChatMessageForSession,
   listRecentChatMessagesByChatSessionId,
 } from "@/repositories/chatMessage";
-import { loadRecentMessagesForQueryEnhancer } from "@/services/chat/recentChatMessagesForPipeline";
+import { CHAT_PIPELINE_RECENT_MESSAGE_LIMIT } from "@/services/chat/recentChatMessagesForPipeline";
 import { getChatSessionById } from "@/repositories/chatSession";
 import {
   countChatDescriptionEmbeddings,
@@ -98,6 +92,39 @@ export type MessageChatPipelineEventData = z.infer<
 const PIPELINE_LOG_PREFIX = "[message-chat-pipeline]";
 const VECTOR_RESEARCH_LIMIT = 8;
 const VECTOR_MIN_SIMILARITY = 0.72;
+const RESEARCH_SOURCE_INSERT_CONCURRENCY = 4;
+
+function createStepTimer(): () => number {
+  const startedAt = Date.now();
+  return () => Date.now() - startedAt;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index]!, index);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
+}
 
 type SerpCallResultStep = {
   tool: ValidatedSerpToolCall["tool"];
@@ -164,62 +191,83 @@ export const messageChatPipelineFunction = inngest.createFunction(
     }
 
     try {
-      const chatContext = await step.run("fetch-chat-context", async () => {
-        pipelineLog("fetch-chat-context", "start");
-        const session = await getChatSessionById(input.chatSessionId);
-        if (!session) {
-          throw new NonRetriableError("Chat session not found");
-        }
+      const pipelineStartedAt = Date.now();
 
-        const message = await getUserChatMessageForSession(
-          input.chatSessionId,
-          input.chatMessageId,
-        );
-        if (!message) {
-          throw new NonRetriableError(
-            "Chat message not found for the supplied session",
+      const [chatContext, researchInventory] = await Promise.all([
+        step.run("fetch-chat-context", async () => {
+          const elapsed = createStepTimer();
+          pipelineLog("fetch-chat-context", "start");
+          const session = await getChatSessionById(input.chatSessionId);
+          if (!session) {
+            throw new NonRetriableError("Chat session not found");
+          }
+
+          const message = await getUserChatMessageForSession(
+            input.chatSessionId,
+            input.chatMessageId,
           );
-        }
-        if (!isUserRole(message.role)) {
-          throw new NonRetriableError("Chat message is not a user message");
-        }
+          if (!message) {
+            throw new NonRetriableError(
+              "Chat message not found for the supplied session",
+            );
+          }
+          if (!isUserRole(message.role)) {
+            throw new NonRetriableError("Chat message is not a user message");
+          }
 
-        const recentMessages = await loadRecentMessagesForQueryEnhancer(
-          input.chatSessionId,
-          message.id,
-        );
+          const historyRows = await listRecentChatMessagesByChatSessionId(
+            input.chatSessionId,
+            CHAT_PIPELINE_RECENT_MESSAGE_LIMIT + 1,
+          );
+          const historyWithoutCurrent = historyRows.filter(
+            (row) => row.id !== message.id,
+          );
+          const recentMessages = historyWithoutCurrent
+            .slice(-CHAT_PIPELINE_RECENT_MESSAGE_LIMIT)
+            .map((row) => ({
+              role: row.role,
+              content: row.content,
+            }));
+          const chatHistoryForModel = sliceChatHistoryForModel(
+            historyWithoutCurrent.map((row) => ({
+              role: roleForChatModel(row.role),
+              content: row.content,
+            })),
+          );
 
-        pipelineLog("fetch-chat-context", "done", {
-          recentMessageCount: recentMessages.length,
-        });
-        return toJsonSafeStepOutput({
-          session: {
-            id: session.id,
-            isFromNewsStory: session.isFromNewsStory,
-          },
-          userMessage: {
-            id: message.id,
-            content: message.content,
-            role: message.role,
-          },
-          recentMessages,
-        });
-      });
-
-      const researchInventory = await step.run(
-        "count-research-embeddings",
-        async () => {
+          pipelineLog("fetch-chat-context", "done", {
+            durationMs: elapsed(),
+            recentMessageCount: recentMessages.length,
+          });
+          return toJsonSafeStepOutput({
+            session: {
+              id: session.id,
+              isFromNewsStory: session.isFromNewsStory,
+            },
+            userMessage: {
+              id: message.id,
+              content: message.content,
+              role: message.role,
+            },
+            recentMessages,
+            chatHistoryForModel,
+          });
+        }),
+        step.run("count-research-embeddings", async () => {
+          const elapsed = createStepTimer();
           const researchSourceCount = await countChatDescriptionEmbeddings({
             chatSessionId: input.chatSessionId,
           });
           pipelineLog("count-research-embeddings", "done", {
+            durationMs: elapsed(),
             researchSourceCount,
           });
           return toJsonSafeStepOutput({ researchSourceCount });
-        },
-      );
+        }),
+      ]);
 
       const determinerResult = await step.run("run-determiner", async () => {
+        const elapsed = createStepTimer();
         pipelineLog("run-determiner", "start", {
           researchSourceCount: researchInventory.researchSourceCount,
         });
@@ -232,6 +280,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
             abortSignal: AbortSignal.timeout(120_000),
           });
           pipelineLog("run-determiner", "done", {
+            durationMs: elapsed(),
             useTools: outcome.determiner.useTools,
             useExistingResearch: outcome.determiner.useExistingResearch,
             firecrawlUrlCount: outcome.determiner.firecrawlUrls.length,
@@ -239,6 +288,9 @@ export const messageChatPipelineFunction = inngest.createFunction(
           return toJsonSafeStepOutput(outcome);
         } catch (error) {
           if (error instanceof GuardrailBlockedError) {
+            pipelineLog("run-determiner", "blocked", {
+              durationMs: elapsed(),
+            });
             return toJsonSafeStepOutput({
               blocked: true as const,
               reason: error.message,
@@ -266,27 +318,28 @@ export const messageChatPipelineFunction = inngest.createFunction(
       const determiner = (determinerParsed as SmallDeterminerRunResult)
         .determiner;
 
-      const vectorResearchIds = await step.run(
-        "retrieve-existing-research",
-        async () => {
+      const [vectorResearchBranch, serpResearchBranch] = await Promise.all([
+        step.run("vector-research-branch", async () => {
+          const elapsed = createStepTimer();
+          pipelineLog("vector-research-branch", "start");
+
           if (researchInventory.researchSourceCount === 0) {
-            pipelineLog("retrieve-existing-research", "skipped", {
+            pipelineLog("vector-research-branch", "skipped", {
+              durationMs: elapsed(),
               reason: "no indexed research",
             });
-            return toJsonSafeStepOutput([] as string[]);
+            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
           }
 
           if (
             !determiner.useExistingResearch ||
             !determiner.existingResearchQuery
           ) {
-            pipelineLog("retrieve-existing-research", "skipped");
-            return toJsonSafeStepOutput([] as string[]);
+            pipelineLog("vector-research-branch", "skipped", {
+              durationMs: elapsed(),
+            });
+            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
           }
-
-          pipelineLog("retrieve-existing-research", "start", {
-            query: determiner.existingResearchQuery,
-          });
 
           const matches = await searchSimilarChatDescriptionIds({
             chatSessionId: input.chatSessionId,
@@ -295,19 +348,15 @@ export const messageChatPipelineFunction = inngest.createFunction(
             minSimilarity: VECTOR_MIN_SIMILARITY,
           });
 
-          pipelineLog("retrieve-existing-research", "done", {
-            matchCount: matches.length,
-          });
-          return toJsonSafeStepOutput(matches.map((row) => row.id));
-        },
-      );
-
-      const existingResearchRows = await step.run(
-        "load-existing-research-sources",
-        async () => {
+          const vectorResearchIds = matches.map((row) => row.id);
           if (vectorResearchIds.length === 0) {
+            pipelineLog("vector-research-branch", "done", {
+              durationMs: elapsed(),
+              matchCount: 0,
+            });
             return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
           }
+
           const rows = await listResearchSourcesByIdsForChatSession(
             input.chatSessionId,
             vectorResearchIds,
@@ -317,52 +366,54 @@ export const messageChatPipelineFunction = inngest.createFunction(
             .map((id) => byId.get(id))
             .filter((row): row is NonNullable<typeof row> => row != null)
             .map(mapResearchSourceForChatModel);
+
+          pipelineLog("vector-research-branch", "done", {
+            durationMs: elapsed(),
+            matchCount: ordered.length,
+          });
           return toJsonSafeStepOutput(ordered);
-        },
-      );
+        }),
+        step.run("serp-research-branch", async () => {
+          const elapsed = createStepTimer();
+          pipelineLog("serp-research-branch", "start");
 
-      const serpPayloads = await step.run("execute-serp-tools", async () => {
-        if (
-          determiner.useTools !== "yes" ||
-          determiner.calls.length === 0
-        ) {
-          pipelineLog("execute-serp-tools", "skipped");
-          return toJsonSafeStepOutput([] as SerpCallResultStep[]);
-        }
+          if (determiner.useTools !== "yes" || determiner.calls.length === 0) {
+            pipelineLog("serp-research-branch", "skipped", {
+              durationMs: elapsed(),
+            });
+            return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
+          }
 
-        pipelineLog("execute-serp-tools", "start", {
-          calls: determiner.calls.length,
-        });
-
-        const results = await fetchSerpPayloadsForCalls(
-          determiner.calls as ValidatedSerpToolCall[],
-        );
-        pipelineLog("execute-serp-tools", "done");
-        return toJsonSafeStepOutput(
-          results.map((row) => ({
+          const results = await fetchSerpPayloadsForCalls(
+            determiner.calls as ValidatedSerpToolCall[],
+          );
+          const serpPayloads: SerpCallResultStep[] = results.map((row) => ({
             tool: row.tool,
             payload: row.payload,
-          })),
-        );
-      });
+          }));
+          const hits =
+            serpPayloads.length === 0
+              ? []
+              : normalizeSerpCallResults(serpPayloads);
 
-      const serpHits = await step.run("normalize-serp-results", async () => {
-        if (serpPayloads.length === 0) {
-          return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
-        }
+          pipelineLog("serp-research-branch", "done", {
+            durationMs: elapsed(),
+            hitCount: hits.length,
+          });
+          return toJsonSafeStepOutput(hits);
+        }),
+      ]);
 
-        pipelineLog("normalize-serp-results", "start");
-        const hits = normalizeSerpCallResults(serpPayloads);
-        pipelineLog("normalize-serp-results", "done", {
-          hitCount: hits.length,
-        });
-        return toJsonSafeStepOutput(hits);
-      });
+      const existingResearchRows = vectorResearchBranch;
+      const serpHits = serpResearchBranch;
 
-      const selectedArticles = await step.run(
-        "run-article-synthesizer",
-        async () => {
+      const [selectedArticles, preloadedSessionSources] = await Promise.all([
+        step.run("run-article-synthesizer", async () => {
+          const elapsed = createStepTimer();
           if (serpHits.length === 0) {
+            pipelineLog("run-article-synthesizer", "skipped", {
+              durationMs: elapsed(),
+            });
             return toJsonSafeStepOutput([]);
           }
           pipelineLog("run-article-synthesizer", "start", {
@@ -376,15 +427,28 @@ export const messageChatPipelineFunction = inngest.createFunction(
             abortSignal: AbortSignal.timeout(120_000),
           });
           pipelineLog("run-article-synthesizer", "done", {
+            durationMs: elapsed(),
             selected: selected.length,
           });
           return toJsonSafeStepOutput(selected);
-        },
-      );
+        }),
+        step.run("preload-session-research-sources", async () => {
+          const elapsed = createStepTimer();
+          const sessionSources = await listResearchSourcesByChatSessionId(
+            input.chatSessionId,
+          );
+          pipelineLog("preload-session-research-sources", "done", {
+            durationMs: elapsed(),
+            count: sessionSources.length,
+          });
+          return toJsonSafeStepOutput(sessionSources);
+        }),
+      ]);
 
       const articlesToScrape = await step.run(
         "dedupe-research-candidates",
         async () => {
+          const elapsed = createStepTimer();
           const sessionSources = await listResearchSourcesByChatSessionId(
             input.chatSessionId,
           );
@@ -405,8 +469,10 @@ export const messageChatPipelineFunction = inngest.createFunction(
           );
 
           pipelineLog("dedupe-research-candidates", "done", {
+            durationMs: elapsed(),
             serpSelected: selectedArticles.length,
             directUrls: determiner.firecrawlUrls.length,
+            preloadedCount: preloadedSessionSources.length,
             after: merged.length,
           });
           return toJsonSafeStepOutput(merged);
@@ -416,39 +482,60 @@ export const messageChatPipelineFunction = inngest.createFunction(
       const newResearchRows = await step.run(
         "firecrawl-and-save-research",
         async () => {
+          const elapsed = createStepTimer();
           if (articlesToScrape.length === 0) {
             return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
           }
 
+          const freshSessionSources = await listResearchSourcesByChatSessionId(
+            input.chatSessionId,
+          );
+          const freshKeys = researchUrlKeysFromSources(freshSessionSources);
+          const scrapeTargets = dedupeSelectedArticlesForSession(
+            articlesToScrape,
+            freshKeys,
+          );
+
+          if (scrapeTargets.length === 0) {
+            pipelineLog("firecrawl-and-save-research", "skipped", {
+              durationMs: elapsed(),
+              reason: "all candidates already saved",
+            });
+            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
+          }
+
           pipelineLog("firecrawl-and-save-research", "start", {
-            count: articlesToScrape.length,
+            count: scrapeTargets.length,
           });
 
           const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
-            articlesToScrape.map((article) => article.url),
+            scrapeTargets.map((article) => article.url),
           );
-          const saved = [];
-          for (let index = 0; index < articlesToScrape.length; index += 1) {
-            const article = articlesToScrape[index];
-            let content = scrapedMarkdown[index]?.trim() ?? "";
 
-            if (!content) {
-              content = article.title;
-            }
+          const saved = await mapWithConcurrency(
+            scrapeTargets,
+            RESEARCH_SOURCE_INSERT_CONCURRENCY,
+            async (article, index) => {
+              let content = scrapedMarkdown[index]?.trim() ?? "";
+              if (!content) {
+                content = article.title;
+              }
 
-            const row = await createResearchSource({
-              chatSessionId: input.chatSessionId,
-              url: article.url,
-              domain: article.domain,
-              title: article.title,
-              content: content.slice(0, 50_000),
-              sourceType: article.sourceType,
-            });
+              const row = await createResearchSource({
+                chatSessionId: input.chatSessionId,
+                url: article.url,
+                domain: article.domain,
+                title: article.title,
+                content: content.slice(0, 50_000),
+                sourceType: article.sourceType,
+              });
 
-            saved.push(mapResearchSourceForChatModel(row));
-          }
+              return mapResearchSourceForChatModel(row);
+            },
+          );
 
           pipelineLog("firecrawl-and-save-research", "done", {
+            durationMs: elapsed(),
             saved: saved.length,
           });
           return toJsonSafeStepOutput(saved);
@@ -463,19 +550,9 @@ export const messageChatPipelineFunction = inngest.createFunction(
       const assistantMarkdown = await step.run(
         "generate-assistant-reply",
         async () => {
+          const elapsed = createStepTimer();
           pipelineLog("generate-assistant-reply", "start");
-          const historyRows = await listRecentChatMessagesByChatSessionId(
-            input.chatSessionId,
-            10,
-          );
-          const chatHistory = sliceChatHistoryForModel(
-            historyRows
-              .filter((row) => row.id !== chatContext.userMessage.id)
-              .map((row) => ({
-                role: roleForChatModel(row.role),
-                content: row.content,
-              })),
-          );
+          const chatHistory = chatContext.chatHistoryForModel;
 
           const markdown = await runChatModelAgent({
             prompt: chatContext.userMessage.content,
@@ -489,6 +566,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
           });
 
           pipelineLog("generate-assistant-reply", "done", {
+            durationMs: elapsed(),
             length: markdown.length,
           });
           return toJsonSafeStepOutput(markdown);
@@ -530,6 +608,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
 
       pipelineLog("run", "finished", {
         assistantMessageId: assistantMessage.id,
+        totalDurationMs: Date.now() - pipelineStartedAt,
       });
       return assistantMessage;
     } catch (error) {

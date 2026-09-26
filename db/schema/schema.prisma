@@ -27,6 +27,7 @@ model User {
   locale                String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+  savedStories          String[]  @default([]) @map("saved_stories") @db.Uuid
 
   newsRequests   NewsRequest[]
   chatSessions   ChatSession[]
@@ -104,6 +105,7 @@ model NewsStory {
 
   @@unique([newsRequestId, slug])
   @@index([newsRequestId])
+  @@index([upvotes, publishedAt])
   @@map("news_stories")
 }
 
@@ -118,6 +120,7 @@ model NewsSource {
   sourceType     String    @map("source_type")
   createdAt      DateTime  @default(now()) @map("created_at")
   transcript     String?   @db.Text
+  imageUrl       String?   @map("image_url") @db.Text
 
   newsStory NewsStory @relation(fields: [newsStoryId], references: [id], onDelete: Cascade)
 

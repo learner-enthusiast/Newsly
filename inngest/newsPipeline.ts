@@ -291,6 +291,7 @@ export const newsPipelineFunction = inngest.createFunction(
               serpEngines.searchGoogle.fn({
                 ...plan.googleSearchParams,
                 num: serpNum,
+                trigger_ai_overview: true,
               }),
               serpEngines.searchYoutube.fn(plan.youtubeParams),
             ]);

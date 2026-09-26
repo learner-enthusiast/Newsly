@@ -120,10 +120,10 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
       </aside>
 
       <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-0">
-        <header className="flex shrink-0 items-center gap-3 border-b border-border/40 bg-card/30 px-4 py-3 md:px-6">
+        <header className="flex shrink-0 items-center gap-3 px-4 pt-2 pb-0 md:px-6 lg:hidden">
           <Link
             href="/news"
-            className="font-brand text-2xl text-foreground lg:hidden"
+            className="font-brand text-2xl text-foreground"
           >
             Newsly
           </Link>

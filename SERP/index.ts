@@ -200,9 +200,12 @@ async function searchGoogle<T = unknown>(
   responseSchema?: z.ZodType<T>,
   client = serpClient,
 ): Promise<T> {
-  const { tbm: _tbm, ...rest } = params as SerpEngineSearchParams & {
-    tbm?: unknown;
-  };
+  const { tbm: _tbm, trigger_ai_overview, ...rest } =
+    params as SerpEngineSearchParams & {
+      tbm?: unknown;
+      trigger_ai_overview?: unknown;
+    };
+  const shouldFetchAiOverview = trigger_ai_overview === true;
   const followUpParams: GoogleAiOverviewFollowUpParams = {
     ...(typeof rest.no_cache === "boolean" ? { no_cache: rest.no_cache } : {}),
     ...(typeof rest.async === "boolean" ? { async: rest.async } : {}),
@@ -217,11 +220,13 @@ async function searchGoogle<T = unknown>(
     engine: "google",
   });
 
-  const enriched = await enrichGoogleSearchWithAiOverview(
-    basePayload,
-    followUpParams,
-    client,
-  );
+  const enriched = shouldFetchAiOverview
+    ? await enrichGoogleSearchWithAiOverview(
+        basePayload,
+        followUpParams,
+        client,
+      )
+    : basePayload;
 
   if (responseSchema) {
     return responseSchema.parse(enriched);
@@ -341,6 +346,8 @@ const googleInputSchema = z.looseObject({
   start: z.number().int().min(0).optional(),
   num: z.number().int().min(1).max(100).optional(),
   safe: z.enum(["active", "off"]).optional(),
+  /** When true, fetches google_ai_overview via page_token (News pipeline only for now). */
+  trigger_ai_overview: z.boolean().optional(),
   ...serpSharedInputShape,
 });
 
@@ -591,8 +598,8 @@ export const serpEngines = {
   searchGoogle: {
     description: [
       "Google Web Search (engine=google). General web SERP.",
-      "When the SERP includes ai_overview.page_token, this tool automatically performs the follow-up Google AI Overview request (engine=google_ai_overview) and merges the result into ai_overview (token expires ~1 minute; fetched immediately).",
-      "Input: q (required); optional start, num, safe, hl, gl, location, google_domain, device, no_cache, async, output, timeout.",
+      "Set trigger_ai_overview=true to fetch Google AI Overview when the SERP returns ai_overview.page_token (follow-up engine=google_ai_overview; token expires ~1 minute). Default is false (no extra request).",
+      "Input: q (required); optional start, num, safe, trigger_ai_overview, hl, gl, location, google_domain, device, no_cache, async, output, timeout.",
       "Output: organic_results, ai_overview (inline or fetched via page_token), knowledge_graph, answer_box, related_questions, related_searches, search_metadata.",
       "Docs: https://serpapi.com/search-api and https://serpapi.com/google-ai-overview-api",
     ].join(" "),

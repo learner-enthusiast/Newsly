@@ -7,8 +7,17 @@ import {
   patchNewsRequest,
 } from "@/repositories/newsRequest";
 import { getUserVotesForStories } from "@/repositories/newsStoryVote";
-import { listNewsStoriesByNewsRequestId } from "@/repositories/newsStory";
+import {
+  getPublishedNewsStoryWithSources,
+  listNewsStoriesByNewsRequestId,
+  listPublishedNewsStoriesPaginated,
+} from "@/repositories/newsStory";
 import { attachVoteFieldsToStory } from "@/services/news/storyVoteService";
+import {
+  attachSavedFieldToStory,
+  getSavedFlagsForStories,
+  listSavedNewsStoriesForUser,
+} from "@/services/news/savedStoryService";
 import {
   type NewsGenerationConfig,
   newsGenerationConfigFromNewsRequest,
@@ -59,8 +68,12 @@ function serializeStoryBase(story: ListedStory) {
 function serializeStory(
   story: ListedStory,
   userVote: "UP" | "DOWN" | null = null,
+  userSaved = false,
 ) {
-  return attachVoteFieldsToStory(serializeStoryBase(story), userVote);
+  return attachSavedFieldToStory(
+    attachVoteFieldsToStory(serializeStoryBase(story), userVote),
+    userSaved,
+  );
 }
 
 function serializeNewsRequest(
@@ -100,8 +113,16 @@ async function loadStoriesIfReady(
     userId,
     stories.map((story) => story.id),
   );
+  const savedFlags = await getSavedFlagsForStories(
+    userId,
+    stories.map((story) => story.id),
+  );
   return stories.map((story) =>
-    serializeStory(story, userVotes.get(story.id) ?? null),
+    serializeStory(
+      story,
+      userVotes.get(story.id) ?? null,
+      savedFlags.get(story.id) ?? false,
+    ),
   );
 }
 
@@ -221,6 +242,130 @@ export async function listRecentNewsRequests(userId: string) {
   return rows
     .slice(0, RECENT_NEWS_REQUEST_LIMIT)
     .map((row) => serializeNewsRequest(row));
+}
+
+export const PUBLIC_NEWS_STORIES_DEFAULT_LIMIT = 20;
+export const PUBLIC_NEWS_STORIES_MAX_LIMIT = 50;
+
+/** Public paginated story feed (successful briefings only). */
+export async function listPublicNewsStories(input: {
+  page: number;
+  limit: number;
+  viewerUserId: string | null;
+}) {
+  const limit = Math.min(
+    Math.max(1, input.limit),
+    PUBLIC_NEWS_STORIES_MAX_LIMIT,
+  );
+  const page = Math.max(1, input.page);
+
+  const { total, stories } = await listPublishedNewsStoriesPaginated({
+    page,
+    limit,
+  });
+
+  const userVotes = input.viewerUserId
+    ? await getUserVotesForStories(
+        input.viewerUserId,
+        stories.map((story) => story.id),
+      )
+    : new Map<string, "UP" | "DOWN">();
+
+  const savedFlags = input.viewerUserId
+    ? await getSavedFlagsForStories(
+        input.viewerUserId,
+        stories.map((story) => story.id),
+      )
+    : new Map<string, boolean>();
+
+  const serialized = stories.map((story) =>
+    serializeStory(
+      story as ListedStory,
+      userVotes.get(story.id) ?? null,
+      savedFlags.get(story.id) ?? false,
+    ),
+  );
+
+  return {
+    stories: serialized,
+    page,
+    limit,
+    total,
+    totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+  };
+}
+
+/** Public single-story page (successful briefings only). */
+export async function getNewsStoryPageResult(
+  storyId: string,
+  viewerUserId: string | null,
+) {
+  const bundle = await getPublishedNewsStoryWithSources(storyId);
+  if (!bundle) {
+    return null;
+  }
+
+  const userVotes = viewerUserId
+    ? await getUserVotesForStories(viewerUserId, [bundle.story.id])
+    : new Map<string, "UP" | "DOWN">();
+
+  const userSaved = viewerUserId
+    ? ((await getSavedFlagsForStories(viewerUserId, [bundle.story.id])).get(
+        bundle.story.id,
+      ) ?? false)
+    : false;
+
+  const story = serializeStory(
+    bundle.story as ListedStory,
+    userVotes.get(bundle.story.id) ?? null,
+    userSaved,
+  );
+
+  return {
+    newsRequest: serializeNewsRequest(bundle.newsRequest),
+    story,
+    canViewFullBriefing: viewerUserId === bundle.newsRequest.userId,
+  };
+}
+
+/** Paginated saved stories for the signed-in viewer (newest saved first). */
+export async function listViewerSavedNewsStories(input: {
+  userId: string;
+  page: number;
+  limit: number;
+}) {
+  const limit = Math.min(
+    Math.max(1, input.limit),
+    PUBLIC_NEWS_STORIES_MAX_LIMIT,
+  );
+  const page = Math.max(1, input.page);
+
+  const { stories, total, totalPages } = await listSavedNewsStoriesForUser({
+    userId: input.userId,
+    page,
+    limit,
+  });
+
+  const userVotes = await getUserVotesForStories(
+    input.userId,
+    stories.map((story) => story.id),
+  );
+
+  const serialized = stories.map((story) =>
+    serializeStory(
+      story as ListedStory,
+      userVotes.get(story.id) ?? null,
+      true,
+    ),
+  );
+
+  return {
+    stories: serialized,
+    page,
+    limit,
+    total,
+    totalPages,
+  };
 }
 
 /** Poll news request status and stories for the owning user. */

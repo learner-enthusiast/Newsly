@@ -1,9 +1,10 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { SignInButton } from "@clerk/nextjs";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 import gsap from "gsap";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 export type StoryVoteState = {
   upvotes: number;
@@ -18,7 +19,55 @@ type StoryVoteControlsProps = {
   onVote: (storyId: string, desiredVote: "UP" | "DOWN") => Promise<void>;
   voting?: boolean;
   className?: string;
+  /** When set, vote buttons redirect to sign-in instead of calling onVote. */
+  signInRedirectUrl?: string;
 };
+
+function VoteButton({
+  signInRedirectUrl,
+  onClick,
+  disabled,
+  className,
+  ariaLabel,
+  ariaPressed,
+  children,
+}: {
+  signInRedirectUrl?: string;
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+  ariaLabel: string;
+  ariaPressed?: boolean;
+  children: ReactNode;
+}) {
+  if (signInRedirectUrl) {
+    return (
+      <SignInButton mode="redirect" forceRedirectUrl={signInRedirectUrl}>
+        <button
+          type="button"
+          className={className}
+          aria-label={ariaLabel}
+          aria-pressed={ariaPressed}
+        >
+          {children}
+        </button>
+      </SignInButton>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={className}
+      aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function StoryVoteControls({
   storyId,
@@ -26,6 +75,7 @@ export function StoryVoteControls({
   onVote,
   voting = false,
   className,
+  signInRedirectUrl,
 }: StoryVoteControlsProps) {
   const upRef = useRef<HTMLButtonElement>(null);
   const downRef = useRef<HTMLButtonElement>(null);
@@ -58,9 +108,8 @@ export function StoryVoteControls({
       className={cn("flex items-center gap-1.5", className)}
       aria-label="Story votes"
     >
-      <button
-        ref={upRef}
-        type="button"
+      <VoteButton
+        signInRedirectUrl={signInRedirectUrl}
         disabled={voting}
         onClick={() => onVote(storyId, "UP")}
         className={cn(
@@ -69,7 +118,7 @@ export function StoryVoteControls({
             "border-emerald-600/35 bg-emerald-600/10 text-emerald-900 dark:text-emerald-300",
         )}
         aria-pressed={vote.userVote === "UP"}
-        aria-label={
+        ariaLabel={
           vote.userVote === "UP"
             ? `Remove upvote, ${vote.upvotes} upvotes`
             : `Upvote, ${vote.upvotes} upvotes`
@@ -77,10 +126,9 @@ export function StoryVoteControls({
       >
         <ThumbsUp className="size-4" aria-hidden />
         <span className="tabular-nums">{vote.upvotes}</span>
-      </button>
-      <button
-        ref={downRef}
-        type="button"
+      </VoteButton>
+      <VoteButton
+        signInRedirectUrl={signInRedirectUrl}
         disabled={voting}
         onClick={() => onVote(storyId, "DOWN")}
         className={cn(
@@ -89,7 +137,7 @@ export function StoryVoteControls({
             "border-destructive/35 bg-destructive/10 text-destructive",
         )}
         aria-pressed={vote.userVote === "DOWN"}
-        aria-label={
+        ariaLabel={
           vote.userVote === "DOWN"
             ? `Remove downvote, ${vote.downvotes} downvotes`
             : `Downvote, ${vote.downvotes} downvotes`
@@ -97,7 +145,7 @@ export function StoryVoteControls({
       >
         <ThumbsDown className="size-4" aria-hidden />
         <span className="tabular-nums">{vote.downvotes}</span>
-      </button>
+      </VoteButton>
     </div>
   );
 }

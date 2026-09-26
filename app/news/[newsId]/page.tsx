@@ -39,7 +39,9 @@ export default function NewsResultPage() {
   const [retryError, setRetryError] = useState<string | null>(null);
   const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
   const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
+  const [savingStoryId, setSavingStoryId] = useState<string | null>(null);
   const voteLockRef = useRef<Set<string>>(new Set());
+  const saveLockRef = useRef<Set<string>>(new Set());
 
   async function onDeepDive(storyId: string) {
     setDeepDiveStoryId(storyId);
@@ -167,6 +169,54 @@ export default function NewsResultPage() {
     [setData],
   );
 
+  const onSaveToggle = useCallback(
+    async (storyId: string, nextSaved: boolean) => {
+      if (saveLockRef.current.has(storyId)) {
+        return;
+      }
+      saveLockRef.current.add(storyId);
+
+      const snapshotRef: { current: NewsRequestResultPayload | null } = {
+        current: null,
+      };
+
+      setData((current) => {
+        snapshotRef.current = current;
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          stories: current.stories.map((story) =>
+            story.id === storyId ? { ...story, userSaved: nextSaved } : story,
+          ),
+        };
+      });
+
+      setSavingStoryId(storyId);
+      try {
+        const response = await fetch(`/api/news/stories/${storyId}/save`, {
+          method: nextSaved ? "POST" : "DELETE",
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to update saved story");
+        }
+      } catch (saveErr) {
+        if (snapshotRef.current) {
+          setData(snapshotRef.current);
+        }
+        toast.error(
+          saveErr instanceof Error ? saveErr.message : "Failed to update save",
+        );
+      } finally {
+        saveLockRef.current.delete(storyId);
+        setSavingStoryId(null);
+      }
+    },
+    [setData],
+  );
+
   async function onRetry() {
     if (!newsId) {
       return;
@@ -226,8 +276,10 @@ export default function NewsResultPage() {
           showActions={isSuccess}
           deepDiveStoryId={deepDiveStoryId}
           votingStoryId={votingStoryId}
+          savingStoryId={savingStoryId}
           onDeepDive={onDeepDive}
           onVote={onStoryVote}
+          onSaveToggle={onSaveToggle}
           onRetry={onRetry}
           retrying={retrying}
         />
