@@ -1,77 +1,41 @@
-# SSH deploy to home server — git pull, migrate, build, restart Newsly systemd service.
+# SSH deploy as the SSH user (e.g. arnab): pnpm steps never use sudo.
+# Only `sudo -n systemctl …` restarts the app (passwordless for deploy user).
 #
-# Required GitHub repository secrets:
-#   SSH_HOST
-#   SSH_USER
-#   SSH_PRIVATE_KEY
-#   DEPLOY_PATH
+# Secrets: SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, DEPLOY_PATH,
+#          CF_SERVICE_TOKEN_ID, CF_SERVICE_TOKEN_SECRET
 #
-#   CF_SERVICE_TOKEN_ID
-#   CF_SERVICE_TOKEN_SECRET
-#
-# One-time on the server:
-#   - git clone of this repo at DEPLOY_PATH
-#   - production .env at repo root (not committed)
-#   - pnpm install && pnpm build
-#   - systemd unit: newsly
-#   - passwordless sudo for deploy user
+# Server: git clone at DEPLOY_PATH, .env in repo root, systemd unit `newsly`.
 
-name: Newsly Home Server Deploy
+name: Deploy
 
 on:
   workflow_dispatch:
-
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
-  ssh-deploy:
-    name: SSH deploy
+  deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Install cloudflared
         run: |
           curl -L --fail \
             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
             -o cloudflared.deb
-
           sudo dpkg -i cloudflared.deb || sudo apt-get install -f -y
-
-      - name: Export Cloudflare service token for cloudflared
-        env:
-          CF_SERVICE_TOKEN_ID: ${{ secrets.CF_SERVICE_TOKEN_ID }}
-          CF_SERVICE_TOKEN_SECRET: ${{ secrets.CF_SERVICE_TOKEN_SECRET }}
-
-        run: |
-          set -euo pipefail
-
-          {
-            echo "TUNNEL_SERVICE_TOKEN_ID<<EOF"
-            echo "$CF_SERVICE_TOKEN_ID"
-            echo "EOF"
-
-            echo "TUNNEL_SERVICE_TOKEN_SECRET<<EOF"
-            echo "$CF_SERVICE_TOKEN_SECRET"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
 
       - name: Configure SSH
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-
+          CF_SERVICE_TOKEN_ID: ${{ secrets.CF_SERVICE_TOKEN_ID }}
+          CF_SERVICE_TOKEN_SECRET: ${{ secrets.CF_SERVICE_TOKEN_SECRET }}
         run: |
           set -euo pipefail
-
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-
           cat > ~/.ssh/config <<EOF
           Host homeserver
             HostName ${SSH_HOST}
@@ -82,127 +46,29 @@ jobs:
             StrictHostKeyChecking accept-new
             ConnectTimeout 30
           EOF
-
           chmod 600 ~/.ssh/config
+          {
+            echo "TUNNEL_SERVICE_TOKEN_ID<<EOF"
+            echo "$CF_SERVICE_TOKEN_ID"
+            echo "EOF"
+            echo "TUNNEL_SERVICE_TOKEN_SECRET<<EOF"
+            echo "$CF_SERVICE_TOKEN_SECRET"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
 
-      - name: Deploy Newsly on home server
+      - name: Deploy on server
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          DEPLOY_SHA: ${{ github.sha }}
-
         run: |
           set -euo pipefail
-
-          ssh homeserver \
-            "DEPLOY_PATH='${DEPLOY_PATH}' DEPLOY_SHA='${DEPLOY_SHA}' bash -s" <<'REMOTE'
-
+          ssh homeserver "DEPLOY_PATH='${DEPLOY_PATH}' bash -s" <<'REMOTE'
           set -euo pipefail
-
-          : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
-
-          log() {
-            echo ""
-            echo "=== $* ==="
-          }
-
-          log "Deploy preflight (sha=${DEPLOY_SHA})"
-
-          cd "${DEPLOY_PATH}"
-
-          if [ ! -d .git ]; then
-            echo "No git repo at ${DEPLOY_PATH}"
-            exit 1
-          fi
-
-          if [ ! -f .env ]; then
-            echo "Missing ${DEPLOY_PATH}/.env"
-            exit 1
-          fi
-
-          log "git pull"
-
-          git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
-
-          git log -1 --oneline
-
-          log "install dependencies"
-
+          cd "${DEPLOY_PATH:?}"
+          git fetch origin main && git checkout main && git pull --ff-only origin main
           pnpm install --frozen-lockfile
-
-          log "generate Prisma client"
-
           pnpm exec prisma generate
-
-          log "database migrations"
-
           pnpm run db:migrate:deploy
-
-          log "build Newsly"
-
-          pnpm build
-
-          log "restart Newsly"
-
-          echo "deploy user: $(whoami)"
-
-          if [ -f scripts/restart-newsly.sh ]; then
-
-            bash scripts/restart-newsly.sh
-
-          else
-
-            sudo -n systemctl restart newsly
-            sudo -n systemctl is-active newsly
-
-          fi
-
-          log "verify Newsly"
-
-          curl --fail --silent --show-error \
-            http://127.0.0.1:9010/ \
-            > /dev/null
-
-          log "Deploy succeeded (sha=${DEPLOY_SHA})"
-
-          REMOTE
-
-      - name: Dump diagnostics on failure
-        if: failure()
-
-        env:
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-
-        run: |
-          ssh homeserver \
-            "DEPLOY_PATH='${DEPLOY_PATH}' bash -s" <<'REMOTE' || true
-
-          set -uo pipefail
-
-          cd "${DEPLOY_PATH:-.}"
-
-          echo "--- git status ---"
-          git status -sb 2>/dev/null || true
-
-          echo "--- deploy user ---"
-          whoami 2>/dev/null || true
-          id 2>/dev/null || true
-
-          echo "--- sudo test ---"
-          sudo -n systemctl is-active newsly 2>&1 || true
-
-          echo "--- Newsly service ---"
-          sudo systemctl status newsly --no-pager -l 2>/dev/null \
-            | tail -30 || true
-
-          echo "--- Newsly logs ---"
-          sudo journalctl -u newsly -n 100 --no-pager 2>/dev/null || true
-
-          echo "--- Newsly port 9010 ---"
-          curl -I http://127.0.0.1:9010 2>&1 || true
-
-          echo "--- Newsly Inngest endpoint ---"
-          curl -i http://127.0.0.1:9010/api/inngest 2>&1 || true
-
+          pnpm run build
+          sudo -n systemctl restart newsly
+          sudo -n systemctl is-active newsly
           REMOTE

@@ -20,6 +20,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:reset": "prisma migrate reset",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "inngest:dev": "pnpm dlx inngest-cli@latest dev -u http://localhost:3000/api/inngest"

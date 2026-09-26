@@ -8,7 +8,7 @@ import type { SerializedTrendingNewsStory } from "@/services/news/newsRequestTyp
 import { cn } from "@/lib/utils";
 import { ArrowUp } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 export type TrendingCardData = {
   id: string;
@@ -57,12 +57,9 @@ type TrendingCardProps = {
 
 export function TrendingCard({ story, className }: TrendingCardProps) {
   const storyImageUrl = story.imageUrl?.trim() || null;
-  const [imageFailed, setImageFailed] = useState(false);
-  const showStoryImage = Boolean(storyImageUrl) && !imageFailed;
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [storyImageUrl]);
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const showStoryImage =
+    Boolean(storyImageUrl) && failedImageUrl !== storyImageUrl;
   const categoryLabel = story.category?.trim() || "";
 
   let categoryMarker: ReactNode = null;
@@ -101,7 +98,11 @@ export function TrendingCard({ story, className }: TrendingCardProps) {
               className="size-full object-cover"
               loading="lazy"
               decoding="async"
-              onError={() => setImageFailed(true)}
+              onError={() => {
+                if (storyImageUrl) {
+                  setFailedImageUrl(storyImageUrl);
+                }
+              }}
             />
           ) : null}
           {story.rank != null ? (
