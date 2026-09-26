@@ -66,6 +66,7 @@ import {
   dedupeSelectedArticlesForSession,
   researchUrlKeysFromSources,
 } from "@/services/chat/dedupeResearchArticles";
+import { mergeDirectFirecrawlTargets } from "@/services/chat/directUrlResearch";
 import {
   fetchSerpPayloadsForCalls,
   normalizeSerpCallResults,
@@ -233,6 +234,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
           pipelineLog("run-determiner", "done", {
             useTools: outcome.determiner.useTools,
             useExistingResearch: outcome.determiner.useExistingResearch,
+            firecrawlUrlCount: outcome.determiner.firecrawlUrls.length,
           });
           return toJsonSafeStepOutput(outcome);
         } catch (error) {
@@ -320,7 +322,10 @@ export const messageChatPipelineFunction = inngest.createFunction(
       );
 
       const serpPayloads = await step.run("execute-serp-tools", async () => {
-        if (determiner.useTools !== "yes") {
+        if (
+          determiner.useTools !== "yes" ||
+          determiner.calls.length === 0
+        ) {
           pipelineLog("execute-serp-tools", "skipped");
           return toJsonSafeStepOutput([] as SerpCallResultStep[]);
         }
@@ -380,24 +385,31 @@ export const messageChatPipelineFunction = inngest.createFunction(
       const articlesToScrape = await step.run(
         "dedupe-research-candidates",
         async () => {
-          if (selectedArticles.length === 0) {
-            return toJsonSafeStepOutput([]);
-          }
-
           const sessionSources = await listResearchSourcesByChatSessionId(
             input.chatSessionId,
           );
           const existingKeys = researchUrlKeysFromSources(sessionSources);
-          const deduped = dedupeSelectedArticlesForSession(
-            selectedArticles,
+
+          const deduped =
+            selectedArticles.length === 0
+              ? []
+              : dedupeSelectedArticlesForSession(
+                  selectedArticles,
+                  existingKeys,
+                );
+
+          const merged = mergeDirectFirecrawlTargets(
+            deduped,
+            determiner.firecrawlUrls,
             existingKeys,
           );
 
           pipelineLog("dedupe-research-candidates", "done", {
-            before: selectedArticles.length,
-            after: deduped.length,
+            serpSelected: selectedArticles.length,
+            directUrls: determiner.firecrawlUrls.length,
+            after: merged.length,
           });
-          return toJsonSafeStepOutput(deduped);
+          return toJsonSafeStepOutput(merged);
         },
       );
 

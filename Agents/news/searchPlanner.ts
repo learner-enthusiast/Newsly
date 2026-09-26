@@ -92,11 +92,21 @@ function resolveSuggestedGl(
   if (type === "WORLD") {
     return "us";
   }
-  const key = location?.trim().toLowerCase();
-  if (!key) {
+  const raw = location?.trim().toLowerCase();
+  if (!raw) {
     return undefined;
   }
-  return LOCATION_TO_GL[key] ?? undefined;
+  if (LOCATION_TO_GL[raw]) {
+    return LOCATION_TO_GL[raw];
+  }
+  const segments = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const segment = segments[i]!;
+    if (LOCATION_TO_GL[segment]) {
+      return LOCATION_TO_GL[segment];
+    }
+  }
+  return undefined;
 }
 
 function buildLocalQuery(

@@ -235,6 +235,50 @@ export function serpPayloadHasAiOverview(payload: unknown): boolean {
 }
 
 /** Merge news/organic hits from extra `searchGoogle` calls into the base payload. */
+/** Concatenate news/organic arrays from multiple Serp JSON payloads. */
+export function mergeSerpPayloads(
+  basePayload: unknown,
+  extraPayload: unknown,
+): Record<string, unknown> {
+  const base =
+    basePayload && typeof basePayload === "object"
+      ? { ...(basePayload as Record<string, unknown>) }
+      : {};
+
+  const news = Array.isArray(base.news_results)
+    ? [...(base.news_results as unknown[])]
+    : [];
+  const organic = Array.isArray(base.organic_results)
+    ? [...(base.organic_results as unknown[])]
+    : [];
+
+  if (extraPayload && typeof extraPayload === "object") {
+    const extra = extraPayload as {
+      news_results?: unknown;
+      organic_results?: unknown;
+      video_results?: unknown;
+    };
+    if (Array.isArray(extra.news_results)) {
+      news.push(...extra.news_results);
+    }
+    if (Array.isArray(extra.organic_results)) {
+      organic.push(...extra.organic_results);
+    }
+    if (Array.isArray(extra.video_results)) {
+      const existingVideos = Array.isArray(base.video_results)
+        ? [...(base.video_results as unknown[])]
+        : [];
+      base.video_results = [...existingVideos, ...extra.video_results];
+    }
+  }
+
+  return {
+    ...base,
+    news_results: news,
+    ...(organic.length > 0 ? { organic_results: organic } : {}),
+  };
+}
+
 export function appendGoogleSearchSerpResults(
   basePayload: unknown,
   extraPayloads: unknown[],

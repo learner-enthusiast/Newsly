@@ -1,41 +1,30 @@
 import { inngest } from "@/clients/inngestClient";
 import { NEWS_PIPELINE_EVENT } from "@/inngest";
 import {
+  appendNewsRequestLoadingLog,
   createNewsRequest,
   getNewsRequestByIdForUser,
-  newsScopeSchema,
   patchNewsRequest,
 } from "@/repositories/newsRequest";
 import { getUserVotesForStories } from "@/repositories/newsStoryVote";
 import { listNewsStoriesByNewsRequestId } from "@/repositories/newsStory";
 import { attachVoteFieldsToStory } from "@/services/news/storyVoteService";
-import { findUserNewsRequest } from "@/repositories/user";
+import {
+  type NewsGenerationConfig,
+  newsGenerationConfigFromNewsRequest,
+  newsGenerationRequestSchema,
+  normalizeNewsGenerationRequest,
+} from "@/services/news/newsGenerationRequest";
+import {
+  findUserNewsRequest,
+  getNewsRequestsByUserId,
+} from "@/repositories/user";
 import { z } from "zod";
 
-export const requestNewsBodySchema = z
-  .object({
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    scope: newsScopeSchema,
-    location: z.string().min(1).optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.scope === "local" && !data.location?.trim()) {
-      ctx.addIssue({
-        code: "custom",
-        message: "location is required when scope is local",
-        path: ["location"],
-      });
-    }
-    if (data.scope === "world" && data.location?.trim()) {
-      ctx.addIssue({
-        code: "custom",
-        message: "location must not be set when scope is world",
-        path: ["location"],
-      });
-    }
-  });
+export const requestNewsBodySchema = newsGenerationRequestSchema;
 
 export type RequestNewsBody = z.infer<typeof requestNewsBodySchema>;
+export type NewsGenerationRequest = z.infer<typeof newsGenerationRequestSchema>;
 
 function toRequestDate(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00.000Z`);
@@ -77,6 +66,7 @@ function serializeStory(
 function serializeNewsRequest(
   request: NonNullable<Awaited<ReturnType<typeof getNewsRequestByIdForUser>>>,
 ) {
+  const config = newsGenerationConfigFromNewsRequest(request);
   return {
     id: request.id,
     userId: request.userId,
@@ -86,6 +76,12 @@ function serializeNewsRequest(
     status: request.status,
     error: request.error,
     searchQuery: request.searchQuery,
+    storyCount: config.storyCount,
+    categories: config.categories,
+    customQuery: config.customQuery,
+    language: config.language,
+    sources: config.sources,
+    loadingLogs: request.loadingLogs,
     createdAt: request.createdAt.toISOString(),
     completedAt: request.completedAt?.toISOString() ?? null,
   };
@@ -112,33 +108,51 @@ async function loadStoriesIfReady(
 async function triggerNewsPipeline(params: {
   userId: string;
   newsRequestId: string;
-  date: string;
-  scope: z.infer<typeof newsScopeSchema>;
-  location: string | null;
+  config: NewsGenerationConfig;
 }) {
   await inngest.send({
     name: NEWS_PIPELINE_EVENT,
     data: {
       userId: params.userId,
       newsRequestId: params.newsRequestId,
-      date: params.date,
-      scope: params.scope,
-      location: params.location,
+      date: params.config.date,
+      scope: params.config.scope,
+      location: params.config.location,
+      categories: params.config.categories,
+      customQuery: params.config.customQuery,
+      storyCount: params.config.storyCount,
+      language: params.config.language,
+      sources: params.config.sources,
+      serpHl: params.config.serpHl,
     },
   });
 }
 
+function newsRequestCreateFields(config: NewsGenerationConfig) {
+  return {
+    date: toRequestDate(config.date),
+    location: config.location,
+    scope: config.scope,
+    storyCount: config.storyCount,
+    categories: config.categories,
+    customQuery: config.customQuery,
+    language: config.language,
+    sources: config.sources,
+    searchQuery: { news: "pending", search: "pending" },
+    status: "pending" as const,
+    loadingLogs: ["Request accepted; pipeline queued."],
+  };
+}
+
 /** Create or reuse a news request; trigger pipeline when new or retrying failed. */
 export async function requestNews(userId: string, body: RequestNewsBody) {
-  const parsed = requestNewsBodySchema.parse(body);
-  const date = toRequestDate(parsed.date);
-  const location = parsed.scope === "local" ? parsed.location!.trim() : null;
+  const config = normalizeNewsGenerationRequest(body);
 
   const existing = await findUserNewsRequest({
     userId,
-    date,
-    scope: parsed.scope,
-    location,
+    date: toRequestDate(config.date),
+    scope: config.scope,
+    location: config.location,
   });
 
   if (existing) {
@@ -147,13 +161,20 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
         status: "pending",
         error: null,
         completedAt: null,
+        storyCount: config.storyCount,
+        categories: config.categories,
+        customQuery: config.customQuery,
+        language: config.language,
+        sources: config.sources,
       });
+      await appendNewsRequestLoadingLog(
+        existing.id,
+        "Retrying failed news pipeline.",
+      );
       await triggerNewsPipeline({
         userId,
         newsRequestId: existing.id,
-        date: parsed.date,
-        scope: parsed.scope,
-        location,
+        config,
       });
       const updated = await getNewsRequestByIdForUser(existing.id, userId);
       return {
@@ -175,19 +196,13 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
 
   const newsRequest = await createNewsRequest({
     userId,
-    date,
-    location,
-    scope: parsed.scope,
-    searchQuery: { news: "pending", search: "pending" },
-    status: "pending",
+    ...newsRequestCreateFields(config),
   });
 
   await triggerNewsPipeline({
     userId,
     newsRequestId: newsRequest.id,
-    date: parsed.date,
-    scope: parsed.scope,
-    location,
+    config,
   });
 
   return {
@@ -196,6 +211,16 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
     created: true as const,
     pipelineTriggered: true as const,
   };
+}
+
+const RECENT_NEWS_REQUEST_LIMIT = 20;
+
+/** Recent news requests for the signed-in user (newest first). */
+export async function listRecentNewsRequests(userId: string) {
+  const rows = await getNewsRequestsByUserId(userId);
+  return rows
+    .slice(0, RECENT_NEWS_REQUEST_LIMIT)
+    .map((row) => serializeNewsRequest(row));
 }
 
 /** Poll news request status and stories for the owning user. */
@@ -224,18 +249,20 @@ export async function retryFailedNewsRequest(userId: string, newsRequestId: stri
     return null;
   }
 
+  const config = newsGenerationConfigFromNewsRequest(newsRequest);
+
   await patchNewsRequest(newsRequest.id, {
     status: "pending",
     error: null,
     completedAt: null,
   });
 
+  await appendNewsRequestLoadingLog(newsRequest.id, "Manual retry started.");
+
   await triggerNewsPipeline({
     userId,
     newsRequestId: newsRequest.id,
-    date: newsRequest.date.toISOString().slice(0, 10),
-    scope: newsRequest.scope,
-    location: newsRequest.location,
+    config,
   });
 
   const updated = await getNewsRequestByIdForUser(newsRequestId, userId);

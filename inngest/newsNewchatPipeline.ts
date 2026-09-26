@@ -37,6 +37,7 @@ import {
 } from "@/Agents/chat/newsNewChatAgent";
 import {
   runSmallDeterminerAgent,
+  type SmallDeterminerRunResult,
   type ValidatedSerpToolCall,
 } from "@/Agents/chat/smallDeterminerAgent";
 import { GuardrailBlockedError } from "@/Agents/chat/guardrails";
@@ -48,7 +49,10 @@ import {
 import { getChatSessionByIdForUser } from "@/repositories/chatSession";
 import { listNewsSourcesByIdsForStory } from "@/repositories/newsSource";
 import { getNewsStoryWithSourcesById } from "@/repositories/newsStory";
-import { createResearchSource } from "@/repositories/researchSource";
+import {
+  createResearchSource,
+  listResearchSourcesByChatSessionId,
+} from "@/repositories/researchSource";
 import {
   fetchAndNormalizeSerp,
   roleForChatModel,
@@ -56,6 +60,8 @@ import {
 import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import { loadRecentMessagesForQueryEnhancer } from "@/services/chat/recentChatMessagesForPipeline";
+import { researchUrlKeysFromSources } from "@/services/chat/dedupeResearchArticles";
+import { mergeDirectFirecrawlTargets } from "@/services/chat/directUrlResearch";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import { z } from "zod";
 
@@ -209,6 +215,7 @@ export const chatPipelineFunction = inngest.createFunction(
               outcome.determiner.useTools === "yes"
                 ? outcome.determiner.calls.length
                 : 0,
+            firecrawlUrlCount: outcome.determiner.firecrawlUrls.length,
           });
           return toJsonSafeStepOutput(outcome);
         } catch (error) {
@@ -236,28 +243,24 @@ export const chatPipelineFunction = inngest.createFunction(
         return toJsonSafeStepOutput({ assistantMessageId: blockedMessage.id });
       }
 
-      const serpHits = await step.run("fetch-and-normalize-serp", async () => {
-        const determiner = determinerResult as {
-          determiner: {
-            useTools: "yes" | "no";
-            calls?: ValidatedSerpToolCall[];
-          };
-        };
+      const determinerOutcome = determinerResult as SmallDeterminerRunResult;
+      const determiner = determinerOutcome.determiner;
 
-        if (determiner.determiner.useTools !== "yes") {
+      const serpHits = await step.run("fetch-and-normalize-serp", async () => {
+        if (determiner.useTools !== "yes" || determiner.calls.length === 0) {
           pipelineLog("fetch-and-normalize-serp", "skipped", {
-            reason: "no tools",
+            reason: "no serp calls",
           });
           return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
         }
 
-        const calls = (determiner.determiner.calls ??
-          []) as ValidatedSerpToolCall[];
         pipelineLog("fetch-and-normalize-serp", "start", {
-          calls: calls.length,
+          calls: determiner.calls.length,
         });
 
-        const merged = await fetchAndNormalizeSerp(calls);
+        const merged = await fetchAndNormalizeSerp(
+          determiner.calls as ValidatedSerpToolCall[],
+        );
         pipelineLog("fetch-and-normalize-serp", "done", {
           hitCount: merged.length,
         });
@@ -285,20 +288,30 @@ export const chatPipelineFunction = inngest.createFunction(
       const scrapedSources = await step.run(
         "scrape-and-persist-sources",
         async () => {
-          if (selectedArticles.length === 0) {
+          const existingKeys = researchUrlKeysFromSources(
+            await listResearchSourcesByChatSessionId(input.chatSessionId),
+          );
+          const toScrape = mergeDirectFirecrawlTargets(
+            selectedArticles,
+            determiner.firecrawlUrls,
+            existingKeys,
+          );
+
+          if (toScrape.length === 0) {
             return toJsonSafeStepOutput([]);
           }
 
           pipelineLog("scrape-and-persist-sources", "start", {
-            count: selectedArticles.length,
+            count: toScrape.length,
+            directUrls: determiner.firecrawlUrls.length,
           });
 
           const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
-            selectedArticles.map((article) => article.url),
+            toScrape.map((article) => article.url),
           );
           const rows = [];
-          for (let index = 0; index < selectedArticles.length; index += 1) {
-            const article = selectedArticles[index];
+          for (let index = 0; index < toScrape.length; index += 1) {
+            const article = toScrape[index];
             let content = scrapedMarkdown[index]?.trim() ?? "";
 
             if (!content) {

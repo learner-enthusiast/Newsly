@@ -1,6 +1,20 @@
 import { NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth";
-import { requestNews, requestNewsBodySchema } from "@/services/news/apiService";
+import {
+  listRecentNewsRequests,
+  requestNews,
+  requestNewsBodySchema,
+} from "@/services/news/apiService";
+
+export async function GET() {
+  const user = await requireAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const newsRequests = await listRecentNewsRequests(user.id);
+  return NextResponse.json({ newsRequests });
+}
 
 export async function POST(request: Request) {
   const user = await requireAuthenticatedUser();

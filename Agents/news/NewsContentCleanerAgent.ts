@@ -107,7 +107,7 @@ function buildUserPrompt(params: z.infer<typeof newsContentCleanerParamsSchema>)
     "Date: " + params.date,
     "",
     "Raw Content:",
-    trimRawContent(params.content),
+    params.content,
   ].join("\n");
 }
 
@@ -136,7 +136,10 @@ async function runContentCleaner(
   generate: typeof aiClient.generate,
 ): Promise<NewsContentCleanerOutput & { model: string }> {
   const { abortSignal, ...rawParams } = params;
-  const parsed = newsContentCleanerParamsSchema.parse(rawParams);
+  const parsed = newsContentCleanerParamsSchema.parse({
+    ...rawParams,
+    content: trimRawContent(rawParams.content),
+  });
   const model = resolveContentCleanerModel(parsed.model);
 
   const raw = await generate({

@@ -4,6 +4,7 @@
  * What it does: Runs stock-research guardrails first, optionally improves the user
  * prompt via the query enhancer (except on news-story deep dives), then decides
  * whether live Serp searches are needed and plans validated Google/Serp tool calls.
+ * When the user supplies direct article URLs, plans `firecrawlUrls` for Firecrawl scrapes.
  *
  * Input: userPrompt; optional isNewsStory, recentMessages, model, tools catalog,
  * skipGuardrails, guardrailModel, system, abortSignal.
@@ -29,6 +30,10 @@ import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { serpEngines } from "@/SERP/index";
 import { z } from "zod";
 import { runQueryEnhancerAgent } from "./queryEnhancerAgent";
+import {
+  MAX_DETERMINER_FIRECRAWL_URLS,
+  validateDeterminerFirecrawlUrls,
+} from "@/services/chat/directUrlResearch";
 
 const SERP_TOOL_NAMES = [
   "searchGoogle",
@@ -72,6 +77,8 @@ export const smallDeterminerModelOutputSchema = z.object({
   existingResearchQuery: z.string().max(400).nullable(),
   reasoning: z.string().nullable(),
   calls: z.array(plannedToolCallModelSchema).nullable(),
+  /** Full http(s) URLs to scrape with Firecrawl when the user supplied direct links. */
+  firecrawlUrls: z.array(z.string()).max(5).nullable(),
 });
 
 export type SmallDeterminerModelOutput = z.infer<
@@ -84,12 +91,14 @@ export type SmallDeterminerRawOutput =
       useExistingResearch: boolean;
       existingResearchQuery: string | null;
       reasoning: string | null;
+      firecrawlUrls: string[];
     }
   | {
       useTools: "yes";
       useExistingResearch: boolean;
       existingResearchQuery: string | null;
       reasoning: string | null;
+      firecrawlUrls: string[];
       calls: Array<{ tool: SerpToolName; input: Record<string, unknown> }>;
     };
 
@@ -166,6 +175,7 @@ function normalizeDeterminerModelOutput(
     useExistingResearch: boolean;
     existingResearchQuery: string | null;
   },
+  firecrawlUrls: string[],
 ): SmallDeterminerRawOutput {
   if (raw.useTools === "no") {
     return {
@@ -173,12 +183,15 @@ function normalizeDeterminerModelOutput(
       useExistingResearch: research.useExistingResearch,
       existingResearchQuery: research.existingResearchQuery,
       reasoning: raw.reasoning,
+      firecrawlUrls,
     };
   }
 
   const calls = raw.calls ?? [];
-  if (calls.length === 0) {
-    throw new Error('Determiner returned useTools "yes" without any calls');
+  if (calls.length === 0 && firecrawlUrls.length === 0) {
+    throw new Error(
+      'Determiner returned useTools "yes" without Serp calls or firecrawlUrls',
+    );
   }
 
   return {
@@ -186,6 +199,7 @@ function normalizeDeterminerModelOutput(
     useExistingResearch: research.useExistingResearch,
     existingResearchQuery: research.existingResearchQuery,
     reasoning: raw.reasoning,
+    firecrawlUrls,
     calls: calls.map((call) => ({
       tool: call.tool,
       input: stripNullInputFields(call.input),
@@ -205,6 +219,7 @@ export type SmallDeterminerResult =
       useTools: "no";
       useExistingResearch: boolean;
       existingResearchQuery: string | null;
+      firecrawlUrls: string[];
       reasoning?: string;
       calls?: undefined;
       model: string;
@@ -213,6 +228,7 @@ export type SmallDeterminerResult =
       useTools: "yes";
       useExistingResearch: boolean;
       existingResearchQuery: string | null;
+      firecrawlUrls: string[];
       reasoning?: string;
       calls: ValidatedSerpToolCall[];
       model: string;
@@ -302,6 +318,15 @@ function buildDeterminerSystemPrompt(
     "- Do not combine google_news `q` with token parameters; kgmid must be alone on googleNews.",
     "- Do not set `tbm`. For web news results use searchGoogleNewsTab (not searchGoogle with tbm).",
     "",
+    "## Firecrawl direct URL tool",
+    `When the user supplies one or more full http(s) article URLs to read, summarize, or analyze, list them in firecrawlUrls (max ${MAX_DETERMINER_FIRECRAWL_URLS}).`,
+    "The pipeline scrapes those URLs with Firecrawl and adds them as research sources.",
+    "Use firecrawlUrls when the user pastes a link, says \"read this URL\", or clearly points at specific pages—not for bare keywords or search queries.",
+    "Only include valid absolute URLs (https://...). Do not include Serp query strings or domain-only strings without a path unless the user clearly meant that homepage.",
+    "When the question can be answered by scraping the given link(s) alone, set useTools to no, firecrawlUrls to those URLs, and calls to null.",
+    "You may combine firecrawlUrls with Serp calls when the user links one article and also asks for broader market news.",
+    "When no direct URLs are provided, set firecrawlUrls to null.",
+    "",
     "## Serp tool catalog",
     buildToolCatalog(tools),
   ].join("\n");
@@ -371,7 +396,7 @@ async function runDeterminerCore(
     extraContext,
     schemaName: "SmallDeterminerOutput",
     schemaDescription:
-      'useTools ("yes" | "no"), useExistingResearch, existingResearchQuery for ResearchSource.description or null, reasoning, and planned Serp calls when useTools is yes.',
+      'useTools ("yes" | "no"), useExistingResearch, existingResearchQuery, firecrawlUrls for direct Firecrawl scrapes or null, reasoning, and planned Serp calls when useTools is yes.',
     output: smallDeterminerModelOutputSchema,
     temperature: 0,
     maxOutputTokens: 2048,
@@ -381,6 +406,7 @@ async function runDeterminerCore(
   const parsed = normalizeDeterminerModelOutput(
     raw,
     normalizeExistingResearch(isNewsStory, researchSourceCount, raw),
+    validateDeterminerFirecrawlUrls(raw.firecrawlUrls),
   );
 
   if (parsed.useTools === "no") {
@@ -388,17 +414,24 @@ async function runDeterminerCore(
       useTools: "no",
       useExistingResearch: parsed.useExistingResearch,
       existingResearchQuery: parsed.existingResearchQuery,
+      firecrawlUrls: parsed.firecrawlUrls,
       reasoning: parsed.reasoning ?? undefined,
       model,
     };
   }
 
+  const serpCalls =
+    parsed.calls.length > 0
+      ? validatePlannedCalls(parsed.calls, tools)
+      : [];
+
   return {
     useTools: "yes",
     useExistingResearch: parsed.useExistingResearch,
     existingResearchQuery: parsed.existingResearchQuery,
+    firecrawlUrls: parsed.firecrawlUrls,
     reasoning: parsed.reasoning ?? undefined,
-    calls: validatePlannedCalls(parsed.calls, tools),
+    calls: serpCalls,
     model,
   };
 }

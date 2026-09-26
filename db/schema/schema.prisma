@@ -39,6 +39,7 @@ model User {
 enum NewsScope {
   local
   world
+  both
 
   @@map("news_scope")
 }
@@ -60,6 +61,11 @@ model NewsRequest {
   searchQuery Json              @map("search_query")
   status      NewsRequestStatus
   error       String?           @db.Text
+  storyCount  Int               @default(5) @map("story_count")
+  categories  String[]          @default([])
+  customQuery String?           @map("custom_query") @db.Text
+  language    String?
+  sources     String[]          @default([])
   createdAt   DateTime          @default(now()) @map("created_at")
   completedAt DateTime?         @map("completed_at")
 

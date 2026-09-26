@@ -50,6 +50,7 @@ export const newsSynthesizerParamsSchema = z.object({
   /** Used to rank relevance to location. */
   location: z.string().min(1).nullable().optional(),
   userPrompt: z.string().min(1).optional(),
+  targetStoryCount: z.number().int().min(1).max(12).optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
 });
@@ -366,7 +367,7 @@ function claimStories(
       description: modelStory.description.trim(),
       content: modelStory.content.trim(),
       category: modelStory.category.trim(),
-      location: modelStory.location?.trim() || location,
+      location: modelStory.location?.trim() || null,
       publishedAt: parseModelDate(modelStory.publishedAt) ?? latestPublishedAt(grouped),
       importanceScore: roundScore(modelStory.importanceScore),
       sources,
@@ -386,13 +387,16 @@ function claimStories(
       continue;
     }
     claimed.add(article.key);
-    stories.push(fallbackStory(article, newsRequestId, location, usedSlugs));
+    stories.push(fallbackStory(article, newsRequestId, null, usedSlugs));
   }
 
   return stories.sort((left, right) => right.importanceScore - left.importanceScore);
 }
 
-function buildSystemPrompt(hasYoutubeFacts: boolean): string {
+function buildSystemPrompt(
+  hasYoutubeFacts: boolean,
+  targetStoryCount?: number,
+): string {
   const youtubeSection = hasYoutubeFacts
     ? [
         "Primary vs supporting sources:",
@@ -415,8 +419,12 @@ function buildSystemPrompt(hasYoutubeFacts: boolean): string {
 
   return [
     "You are the news synthesizer. Cluster scraped news/web articles into distinct market and economic events.",
-    "Aim for at least four distinct stories when the source material supports that many separate developments.",
-    "Do not invent extra stories; fewer than four is acceptable when sources only support fewer events.",
+    targetStoryCount
+      ? `Aim for about ${targetStoryCount} distinct stories when the source material supports that many separate developments.`
+      : "Aim for at least four distinct stories when the source material supports that many separate developments.",
+    targetStoryCount
+      ? `Do not invent extra stories; fewer than ${targetStoryCount} is acceptable when sources only support fewer events.`
+      : "Do not invent extra stories; fewer than four is acceptable when sources only support fewer events.",
     ...youtubeSection,
     "Articles about the same event become one story. Do not merge different events. Do not split one event across stories.",
     "Copy source URLs exactly in sourceUrls. Do not invent URLs. sourceUrls is the canonical machine-readable source list.",
@@ -426,7 +434,7 @@ function buildSystemPrompt(hasYoutubeFacts: boolean): string {
     "- importance: how much the event matters to markets, policy, or the public",
     "- recency: newer reporting ranks higher",
     "- impact: breadth of economic or civic effect",
-    "- relevance to location: prefer the requested location when one is provided",
+    "- geographic relevance: infer LOCAL, REGIONAL, NATIONAL, or GLOBAL from article evidence; set location only to where the event actually occurred (null if unclear). Do not default every story to the request location.",
     "- source quality: official announcements, primary reporting, and several independent sources beat thin rewrites",
     "- uniqueness: a distinct event should not be buried inside a larger story",
     "summary: plain-text teaser (2–3 sentences) for list views.",
@@ -476,7 +484,9 @@ async function runSynthesizer(
   const youtubeFacts = parsed.youtubeTranscriptSynthesis?.facts ?? [];
   const raw = await generate({
     model,
-    system: parsed.system ?? buildSystemPrompt(youtubeFacts.length > 0),
+    system:
+      parsed.system ??
+      buildSystemPrompt(youtubeFacts.length > 0, parsed.targetStoryCount),
     prompt:
       parsed.userPrompt ??
       "Cluster these researched articles into events and rank the stories.",
@@ -508,7 +518,11 @@ async function runSynthesizer(
   });
 
   const stories = claimStories(raw.stories, articles, parsed.newsRequestId, location);
-  return synthesizedNewsStorySchema.array().parse(stories);
+  const parsedStories = synthesizedNewsStorySchema.array().parse(stories);
+  if (parsed.targetStoryCount) {
+    return parsedStories.slice(0, parsed.targetStoryCount);
+  }
+  return parsedStories;
 }
 
 export function createNewsSynthesizerAgent(options: AIClientOptions = {}) {

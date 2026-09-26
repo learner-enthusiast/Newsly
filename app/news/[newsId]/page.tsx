@@ -1,103 +1,46 @@
 "use client";
 
-import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
+import { NewsRequestContextCard } from "@/components/news/NewsRequestContextCard";
+import { NewsRequestProgress } from "@/components/news/NewsRequestProgress";
+import { NewsStoryListItem } from "@/components/news/NewsStoryListItem";
+import type { StoryVoteState } from "@/components/news/StoryVoteControls";
 import {
-  StoryVoteControls,
-  type StoryVoteState,
-} from "@/components/news/StoryVoteControls";
-import {
-  StorySourceLinks,
-  type StorySourceLink,
-} from "@/components/news/StorySourceLinks";
-import { Button } from "@/components/ui/button";
+  activeProgressStepLabel,
+  sanitizeNewsRequestError,
+} from "@/services/news/newsRequestProgress";
+import type { NewsRequestResultPayload } from "@/services/news/newsRequestTypes";
+import { useNewsRequestPolling } from "@/hooks/useNewsRequestPolling";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-
-type NewsStory = {
-  id: string;
-  title: string;
-  summary: string;
-  description: string | null;
-  content: string;
-  category: string;
-  importanceScore: number | null;
-  sourceUrls: StorySourceLink[];
-  upvotes: number;
-  downvotes: number;
-  netVotes: number;
-  userVote: "UP" | "DOWN" | null;
-};
-
-type PollPayload = {
-  newsRequest: {
-    id: string;
-    status: "pending" | "failed" | "success";
-    error: string | null;
-    date: string;
-    scope: string;
-    location: string | null;
-  };
-  stories: NewsStory[];
-};
-
-const POLL_MS = 3000;
+import { useState } from "react";
 
 export default function NewsResultPage() {
   const params = useParams<{ newsId: string }>();
-  const newsId = params.newsId;
-  const [data, setData] = useState<PollPayload | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const newsId =
+    typeof params.newsId === "string"
+      ? params.newsId
+      : Array.isArray(params.newsId)
+        ? params.newsId[0]
+        : undefined;
+  const router = useRouter();
+  const {
+    data,
+    setData,
+    error,
+    pollWarning,
+    restartPolling,
+    isLoading,
+    isPending,
+    isSuccess,
+    isFailed,
+  } = useNewsRequestPolling(newsId);
+
   const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
   const [deepDiveError, setDeepDiveError] = useState<string | null>(null);
   const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
   const [voteError, setVoteError] = useState<string | null>(null);
-  const router = useRouter();
-
-  const fetchStatus = useCallback(async () => {
-    const response = await fetch(`/api/news/${newsId}`);
-    const payload = (await response.json()) as PollPayload & { error?: string };
-
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Failed to load news request");
-    }
-
-    setData(payload);
-    return payload;
-  }, [newsId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    async function poll() {
-      try {
-        const payload = await fetchStatus();
-        if (cancelled) {
-          return;
-        }
-        if (payload.newsRequest.status === "pending") {
-          timer = setTimeout(poll, POLL_MS);
-        }
-      } catch (pollError) {
-        if (!cancelled) {
-          setError(
-            pollError instanceof Error ? pollError.message : "Polling failed",
-          );
-        }
-      }
-    }
-
-    void poll();
-
-    return () => {
-      cancelled = true;
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-  }, [fetchStatus]);
 
   async function onDeepDive(storyId: string) {
     setDeepDiveError(null);
@@ -171,26 +114,31 @@ export default function NewsResultPage() {
 
   async function onRetry() {
     setRetrying(true);
-    setError(null);
+    setRetryError(null);
     try {
       const response = await fetch(`/api/news/${newsId}`, { method: "POST" });
-      const payload = (await response.json()) as PollPayload & {
+      const payload = (await response.json()) as NewsRequestResultPayload & {
         error?: string;
       };
       if (!response.ok) {
         throw new Error(payload.error ?? "Retry failed");
       }
-      setData(payload);
-    } catch (retryError) {
-      setError(
-        retryError instanceof Error ? retryError.message : "Retry failed",
-      );
+      setData({
+        newsRequest: payload.newsRequest,
+        stories: payload.stories ?? [],
+      });
+      restartPolling();
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : "Retry failed");
     } finally {
       setRetrying(false);
     }
   }
 
-  const status = data?.newsRequest.status;
+  const request = data?.newsRequest;
+  const stories = data?.stories ?? [];
+  const requestedCount = request?.storyCount ?? 0;
+  const foundCount = stories.length;
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-12">
@@ -202,37 +150,63 @@ export default function NewsResultPage() {
           ← New request
         </Link>
         <h1 className="font-display mt-2 text-2xl font-semibold">
-          News results
+          {isPending ? "News briefing in progress" : "News results"}
         </h1>
-        {data?.newsRequest ? (
+        {isPending && request ? (
           <p className="mt-1 text-sm text-muted-foreground">
-            {data.newsRequest.date} · {data.newsRequest.scope}
-            {data.newsRequest.location ? ` · ${data.newsRequest.location}` : ""}
+            {activeProgressStepLabel(request.loadingLogs, request.status) ??
+              "Preparing your request"}
+            …
           </p>
         ) : null}
       </div>
 
-      {!data && !error ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      {!newsId ? (
+        <p className="text-sm text-red-600">Invalid news request link.</p>
+      ) : null}
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading your request…</p>
       ) : null}
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {pollWarning ? (
+        <p className="text-sm text-amber-700">{pollWarning}</p>
+      ) : null}
+      {retryError ? <p className="text-sm text-red-600">{retryError}</p> : null}
       {deepDiveError ? (
         <p className="text-sm text-red-600">{deepDiveError}</p>
       ) : null}
       {voteError ? <p className="text-sm text-red-600">{voteError}</p> : null}
 
-      {status === "pending" ? (
-        <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          Pipeline running… refreshing every {POLL_MS / 1000}s.
-        </p>
+      {request ? (
+        <NewsRequestContextCard
+          date={request.date}
+          scope={request.scope}
+          location={request.location}
+          categories={request.categories}
+          storyCount={request.storyCount}
+          customQuery={request.customQuery}
+          language={request.language}
+          sources={request.sources}
+          status={request.status}
+        />
       ) : null}
 
-      {status === "failed" ? (
+      {isPending && request ? (
+        <NewsRequestProgress
+          loadingLogs={request.loadingLogs}
+          status={request.status}
+        />
+      ) : null}
+
+      {isFailed && request ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm">
-          <p className="font-medium text-red-800">Pipeline failed</p>
+          <p className="font-medium text-red-800">
+            We couldn&apos;t complete this news request.
+          </p>
           <p className="mt-1 text-red-700">
-            {data?.newsRequest.error ?? "Unknown error"}
+            {sanitizeNewsRequestError(request.error)}
           </p>
           <button
             type="button"
@@ -240,74 +214,38 @@ export default function NewsResultPage() {
             disabled={retrying}
             className="mt-3 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-60"
           >
-            {retrying ? "Retrying…" : "Retry"}
+            {retrying ? "Retrying…" : "Try again"}
           </button>
         </div>
       ) : null}
 
-      {status === "success" && data?.stories.length === 0 ? (
+      {isSuccess ? (
         <p className="text-sm text-muted-foreground">
-          No stories were generated.
+          {foundCount === 0
+            ? "No sufficiently relevant stories were found for this request."
+            : foundCount < requestedCount
+              ? `${foundCount} relevant ${foundCount === 1 ? "story" : "stories"} found (you requested ${requestedCount}).`
+              : `${foundCount} relevant ${foundCount === 1 ? "story" : "stories"} ready.`}
+        </p>
+      ) : null}
+
+      {isSuccess && foundCount === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Try broadening categories, adjusting the date, or changing scope.
         </p>
       ) : null}
 
       <ul className="flex flex-col gap-4">
-        {data?.stories.map((story) => (
-          <li key={story.id} className="rounded-lg border p-4">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>{story.category}</span>
-              {story.importanceScore != null ? (
-                <span>Score {story.importanceScore}</span>
-              ) : null}
-            </div>
-            <div className="mt-1 flex items-start gap-2">
-              <h2 className="min-w-0 flex-1 text-lg font-semibold">
-                {story.title}
-              </h2>
-              <StorySourceLinks sources={story.sourceUrls ?? []} />
-            </div>
-            <p className="mt-2 text-sm font-medium leading-relaxed">
-              {story.summary}
-            </p>
-            {story.content?.trim() ? (
-              <div className="mt-4 border-t pt-4">
-                <ChatMarkdown
-                  content={story.content}
-                  className="text-foreground"
-                />
-              </div>
-            ) : story.description ? (
-              <div className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {story.description.split(/\n\n+/).map((paragraph, index) => (
-                  <p key={index}>{paragraph}</p>
-                ))}
-              </div>
-            ) : null}
-            {status === "success" ? (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={deepDiveStoryId === story.id}
-                  onClick={() => onDeepDive(story.id)}
-                >
-                  {deepDiveStoryId === story.id ? "Starting…" : "Deep dive"}
-                </Button>
-                <StoryVoteControls
-                  storyId={story.id}
-                  vote={{
-                    upvotes: story.upvotes ?? 0,
-                    downvotes: story.downvotes ?? 0,
-                    netVotes: story.netVotes ?? 0,
-                    userVote: story.userVote ?? null,
-                  }}
-                  onVote={onStoryVote}
-                  voting={votingStoryId === story.id}
-                />
-              </div>
-            ) : null}
-          </li>
+        {stories.map((story) => (
+          <NewsStoryListItem
+            key={story.id}
+            story={story}
+            showActions={isSuccess}
+            deepDiveStoryId={deepDiveStoryId}
+            votingStoryId={votingStoryId}
+            onDeepDive={onDeepDive}
+            onVote={onStoryVote}
+          />
         ))}
       </ul>
     </main>
