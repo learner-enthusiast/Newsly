@@ -72,6 +72,11 @@ const plannedToolCallModelSchema = z.object({
   input: serpToolInputModelSchema,
 });
 
+const determinerEvidenceModelSchema = z.object({
+  useYoutube: z.boolean(),
+  useAiOverviewFollowUp: z.boolean(),
+});
+
 export const smallDeterminerModelOutputSchema = z.object({
   useTools: z.enum(["yes", "no"]),
   useExistingResearch: z.boolean(),
@@ -80,7 +85,23 @@ export const smallDeterminerModelOutputSchema = z.object({
   calls: z.array(plannedToolCallModelSchema).nullable(),
   /** Full http(s) URLs to scrape with Firecrawl when the user supplied direct links. */
   firecrawlUrls: z.array(z.string()).max(5).nullable(),
+  /** Optional supporting-evidence toggles (default off). */
+  evidence: determinerEvidenceModelSchema.nullable(),
 });
+
+export type DeterminerEvidenceFlags = {
+  useYoutube: boolean;
+  useAiOverviewFollowUp: boolean;
+};
+
+export function normalizeDeterminerEvidence(
+  raw: z.infer<typeof determinerEvidenceModelSchema> | null | undefined,
+): DeterminerEvidenceFlags {
+  return {
+    useYoutube: raw?.useYoutube === true,
+    useAiOverviewFollowUp: raw?.useAiOverviewFollowUp === true,
+  };
+}
 
 export type SmallDeterminerModelOutput = z.infer<
   typeof smallDeterminerModelOutputSchema
@@ -221,6 +242,7 @@ export type SmallDeterminerResult =
       useExistingResearch: boolean;
       existingResearchQuery: string | null;
       firecrawlUrls: string[];
+      evidence: DeterminerEvidenceFlags;
       reasoning?: string;
       calls?: undefined;
       model: string;
@@ -230,6 +252,7 @@ export type SmallDeterminerResult =
       useExistingResearch: boolean;
       existingResearchQuery: string | null;
       firecrawlUrls: string[];
+      evidence: DeterminerEvidenceFlags;
       reasoning?: string;
       calls: ValidatedSerpToolCall[];
       model: string;
@@ -263,6 +286,8 @@ export type SmallDeterminerAgentParams = {
 export type SmallDeterminerRunResult = {
   guardrail: GuardrailCheckResult;
   determiner: SmallDeterminerResult;
+  /** Query-enhanced research intent (same string used for Serp planning). */
+  researchPrompt: string;
 };
 
 export function resolveDeterminerModel(override?: string): string {
@@ -328,6 +353,12 @@ function buildDeterminerSystemPrompt(
     "You may combine firecrawlUrls with Serp calls when the user links one article and also asks for broader market news.",
     "When no direct URLs are provided, set firecrawlUrls to null.",
     "",
+    "## Optional supporting evidence (evidence object, or null)",
+    "Default both flags to false for simple factual questions (ownership, definitions, well-known metrics).",
+    "evidence.useYoutube — true only when interviews, speeches, earnings commentary, expert explainers, or long-form video may help answer the question. False for simple lookups.",
+    "evidence.useAiOverviewFollowUp — true only when a Google web search (searchGoogle) is planned AND AI Overview may surface entities/claims worth verifying with 2–3 tight follow-up searches. Requires searchGoogle in calls when true. False when searchGoogle is not used or the question is trivial.",
+    "Do not enable both flags unless each independently helps. Never enable for greetings or meta questions.",
+    "",
     "## Serp tool catalog",
     buildToolCatalog(tools),
   ].join("\n");
@@ -366,10 +397,15 @@ function validatePlannedCalls(
   }) as ValidatedSerpToolCall[];
 }
 
+type DeterminerCoreResult = {
+  determiner: SmallDeterminerResult;
+  researchPrompt: string;
+};
+
 async function runDeterminerCore(
   params: SmallDeterminerAgentParams,
   generate: typeof aiClient.generate,
-): Promise<SmallDeterminerResult> {
+): Promise<DeterminerCoreResult> {
   const tools = params.tools ?? serpEngines;
   const model = resolveDeterminerModel(params.model);
   const isNewsStory = params.isNewsStory === true;
@@ -397,7 +433,7 @@ async function runDeterminerCore(
     extraContext,
     schemaName: "SmallDeterminerOutput",
     schemaDescription:
-      'useTools ("yes" | "no"), useExistingResearch, existingResearchQuery, firecrawlUrls for direct Firecrawl scrapes or null, reasoning, and planned Serp calls when useTools is yes.',
+      'useTools ("yes" | "no"), useExistingResearch, existingResearchQuery, firecrawlUrls or null, evidence { useYoutube, useAiOverviewFollowUp } or null, reasoning, and planned Serp calls when useTools is yes.',
     output: smallDeterminerModelOutputSchema,
     temperature: 0,
     maxOutputTokens: 2048,
@@ -409,15 +445,20 @@ async function runDeterminerCore(
     normalizeExistingResearch(isNewsStory, researchSourceCount, raw),
     validateDeterminerFirecrawlUrls(raw.firecrawlUrls),
   );
+  const evidence = normalizeDeterminerEvidence(raw.evidence);
 
   if (parsed.useTools === "no") {
     return {
-      useTools: "no",
-      useExistingResearch: parsed.useExistingResearch,
-      existingResearchQuery: parsed.existingResearchQuery,
-      firecrawlUrls: parsed.firecrawlUrls,
-      reasoning: parsed.reasoning ?? undefined,
-      model,
+      determiner: {
+        useTools: "no",
+        useExistingResearch: parsed.useExistingResearch,
+        existingResearchQuery: parsed.existingResearchQuery,
+        firecrawlUrls: parsed.firecrawlUrls,
+        evidence,
+        reasoning: parsed.reasoning ?? undefined,
+        model,
+      },
+      researchPrompt: params.userPrompt,
     };
   }
 
@@ -427,13 +468,17 @@ async function runDeterminerCore(
       : [];
 
   return {
-    useTools: "yes",
-    useExistingResearch: parsed.useExistingResearch,
-    existingResearchQuery: parsed.existingResearchQuery,
-    firecrawlUrls: parsed.firecrawlUrls,
-    reasoning: parsed.reasoning ?? undefined,
-    calls: serpCalls,
-    model,
+    determiner: {
+      useTools: "yes",
+      useExistingResearch: parsed.useExistingResearch,
+      existingResearchQuery: parsed.existingResearchQuery,
+      firecrawlUrls: parsed.firecrawlUrls,
+      evidence,
+      reasoning: parsed.reasoning ?? undefined,
+      calls: serpCalls,
+      model,
+    },
+    researchPrompt: params.userPrompt,
   };
 }
 
@@ -467,11 +512,8 @@ export function createSmallDeterminerAgent(options: AIClientOptions = {}) {
     params: SmallDeterminerAgentParams,
   ): Promise<SmallDeterminerRunResult> {
     const guardrail = await applyGuardrails(params);
-    const determiner = await runDeterminerCore(
-      params,
-      client.generate.bind(client),
-    );
-    return { guardrail, determiner };
+    const core = await runDeterminerCore(params, client.generate.bind(client));
+    return { guardrail, determiner: core.determiner, researchPrompt: core.researchPrompt };
   };
 }
 
@@ -480,9 +522,6 @@ export async function runSmallDeterminerAgent(
   params: SmallDeterminerAgentParams,
 ): Promise<SmallDeterminerRunResult> {
   const guardrail = await applyGuardrails(params);
-  const determiner = await runDeterminerCore(
-    params,
-    aiClient.generate.bind(aiClient),
-  );
-  return { guardrail, determiner };
+  const core = await runDeterminerCore(params, aiClient.generate.bind(aiClient));
+  return { guardrail, determiner: core.determiner, researchPrompt: core.researchPrompt };
 }

@@ -704,6 +704,34 @@
     }
   }
 
+  .shimmer-loading-text {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--muted-foreground) 90%, transparent) 0%,
+      var(--foreground) 48%,
+      color-mix(in srgb, var(--muted-foreground) 90%, transparent) 96%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer-loading-text 2.35s linear infinite;
+  }
+
+  @keyframes shimmer-loading-text {
+    to {
+      background-position: 200% center;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shimmer-loading-text {
+      animation: none;
+      color: var(--muted-foreground);
+      background: none;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .sketch-loader-orbit,
     .sketch-loader-core,

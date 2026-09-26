@@ -15,8 +15,19 @@ import {
   runResearchArticleSelectorAgent,
   type SelectedResearchArticle,
 } from "@/Agents/news/ResearchArticleSelectorAgent";
+import { buildResearchPromptWithHistory } from "@/services/chat/researchPrompt";
 import { normalizedSerpHitSchema } from "@/services/chat/normalizeSerpResults";
 import { z } from "zod";
+
+const AI_OVERVIEW_FOLLOW_UP_ENGINE = "google_search_ai_overview_follow_up";
+
+const CHAT_ARTICLE_SELECTOR_SYSTEM = [
+  "This is a single user research question in chat — not a daily news briefing.",
+  "Select URLs whose full text is most likely to contain direct evidence for the resolved question.",
+  "Prefer on-topic primary reporting, official/company/government sources, and niche coverage over generic popularity.",
+  "When the question names entities, locations, or events, the page must materially address those — not tangential market chatter.",
+  "Relevance to the question outweighs generic prominence; use recency when the question is time-sensitive.",
+].join(" ");
 
 export const articleSynthesizerParamsSchema = z.object({
   userPrompt: z.string().min(1),
@@ -30,6 +41,7 @@ export type ArticleSynthesizerParams = z.input<
   typeof articleSynthesizerParamsSchema
 > & {
   abortSignal?: AbortSignal;
+  recentMessages?: Array<{ role: string; content: string }>;
 };
 
 export type ArticleSynthesizerResult = SelectedResearchArticle[];
@@ -49,13 +61,25 @@ export async function runArticleSynthesizerAgent(
     snippet: hit.snippet,
     source: hit.source,
     sourceType: hit.engine,
+    ...(hit.engine === AI_OVERVIEW_FOLLOW_UP_ENGINE
+      ? {
+          fromAiOverviewFollowUp: true as const,
+          selectionWeight: 1.25,
+        }
+      : {}),
   }));
 
+  const userPrompt = buildResearchPromptWithHistory(
+    parsed.userPrompt,
+    params.recentMessages,
+  );
+
   const selected = await runResearchArticleSelectorAgent({
-    userPrompt: parsed.userPrompt,
+    userPrompt,
     links,
     topPercent: parsed.topPercent,
     model: parsed.model,
+    system: CHAT_ARTICLE_SELECTOR_SYSTEM,
     abortSignal,
   });
 

@@ -3,6 +3,10 @@
 import { NewsStoryCard } from "@/components/news/results/NewsStoryCard";
 import { NewsStorySignInBanner } from "@/components/news/results/NewsStorySignInBanner";
 import { Button } from "@/components/ui/button";
+import {
+  NEWS_STORIES_LOADING_MESSAGES,
+  ShimmerLoadingStatus,
+} from "@/components/ui/shimmer-loading-status";
 import type { StoryVoteState } from "@/components/news/StoryVoteControls";
 import type {
   NewsStoriesListPayload,
@@ -46,18 +50,14 @@ export function NewsStoriesListView({
   const saveLockRef = useRef<Set<string>>(new Set());
 
   const isSavedFeed = feed === "saved";
+  const requiresSignIn = isLoaded && isSavedFeed && !isSignedIn;
+  const canFetchStories = isLoaded && !requiresSignIn;
   const listApiPath = isSavedFeed
     ? `/api/news/stories/saved?page=${page}&limit=${DEFAULT_LIMIT}`
     : `/api/news/stories?page=${page}&limit=${DEFAULT_LIMIT}`;
 
   useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-    if (isSavedFeed && !isSignedIn) {
-      setLoading(false);
-      setData(null);
-      setError(null);
+    if (!canFetchStories) {
       return;
     }
 
@@ -96,7 +96,7 @@ export function NewsStoriesListView({
     return () => {
       cancelled = true;
     };
-  }, [page, isLoaded, isSignedIn, isSavedFeed, listApiPath]);
+  }, [page, canFetchStories, listApiPath]);
 
   async function onDeepDive(storyId: string) {
     if (!isSignedIn) {
@@ -314,17 +314,16 @@ export function NewsStoriesListView({
     [isSignedIn, isSavedFeed],
   );
 
-  if (!isLoaded || loading) {
+  if (!isLoaded) {
     return (
-      <main className="min-h-0 flex-1 overflow-y-auto bg-background">
-        <p className="px-4 py-8 text-sm text-muted-foreground">
-          Loading stories…
-        </p>
-      </main>
+      <ShimmerLoadingStatus
+        messages={NEWS_STORIES_LOADING_MESSAGES}
+        statusLabel="Loading stories"
+      />
     );
   }
 
-  if (isSavedFeed && !isSignedIn) {
+  if (requiresSignIn) {
     return (
       <main className="min-h-0 flex-1 overflow-y-auto bg-background">
         <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
@@ -339,6 +338,15 @@ export function NewsStoriesListView({
           <NewsStorySignInBanner redirectPath="/newsStory/saved" />
         </div>
       </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <ShimmerLoadingStatus
+        messages={NEWS_STORIES_LOADING_MESSAGES}
+        statusLabel="Loading stories"
+      />
     );
   }
 

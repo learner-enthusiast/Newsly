@@ -6,6 +6,10 @@ import {
 } from "@/components/landing/TrendingCard";
 import { prefersReducedMotion } from "@/components/landing/useLandingMotion";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ShimmerLoadingStatus,
+  TRENDING_LOADING_MESSAGES,
+} from "@/components/ui/shimmer-loading-status";
 import type { SerializedTrendingNewsStory } from "@/services/news/newsRequestTypes";
 import gsap from "gsap";
 import { ArrowRight } from "lucide-react";
@@ -111,10 +115,17 @@ export function TrendingSection() {
         ) : null}
 
         {loading ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-[320px] w-full rounded-xl" />
-            ))}
+          <div className="flex flex-col gap-6">
+            <ShimmerLoadingStatus
+              layout="panel"
+              messages={TRENDING_LOADING_MESSAGES}
+              statusLabel="Loading trending stories"
+            />
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-[320px] w-full rounded-xl" />
+              ))}
+            </div>
           </div>
         ) : stories.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border/70 bg-card/40 px-4 py-8 text-center text-sm text-muted-foreground">

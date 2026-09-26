@@ -63,6 +63,8 @@ function buildSystemPrompt(): string {
     "Only the last 10 messages are available; do not assume older context exists.",
     "",
     "SerpAPI data (when provided) is optional research material with unknown JSON shape. Inspect fields dynamically.",
+    "scrapedResearchSources may include sourceType values such as article pages, youtube (transcript excerpts), or google_search_ai_overview_follow_up (search leads — verify via primary sources).",
+    "Prefer authoritative primary sources and cleaned article text over search snippets. Treat AI Overview-derived hits as leads, not verified facts by themselves.",
     "Extract what is relevant to the question. Synthesize overlapping results. Note disagreements between sources.",
     "If Serp data is absent, answer from prompt and history only — never claim you searched the web.",
     "",

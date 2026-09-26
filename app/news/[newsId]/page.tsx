@@ -1,6 +1,10 @@
 "use client";
 
 import { NewsResultsView } from "@/components/news/results/NewsResultsView";
+import {
+  NEWS_REQUEST_LOADING_MESSAGES,
+  ShimmerLoadingStatus,
+} from "@/components/ui/shimmer-loading-status";
 import type { StoryVoteState } from "@/components/news/StoryVoteControls";
 import { useNewsRequestPolling } from "@/hooks/useNewsRequestPolling";
 import type { NewsRequestResultPayload } from "@/services/news/newsRequestTypes";
@@ -251,9 +255,11 @@ export default function NewsResultPage() {
       ) : null}
 
       {isLoading ? (
-        <p className="px-4 py-8 text-sm text-muted-foreground">
-          Loading your request…
-        </p>
+        <ShimmerLoadingStatus
+          messages={NEWS_REQUEST_LOADING_MESSAGES}
+          statusLabel="Loading news request"
+          className="min-h-[40vh]"
+        />
       ) : null}
 
       {error ? (

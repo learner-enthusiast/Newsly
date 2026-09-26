@@ -17,16 +17,19 @@
  * 3. run-determiner — Guardrails, query enhance, decide useExistingResearch,
  *    useTools, and Serp tool calls.
  * 4. save-guardrail-message — If blocked, save a short agent refusal and stop.
- * 5. vector-research-branch + serp-research-branch (parallel) — Vector retrieval +
- *    load rows; Serp execute + normalize.
+ * 5. vector-research-branch + serp-research-branch + youtube-research-branch
+ *    (parallel) — Vector retrieval; targeted Serp (+ optional AI Overview follow-ups);
+ *    optional lightweight YouTube transcripts.
  * 6. run-article-synthesizer + preload-session-research-sources (parallel).
  * 7. dedupe-research-candidates — Fresh session URL keys before scrape selection.
- * 8. firecrawl-and-save-research — Batch Firecrawl, concurrent ResearchSource inserts.
+ * 8. firecrawl-and-save-research — Batch Firecrawl, parallel content cleaning,
+ *    concurrent ResearchSource inserts (+ optional YouTube evidence).
  * 9. generate-assistant-reply — Chat model Markdown using history + research context.
  * 10. save-assistant-message — Persist agent message (idempotent on retry).
  * 11. save-error-message — On failure, save a failure agent message when appropriate.
  */
 
+import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";
 import { runArticleSynthesizerAgent } from "@/Agents/chat/ArticleSythesizerAgent";
 import {
   runChatModelAgent,
@@ -61,13 +64,18 @@ import {
   researchUrlKeysFromSources,
 } from "@/services/chat/dedupeResearchArticles";
 import { mergeDirectFirecrawlTargets } from "@/services/chat/directUrlResearch";
+import { roleForChatModel } from "@/services/chat/chatSerpResearch";
+import { fetchAndNormalizeChatSerpResearch } from "@/services/chat/chatSerpWithAiOverview";
 import {
-  fetchSerpPayloadsForCalls,
-  normalizeSerpCallResults,
-  roleForChatModel,
-} from "@/services/chat/chatSerpResearch";
+  fetchChatYoutubeEvidence,
+  type ChatYoutubeEvidenceRow,
+} from "@/services/chat/chatYoutubeEvidence";
+import { todayIsoDateUtc } from "@/services/chat/researchPrompt";
 import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
-import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
+import {
+  canonicalResearchUrl,
+  type NormalizedSerpHit,
+} from "@/services/chat/normalizeSerpResults";
 import {
   mapResearchSourceForChatModel,
   mergeResearchSourcesForChatModel,
@@ -125,11 +133,6 @@ async function mapWithConcurrency<T, R>(
   await Promise.all(workers);
   return results;
 }
-
-type SerpCallResultStep = {
-  tool: ValidatedSerpToolCall["tool"];
-  payload: unknown;
-};
 
 function pipelineLog(
   step: string,
@@ -284,6 +287,9 @@ export const messageChatPipelineFunction = inngest.createFunction(
             useTools: outcome.determiner.useTools,
             useExistingResearch: outcome.determiner.useExistingResearch,
             firecrawlUrlCount: outcome.determiner.firecrawlUrls.length,
+            useYoutube: outcome.determiner.evidence.useYoutube,
+            useAiOverviewFollowUp:
+              outcome.determiner.evidence.useAiOverviewFollowUp,
           });
           return toJsonSafeStepOutput(outcome);
         } catch (error) {
@@ -315,10 +321,12 @@ export const messageChatPipelineFunction = inngest.createFunction(
         return toJsonSafeStepOutput({ assistantMessageId: blockedMessage.id });
       }
 
-      const determiner = (determinerParsed as SmallDeterminerRunResult)
-        .determiner;
+      const determinerOutcome = determinerParsed as SmallDeterminerRunResult;
+      const determiner = determinerOutcome.determiner;
+      const researchPrompt = determinerOutcome.researchPrompt;
 
-      const [vectorResearchBranch, serpResearchBranch] = await Promise.all([
+      const [vectorResearchBranch, serpResearchBranch, youtubeResearchBranch] =
+        await Promise.all([
         step.run("vector-research-branch", async () => {
           const elapsed = createStepTimer();
           pipelineLog("vector-research-branch", "start");
@@ -384,17 +392,13 @@ export const messageChatPipelineFunction = inngest.createFunction(
             return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
           }
 
-          const results = await fetchSerpPayloadsForCalls(
-            determiner.calls as ValidatedSerpToolCall[],
-          );
-          const serpPayloads: SerpCallResultStep[] = results.map((row) => ({
-            tool: row.tool,
-            payload: row.payload,
-          }));
-          const hits =
-            serpPayloads.length === 0
-              ? []
-              : normalizeSerpCallResults(serpPayloads);
+          const hits = await fetchAndNormalizeChatSerpResearch({
+            calls: determiner.calls as ValidatedSerpToolCall[],
+            researchPrompt,
+            useAiOverviewFollowUp:
+              determiner.evidence.useAiOverviewFollowUp,
+            abortSignal: AbortSignal.timeout(120_000),
+          });
 
           pipelineLog("serp-research-branch", "done", {
             durationMs: elapsed(),
@@ -402,10 +406,31 @@ export const messageChatPipelineFunction = inngest.createFunction(
           });
           return toJsonSafeStepOutput(hits);
         }),
+        step.run("youtube-research-branch", async () => {
+          const elapsed = createStepTimer();
+          if (!determiner.evidence.useYoutube) {
+            pipelineLog("youtube-research-branch", "skipped", {
+              durationMs: elapsed(),
+            });
+            return toJsonSafeStepOutput([] as ChatYoutubeEvidenceRow[]);
+          }
+
+          pipelineLog("youtube-research-branch", "start");
+          const rows = await fetchChatYoutubeEvidence({
+            researchPrompt,
+            abortSignal: AbortSignal.timeout(120_000),
+          });
+          pipelineLog("youtube-research-branch", "done", {
+            durationMs: elapsed(),
+            videoCount: rows.length,
+          });
+          return toJsonSafeStepOutput(rows);
+        }),
       ]);
 
       const existingResearchRows = vectorResearchBranch;
       const serpHits = serpResearchBranch;
+      const youtubeEvidence = youtubeResearchBranch;
 
       const [selectedArticles, preloadedSessionSources] = await Promise.all([
         step.run("run-article-synthesizer", async () => {
@@ -420,8 +445,9 @@ export const messageChatPipelineFunction = inngest.createFunction(
             candidates: serpHits.length,
           });
           const selected = await runArticleSynthesizerAgent({
-            userPrompt: chatContext.userMessage.content,
+            userPrompt: researchPrompt,
             hits: serpHits,
+            recentMessages: chatContext.recentMessages,
             topPercent: 40,
             maxArticles: 6,
             abortSignal: AbortSignal.timeout(120_000),
@@ -483,60 +509,144 @@ export const messageChatPipelineFunction = inngest.createFunction(
         "firecrawl-and-save-research",
         async () => {
           const elapsed = createStepTimer();
-          if (articlesToScrape.length === 0) {
-            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
-          }
-
           const freshSessionSources = await listResearchSourcesByChatSessionId(
             input.chatSessionId,
           );
           const freshKeys = researchUrlKeysFromSources(freshSessionSources);
+
+          async function saveYoutubeRows(): Promise<ChatModelResearchSourceRow[]> {
+            const pending = youtubeEvidence.filter((video) => {
+              const key = canonicalResearchUrl(video.url);
+              return key ? !freshKeys.has(key) : true;
+            });
+            if (pending.length === 0) {
+              return [];
+            }
+            return mapWithConcurrency(
+              pending,
+              RESEARCH_SOURCE_INSERT_CONCURRENCY,
+              async (video) => {
+                const row = await createResearchSource({
+                  chatSessionId: input.chatSessionId,
+                  url: video.url,
+                  domain: video.domain,
+                  title: video.title,
+                  content: video.content.slice(0, 50_000),
+                  sourceType: video.sourceType,
+                });
+                return mapResearchSourceForChatModel(row);
+              },
+            );
+          }
+
+          if (articlesToScrape.length === 0) {
+            const savedYoutube = await saveYoutubeRows();
+            pipelineLog("firecrawl-and-save-research", "done", {
+              durationMs: elapsed(),
+              savedArticles: 0,
+              savedYoutube: savedYoutube.length,
+              reason: "no article scrape targets",
+            });
+            return toJsonSafeStepOutput(savedYoutube);
+          }
+
           const scrapeTargets = dedupeSelectedArticlesForSession(
             articlesToScrape,
             freshKeys,
           );
 
+          let savedArticles: ChatModelResearchSourceRow[] = [];
+
           if (scrapeTargets.length === 0) {
-            pipelineLog("firecrawl-and-save-research", "skipped", {
-              durationMs: elapsed(),
+            pipelineLog("firecrawl-and-save-research", "skip firecrawl", {
               reason: "all candidates already saved",
             });
-            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
+          } else {
+            pipelineLog("firecrawl-and-save-research", "start", {
+              count: scrapeTargets.length,
+            });
+
+            const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
+              scrapeTargets.map((article) => article.url),
+            );
+
+            const cleanerDate = todayIsoDateUtc();
+
+            const cleanedRows = await Promise.all(
+              scrapeTargets.map(async (article, index) => {
+                const rawScrape = scrapedMarkdown[index]?.trim() ?? "";
+                if (!rawScrape) {
+                  pipelineLog(
+                    "firecrawl-and-save-research",
+                    "skip empty scrape",
+                    { url: article.url },
+                  );
+                  return null;
+                }
+
+                try {
+                  const cleaned = await runNewsContentCleanerAgent({
+                    location: null,
+                    date: cleanerDate,
+                    content: rawScrape,
+                    abortSignal: AbortSignal.timeout(180_000),
+                  });
+                  if (
+                    !cleaned.isValidArticle ||
+                    !cleaned.cleanedContent.trim()
+                  ) {
+                    pipelineLog(
+                      "firecrawl-and-save-research",
+                      "skip invalid after clean",
+                      { url: article.url },
+                    );
+                    return null;
+                  }
+                  return {
+                    article,
+                    content: cleaned.cleanedContent.trim(),
+                  };
+                } catch {
+                  pipelineLog(
+                    "firecrawl-and-save-research",
+                    "skip clean failure",
+                    { url: article.url },
+                  );
+                  return null;
+                }
+              }),
+            );
+
+            const validArticles = cleanedRows.filter(
+              (row): row is NonNullable<(typeof cleanedRows)[number]> =>
+                row != null,
+            );
+
+            savedArticles = await mapWithConcurrency(
+              validArticles,
+              RESEARCH_SOURCE_INSERT_CONCURRENCY,
+              async ({ article, content }) => {
+                const row = await createResearchSource({
+                  chatSessionId: input.chatSessionId,
+                  url: article.url,
+                  domain: article.domain,
+                  title: article.title,
+                  content: content.slice(0, 50_000),
+                  sourceType: article.sourceType,
+                });
+
+                return mapResearchSourceForChatModel(row);
+              },
+            );
           }
 
-          pipelineLog("firecrawl-and-save-research", "start", {
-            count: scrapeTargets.length,
-          });
-
-          const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
-            scrapeTargets.map((article) => article.url),
-          );
-
-          const saved = await mapWithConcurrency(
-            scrapeTargets,
-            RESEARCH_SOURCE_INSERT_CONCURRENCY,
-            async (article, index) => {
-              let content = scrapedMarkdown[index]?.trim() ?? "";
-              if (!content) {
-                content = article.title;
-              }
-
-              const row = await createResearchSource({
-                chatSessionId: input.chatSessionId,
-                url: article.url,
-                domain: article.domain,
-                title: article.title,
-                content: content.slice(0, 50_000),
-                sourceType: article.sourceType,
-              });
-
-              return mapResearchSourceForChatModel(row);
-            },
-          );
+          const savedYoutube = await saveYoutubeRows();
+          const saved = [...savedArticles, ...savedYoutube];
 
           pipelineLog("firecrawl-and-save-research", "done", {
             durationMs: elapsed(),
-            saved: saved.length,
+            savedArticles: savedArticles.length,
+            savedYoutube: savedYoutube.length,
           });
           return toJsonSafeStepOutput(saved);
         },
@@ -557,9 +667,10 @@ export const messageChatPipelineFunction = inngest.createFunction(
           const markdown = await runChatModelAgent({
             prompt: chatContext.userMessage.content,
             serpData: {
-              researchPrompt: chatContext.userMessage.content,
+              researchPrompt,
               normalizedHits: serpHits,
               scrapedResearchSources: researchContext,
+              youtubeTranscriptEvidence: youtubeEvidence,
             },
             chatHistory,
             abortSignal: AbortSignal.timeout(300_000),

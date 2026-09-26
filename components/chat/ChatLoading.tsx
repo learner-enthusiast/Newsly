@@ -1,7 +1,10 @@
 "use client";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2 } from "lucide-react";
+import {
+  CHAT_LOADING_MESSAGES,
+  ShimmerLoadingStatus,
+} from "@/components/ui/shimmer-loading-status";
 
 type ChatLoadingProps = {
   variant?: "initial" | "researching";
@@ -18,19 +21,13 @@ export function ChatLoading({ variant = "researching" }: ChatLoadingProps) {
   }
 
   return (
-    <div
-      className="flex flex-col gap-3 px-2 py-4"
-      role="status"
-      aria-live="polite"
-      aria-label="News Assistant is researching"
-    >
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-        News Assistant is researching…
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Finding relevant sources · Analyzing articles · Preparing your answer
-      </p>
+    <div className="flex flex-col gap-3 px-2 py-4">
+      <ShimmerLoadingStatus
+        layout="inline"
+        messages={CHAT_LOADING_MESSAGES}
+        statusLabel="News Assistant is researching"
+        className="px-1"
+      />
       <Skeleton className="h-16 w-full max-w-xl" />
       <Skeleton className="h-16 w-full max-w-2xl" />
     </div>
