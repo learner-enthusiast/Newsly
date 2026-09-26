@@ -1,6 +1,7 @@
 "use client";
 
 import { CountryAutocomplete } from "@/components/news/CountryAutocomplete";
+import { NewsAdvancedOptionsCollapsible } from "@/components/news/NewsAdvancedOptionsCollapsible";
 import { NewsGenerateSidebar } from "@/components/news/NewsGenerateSidebar";
 import {
   QUICK_LOCATIONS,
@@ -33,8 +34,6 @@ import type { SerializedNewsRequest } from "@/services/news/newsRequestTypes";
 import {
   ArrowRight,
   Calendar,
-  ChevronDown,
-  ChevronUp,
   MapPin,
   RefreshCw,
   Search,
@@ -372,95 +371,78 @@ export default function NewsRequestPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-border/60 bg-muted/20 mb-2">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium"
-                  onClick={() => setAdvancedOpen((open) => !open)}
-                >
-                  Advanced options
-                  {advancedOpen ? <ChevronUp /> : <ChevronDown />}
-                </button>
-                {advancedOpen ? (
-                  <div className="flex flex-col gap-4 border-t border-border/60 px-4 py-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-sm font-medium">
-                          Number of stories
-                        </span>
-                        <Select
-                          value={String(storyCount)}
-                          onValueChange={(value) => {
-                            if (value) {
-                              setStoryCount(Number.parseInt(value, 10));
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Stories" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {STORY_COUNT_OPTIONS.map((count) => (
-                              <SelectItem key={count} value={String(count)}>
-                                {count} stories
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <label
-                          className="text-sm font-medium"
-                          htmlFor="language"
-                        >
-                          Language
-                        </label>
-                        <Input
-                          id="language"
-                          value={language}
-                          onChange={(e) => setLanguage(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <label className="text-sm font-medium" htmlFor="sources">
-                        Sources{" "}
-                        <span className="font-normal text-muted-foreground">
-                          (optional domains)
-                        </span>
-                      </label>
-                      <Textarea
-                        id="sources"
-                        value={sourcesText}
-                        onChange={(e) => setSourcesText(e.target.value)}
-                        placeholder="reuters.com, bloomberg.com"
-                        rows={2}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <label
-                        className="text-sm font-medium"
-                        htmlFor="custom-query"
-                      >
-                        Custom search query{" "}
-                        <span className="font-normal text-muted-foreground">
-                          (optional)
-                        </span>
-                      </label>
-                      <div className="relative">
-                        <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          id="custom-query"
-                          value={customQuery}
-                          onChange={(e) => setCustomQuery(e.target.value)}
-                          placeholder="e.g. RBI policy, EV subsidies…"
-                          className="pl-10"
-                        />
-                      </div>
-                    </div>
+              <NewsAdvancedOptionsCollapsible
+                open={advancedOpen}
+                onOpenChange={setAdvancedOpen}
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-medium">Number of stories</span>
+                    <Select
+                      value={String(storyCount)}
+                      onValueChange={(value) => {
+                        if (value) {
+                          setStoryCount(Number.parseInt(value, 10));
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Stories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STORY_COUNT_OPTIONS.map((count) => (
+                          <SelectItem key={count} value={String(count)}>
+                            {count} stories
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                ) : null}
-              </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium" htmlFor="language">
+                      Language
+                    </label>
+                    <Input
+                      id="language"
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium" htmlFor="sources">
+                    Sources{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (optional domains)
+                    </span>
+                  </label>
+                  <Textarea
+                    id="sources"
+                    value={sourcesText}
+                    onChange={(e) => setSourcesText(e.target.value)}
+                    placeholder="reuters.com, bloomberg.com"
+                    rows={2}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium" htmlFor="custom-query">
+                    Custom search query{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (optional)
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="custom-query"
+                      value={customQuery}
+                      onChange={(e) => setCustomQuery(e.target.value)}
+                      placeholder="e.g. RBI policy, EV subsidies…"
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+              </NewsAdvancedOptionsCollapsible>
 
               {error ? (
                 <p className="text-sm text-destructive" role="alert">

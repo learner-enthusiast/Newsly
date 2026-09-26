@@ -28,7 +28,13 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home", icon: Home, exact: true },
   { href: "/news", label: "News", icon: Newspaper, exact: false },
   { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
-  { href: "/news", label: "Saved", icon: Bookmark, exact: false, disabled: true },
+  {
+    href: "/news",
+    label: "Saved",
+    icon: Bookmark,
+    exact: false,
+    disabled: true,
+  },
   {
     href: "/news",
     label: "Settings",
@@ -121,7 +127,7 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
           >
             Newsly
           </Link>
-          <div className="relative mx-auto hidden w-full max-w-xl lg:block">
+          {/* <div className="relative mx-auto hidden w-full max-w-xl lg:block">
             <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" />
             <Input
               readOnly
@@ -131,7 +137,7 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
             <kbd className="pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
               ⌘ K
             </kbd>
-          </div>
+          </div> */}
         </header>
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
           {children}
