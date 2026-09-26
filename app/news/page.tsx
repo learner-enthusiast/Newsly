@@ -31,13 +31,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_STORY_COUNT } from "@/services/news/newsGenerationRequest";
 import type { SerializedNewsRequest } from "@/services/news/newsRequestTypes";
-import {
-  ArrowRight,
-  Calendar,
-  MapPin,
-  RefreshCw,
-  Search,
-} from "lucide-react";
+import { ArrowRight, Calendar, MapPin, RefreshCw, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -215,7 +209,7 @@ export default function NewsRequestPage() {
   const needsLocation = scope === "local" || scope === "both";
 
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-[1600px] grid-cols-1 gap-6 px-4 py-4 md:px-6 md:py-6 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
+    <div className="mx-auto grid w-full min-w-0 max-w-[1600px] grid-cols-1 gap-6 px-4 py-4 md:px-6 md:pb-6 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-8">
       <div className="min-w-0 max-w-full">
         <div className="mb-6 flex flex-col gap-2">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -377,7 +371,9 @@ export default function NewsRequestPage() {
               >
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-2">
-                    <span className="text-sm font-medium">Number of stories</span>
+                    <span className="text-sm font-medium">
+                      Number of stories
+                    </span>
                     <Select
                       value={String(storyCount)}
                       onValueChange={(value) => {

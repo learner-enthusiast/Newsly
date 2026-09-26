@@ -3,12 +3,7 @@
 import { CHAT_DEMO_TRENDING_TOPICS } from "@/components/chat/chatConstants";
 import { animateSuggestionRefresh } from "@/components/chat/useChatMotion";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
@@ -93,7 +88,7 @@ export function ChatRightSidebar({
             />
           ) : null}
         </CardHeader>
-        <CardContent className="flex flex-col gap-2 pt-3">
+        <CardContent className="flex flex-col gap-1 pt-3">
           {questions.map((question, index) => (
             <Button
               key={`${index}-${question}`}
@@ -101,7 +96,7 @@ export function ChatRightSidebar({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-auto justify-start whitespace-normal py-2 text-left font-normal"
+              className="h-auto justify-start whitespace-normal py-1 text-left font-normal"
               disabled={disabled}
               onClick={() => onPrompt(question)}
             >

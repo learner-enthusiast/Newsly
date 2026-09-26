@@ -8,7 +8,10 @@ import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { animateNewMessage, useChatEntrance } from "@/components/chat/useChatMotion";
 import { useChatUiSuggestions } from "@/hooks/useChatUiSuggestions";
 import { buildChatSuggestionsRefreshKey } from "@/services/chat/chatSuggestionRefreshKey";
-import type { ChatSessionSummary } from "@/services/chat/chatUiUtils";
+import {
+  hasAssistantReplyAfterLastUser,
+  type ChatSessionSummary,
+} from "@/services/chat/chatUiUtils";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -82,6 +85,8 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     return payload;
   }, [chatSessionId]);
 
+  const shouldPoll = state === null || state.status === "initializing";
+
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -116,7 +121,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         clearTimeout(timer);
       }
     };
-  }, [loadState, loadSessions, chatSessionId]);
+  }, [loadState, loadSessions, chatSessionId, shouldPoll]);
 
   useEffect(() => {
     const count = state?.messages.length ?? 0;
@@ -141,16 +146,20 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     suggestionsRefreshKey,
   );
 
+  const pipelineInProgress =
+    state?.status === "initializing" &&
+    !hasAssistantReplyAfterLastUser(visibleMessages);
+
   const showWelcome =
     state?.status === "ready" &&
     visibleMessages.length === 0 &&
     !state.chatSession.isFromNewsStory;
 
   const composerDisabled =
-    state == null || state.status === "initializing" || sending;
+    state == null || pipelineInProgress || sending;
 
   const composerPlaceholder =
-    state?.status === "ready"
+    state != null && !pipelineInProgress
       ? visibleMessages.length === 0
         ? "Ask anything about the news…"
         : "Ask a follow-up…"
@@ -286,7 +295,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
 
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-base font-semibold">{title}</h1>
-            {state?.status === "initializing" ? (
+            {pipelineInProgress ? (
               <p className="text-xs text-muted-foreground">Research in progress…</p>
             ) : null}
           </div>
@@ -361,7 +370,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
             value={draft}
             onChange={setDraft}
             onSend={() => void sendMessage(draft)}
-            disabled={state.status === "initializing"}
+            disabled={pipelineInProgress}
             sending={sending}
             placeholder={composerPlaceholder}
           />

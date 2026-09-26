@@ -119,7 +119,7 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
         </div>
       </aside>
 
-      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-0">
         <header className="flex shrink-0 items-center gap-3 border-b border-border/40 bg-card/30 px-4 py-3 md:px-6">
           <Link
             href="/news"

@@ -5,7 +5,10 @@ import { ChatDeepDiveBanner } from "@/components/chat/ChatDeepDiveBanner";
 import { ChatLoading } from "@/components/chat/ChatLoading";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { UserMessage } from "@/components/chat/UserMessage";
-import { isAssistantRole } from "@/services/chat/chatUiUtils";
+import {
+  hasAssistantReplyAfterLastUser,
+  isAssistantRole,
+} from "@/services/chat/chatUiUtils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -35,7 +38,11 @@ export function ChatConversation({
   onRetry,
   composerDisabled,
 }: ChatConversationProps) {
-  const showResearching = status === "initializing";
+  const awaitingAssistantReply =
+    status === "initializing" &&
+    !hasAssistantReplyAfterLastUser(messages);
+
+  const showResearching = awaitingAssistantReply;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">

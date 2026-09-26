@@ -64,3 +64,21 @@ export function formatMessageTimestamp(iso: string): string {
 export function isAssistantRole(role: string): boolean {
   return role === "agent" || role === "assistant";
 }
+
+export function hasAssistantReplyAfterLastUser(
+  messages: { role: string }[],
+): boolean {
+  let lastUserIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]!.role === "user") {
+      lastUserIndex = index;
+      break;
+    }
+  }
+  if (lastUserIndex === -1) {
+    return false;
+  }
+  return messages
+    .slice(lastUserIndex + 1)
+    .some((message) => isAssistantRole(message.role));
+}

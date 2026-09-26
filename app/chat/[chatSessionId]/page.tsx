@@ -9,7 +9,7 @@ export default async function ChatSessionPage({ params }: PageProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <ChatWorkspace chatSessionId={chatSessionId} />
+      <ChatWorkspace key={chatSessionId} chatSessionId={chatSessionId} />
     </div>
   );
 }
