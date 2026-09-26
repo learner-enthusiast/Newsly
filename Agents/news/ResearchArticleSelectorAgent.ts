@@ -31,10 +31,12 @@ const researchArticleLinkSchema = z.union([
     snippet: z.string().min(1).optional(),
     /** Publisher label from Serp (not the same as sourceType). */
     source: z.string().min(1).optional(),
-    /** Serp channel / origin, e.g. google_news, google_search. */
+    /** Serp channel / origin, e.g. google_news, google_search, google_search_ai_overview_follow_up. */
     sourceType: z.string().min(1).optional(),
-    /** Rank boost for AI-overview follow-up hits (e.g. 1.3 = 30% higher priority). */
+    /** Rank boost for AI-overview follow-up hits (e.g. 1.4 = 40% higher priority). */
     selectionWeight: z.number().positive().optional(),
+    /** True when this URL came from AI-overview follow-up Google search. */
+    fromAiOverviewFollowUp: z.boolean().optional(),
   }),
 ]);
 
@@ -83,6 +85,7 @@ type Candidate = {
   source?: string;
   sourceType?: string;
   selectionWeight?: number;
+  fromAiOverviewFollowUp?: boolean;
 };
 
 type SelectorDecision = z.infer<typeof selectorModelOutputSchema>["articles"][number];
@@ -146,6 +149,10 @@ function toCandidate(
       typeof link === "object" && link.selectionWeight != null
         ? link.selectionWeight
         : undefined,
+    fromAiOverviewFollowUp:
+      typeof link === "object" && link.fromAiOverviewFollowUp === true
+        ? true
+        : undefined,
   };
 }
 
@@ -177,15 +184,27 @@ export function dedupeArticleLinks(
 
   for (const link of links) {
     const candidate = toCandidate(link);
-    if (!candidate || seen.has(candidate.url)) {
+    if (!candidate) {
       continue;
     }
-
-    seen.set(candidate.url, {
-      ...candidate,
-      key: candidate.url,
-      selectionWeight: candidate.selectionWeight,
-    });
+    const existing = seen.get(candidate.url);
+    if (!existing) {
+      seen.set(candidate.url, {
+        ...candidate,
+        key: candidate.url,
+      });
+      continue;
+    }
+    const preferNew =
+      (candidate.fromAiOverviewFollowUp &&
+        !existing.fromAiOverviewFollowUp) ||
+      (candidate.selectionWeight ?? 1) > (existing.selectionWeight ?? 1);
+    if (preferNew) {
+      seen.set(candidate.url, {
+        ...candidate,
+        key: candidate.url,
+      });
+    }
   }
 
   return [...seen.values()];
@@ -248,7 +267,8 @@ function buildSystemPrompt(): string {
     "Set relevant to true only when the page is on-topic and a full Firecrawl scrape is needed to capture the article, announcement, filing, or primary report. A title or snippet is not enough.",
     "Set relevant to false for off-topic pages, homepages, section indexes, search pages, login walls, and link lists.",
     "rank 1 is the most important page to scrape. Give every candidate a rank.",
-    "Candidates may include selectionWeight above 1 (for example 1.3). Treat them as higher priority: rank them higher when relevance is comparable.",
+    "Candidates may include selectionWeight above 1 (for example 1.4). Treat them as higher priority: rank them higher when relevance is comparable.",
+    "Candidates with fromAiOverviewFollowUp true or sourceType google_search_ai_overview_follow_up came from AI-overview follow-up searches; they are usually more aligned with current news — prefer them when relevance is similar.",
     "When relevant is true, reason is one concise sentence on why Firecrawl should scrape this URL: name the development, announcement, or reporting the full page is expected to contain.",
     "When relevant is false, reason is one short sentence on why the URL was dropped.",
   ].join("\n");
@@ -277,13 +297,22 @@ async function runSelector(
     prompt: parsed.userPrompt,
     extraContext: {
       candidates: candidates.map(
-        ({ url, title, snippet, source, sourceType, selectionWeight }) => ({
+        ({
+          url,
+          title,
+          snippet,
+          source,
+          sourceType,
+          selectionWeight,
+          fromAiOverviewFollowUp,
+        }) => ({
           url,
           title,
           snippet,
           source,
           sourceType,
           selectionWeight: selectionWeight ?? null,
+          fromAiOverviewFollowUp: fromAiOverviewFollowUp ?? false,
         }),
       ),
     },

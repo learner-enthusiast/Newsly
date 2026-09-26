@@ -10,6 +10,9 @@ CREATE TYPE "news_scope" AS ENUM ('local', 'world');
 -- CreateEnum
 CREATE TYPE "news_request_status" AS ENUM ('pending', 'failed', 'success');
 
+-- CreateEnum
+CREATE TYPE "vote_type" AS ENUM ('UP', 'DOWN');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
@@ -63,6 +66,8 @@ CREATE TABLE "news_stories" (
     "location" TEXT,
     "published_at" TIMESTAMP(3),
     "importance_score" DECIMAL(10,4),
+    "upvotes" INTEGER NOT NULL DEFAULT 0,
+    "downvotes" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
     "news_source_ids" UUID[] DEFAULT ARRAY[]::UUID[],
@@ -84,6 +89,18 @@ CREATE TABLE "news_sources" (
     "transcript" TEXT,
 
     CONSTRAINT "news_sources_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "news_story_votes" (
+    "id" UUID NOT NULL,
+    "news_story_id" UUID NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "vote" "vote_type" NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "news_story_votes_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -180,6 +197,15 @@ CREATE UNIQUE INDEX "news_stories_news_request_id_slug_key" ON "news_stories"("n
 CREATE INDEX "news_sources_news_story_id_idx" ON "news_sources"("news_story_id");
 
 -- CreateIndex
+CREATE INDEX "news_story_votes_news_story_id_idx" ON "news_story_votes"("news_story_id");
+
+-- CreateIndex
+CREATE INDEX "news_story_votes_user_id_idx" ON "news_story_votes"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "news_story_votes_news_story_id_user_id_key" ON "news_story_votes"("news_story_id", "user_id");
+
+-- CreateIndex
 CREATE INDEX "chat_sessions_user_id_idx" ON "chat_sessions"("user_id");
 
 -- CreateIndex
@@ -210,6 +236,12 @@ ALTER TABLE "news_stories" ADD CONSTRAINT "news_stories_news_request_id_fkey" FO
 ALTER TABLE "news_sources" ADD CONSTRAINT "news_sources_news_story_id_fkey" FOREIGN KEY ("news_story_id") REFERENCES "news_stories"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "news_story_votes" ADD CONSTRAINT "news_story_votes_news_story_id_fkey" FOREIGN KEY ("news_story_id") REFERENCES "news_stories"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "news_story_votes" ADD CONSTRAINT "news_story_votes_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "chat_sessions" ADD CONSTRAINT "chat_sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -229,4 +261,3 @@ ALTER TABLE "scripts" ADD CONSTRAINT "scripts_user_id_fkey" FOREIGN KEY ("user_i
 
 -- AddForeignKey
 ALTER TABLE "scripts" ADD CONSTRAINT "scripts_chat_session_id_fkey" FOREIGN KEY ("chat_session_id") REFERENCES "chat_sessions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-

@@ -52,7 +52,8 @@
  *    → synthesize-youtube-transcript-facts (same agents/helpers as before).
  *
  * 9–10. Article branch (runs in parallel with YouTube branch after step 4)
- *    select-articles → scrape-selected-articles (same agents/helpers as before).
+ *    select-articles → scrape-selected-articles (Firecrawl, then
+ *    `runNewsContentCleanerAgent` per page; invalid/empty scrapes dropped).
  *
  * 11. synthesize-stories (waits for both branches)
  *     `runNewsSynthesizerAgent` on Firecrawl articles plus YouTube rows built by
@@ -79,6 +80,7 @@
  */
 
 import { runGaiOverviewSearchGeneratorAgent } from "@/Agents/news/GAIOverviewSearchGeneratorAgents";
+import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";
 import {
   runNewsSynthesizerAgent,
   storyHasPrimaryArticleSource,
@@ -86,7 +88,6 @@ import {
 import { runResearchArticleSelectorAgent } from "@/Agents/news/ResearchArticleSelectorAgent";
 import { buildNewsSearchQuery } from "@/Agents/news/searchPlanner";
 import { inngest } from "@/clients/inngestClient";
-import type { SelectedResearchArticle } from "@/Agents/news/ResearchArticleSelectorAgent";
 import {
   getNewsRequestByIdForUser,
   newsScopeSchema,
@@ -121,7 +122,9 @@ import {
   serpPayloadHasAiOverview,
   slimSerpPayloadForNormalize,
   toJsonSafeStepOutput,
+  wrapAiOverviewFollowUpSerpPayload,
 } from "@/services/news/normalizeArticles";
+import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
 
 export const NEWS_PIPELINE_EVENT = "news/pipeline.requested" as const;
@@ -137,6 +140,15 @@ export const newsPipelineEventDataSchema = z.object({
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;
 
 const PIPELINE_LOG_PREFIX = "[news-pipeline]";
+
+const DEFAULT_NEWS_SYNTHESIZER_MODEL = "gpt-5.4-mini";
+
+function resolveNewsSynthesizerModel(): string {
+  return resolveOpenAiModelId(
+    undefined,
+    process.env.NEWS_SYNTHESIZER_MODEL ?? DEFAULT_NEWS_SYNTHESIZER_MODEL,
+  );
+}
 
 function pipelineLog(
   step: string,
@@ -287,15 +299,17 @@ export const newsPipelineFunction = inngest.createFunction(
                 },
               );
 
-              followUpPayloads = await Promise.all(
-                generated.queries.map((row) =>
-                  serpEngines.searchGoogle.fn({
-                    q: row.query,
-                    tbm: "nws",
-                    ...shared,
-                  }),
-                ),
-              );
+              followUpPayloads = (
+                await Promise.all(
+                  generated.queries.map((row) =>
+                    serpEngines.searchGoogle.fn({
+                      q: row.query,
+                      tbm: "nws",
+                      ...shared,
+                    }),
+                  ),
+                )
+              ).map(wrapAiOverviewFollowUpSerpPayload);
               pipelineLog(
                 "fetch-and-normalize-serp",
                 "ai-overview follow-up serp fetched",
@@ -482,6 +496,7 @@ export const newsPipelineFunction = inngest.createFunction(
               source: article.source,
               sourceType: article.sourceType,
               selectionWeight: article.selectionWeight,
+              fromAiOverviewFollowUp: article.fromAiOverviewFollowUp,
             }));
 
             const result = (
@@ -512,44 +527,81 @@ export const newsPipelineFunction = inngest.createFunction(
               const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
                 selected.map((article) => article.url),
               );
-              const articles = [];
-              for (let index = 0; index < selected.length; index += 1) {
-                pipelineLog("scrape-selected-articles", "scraping", {
-                  index: index + 1,
-                  total: selected.length,
-                  url: selected[index]?.url,
-                });
-                const article = selected[index] as SelectedResearchArticle;
-                const normalizedMatch = normalized.find(
-                  (row) => row.url === article.url,
-                );
-                const scrapedContent = scrapedMarkdown[index] ?? null;
 
-                if (
-                  isTradingRecommendationArticle({
-                    title: article.title,
-                    scrapedContent,
-                  })
-                ) {
-                  pipelineLog("scrape-selected-articles", "skip trading recommendation", {
+              const cleanedRows = await Promise.all(
+                selected.map(async (article, index) => {
+                  pipelineLog("scrape-selected-articles", "processing", {
+                    index: index + 1,
+                    total: selected.length,
                     url: article.url,
                   });
-                  continue;
-                }
+                  const normalizedMatch = normalized.find(
+                    (row) => row.url === article.url,
+                  );
+                  const rawScrape = scrapedMarkdown[index]?.trim() ?? "";
 
-                articles.push({
-                  index: normalizedMatch?.index ?? index,
-                  url: article.url,
-                  domain: article.domain,
-                  title: article.title,
-                  sourceType: article.sourceType,
-                  scrapedContent,
-                  publishedAt: normalizedMatch?.publishedAt
-                    ? new Date(normalizedMatch.publishedAt)
-                    : null,
-                  isPrimaryStorySource: true,
-                });
-              }
+                  if (!rawScrape) {
+                    pipelineLog("scrape-selected-articles", "skip empty scrape", {
+                      url: article.url,
+                    });
+                    return null;
+                  }
+
+                  if (
+                    isTradingRecommendationArticle({
+                      title: article.title,
+                      scrapedContent: rawScrape,
+                    })
+                  ) {
+                    pipelineLog(
+                      "scrape-selected-articles",
+                      "skip trading recommendation",
+                      { url: article.url },
+                    );
+                    return null;
+                  }
+
+                  pipelineLog("scrape-selected-articles", "cleaning content", {
+                    url: article.url,
+                  });
+                  const cleaned = await runNewsContentCleanerAgent({
+                    location,
+                    date: input.date,
+                    content: rawScrape,
+                    abortSignal: AbortSignal.timeout(180_000),
+                  });
+
+                  if (
+                    !cleaned.isValidArticle ||
+                    !cleaned.cleanedContent.trim()
+                  ) {
+                    pipelineLog(
+                      "scrape-selected-articles",
+                      "skip invalid article after clean",
+                      { url: article.url },
+                    );
+                    return null;
+                  }
+
+                  return {
+                    index: normalizedMatch?.index ?? index,
+                    url: article.url,
+                    domain: article.domain,
+                    title: article.title,
+                    sourceType: article.sourceType,
+                    scrapedContent: cleaned.cleanedContent,
+                    publishedAt: normalizedMatch?.publishedAt
+                      ? new Date(normalizedMatch.publishedAt)
+                      : null,
+                    isPrimaryStorySource: true,
+                  };
+                }),
+              );
+
+              const articles = cleanedRows.filter(
+                (row): row is NonNullable<(typeof cleanedRows)[number]> =>
+                  row != null,
+              );
               pipelineLog("scrape-selected-articles", "done", {
                 scrapedCount: articles.length,
                 withContent: articles.filter((a) => a.scrapedContent).length,
@@ -564,9 +616,11 @@ export const newsPipelineFunction = inngest.createFunction(
 
       pipelineLog("step", "entering synthesize-stories");
       const synthesized = await step.run("synthesize-stories", async () => {
+        const synthesizerModel = resolveNewsSynthesizerModel();
         pipelineLog("synthesize-stories", "start", {
           articleCount: researched.length,
           youtubeFactCount: youtubeSynthesis.facts.length,
+          model: synthesizerModel,
         });
         const youtubeArticles = buildYoutubeArticlesForSynthesizer({
           transcripts: youtubeTranscripts,
@@ -578,6 +632,7 @@ export const newsPipelineFunction = inngest.createFunction(
           articles: [...researched, ...youtubeArticles],
           youtubeTranscriptSynthesis: youtubeSynthesis,
           userPrompt: researchPrompt,
+          model: synthesizerModel,
           abortSignal: AbortSignal.timeout(300_000),
         });
         pipelineLog("synthesize-stories", "done", {

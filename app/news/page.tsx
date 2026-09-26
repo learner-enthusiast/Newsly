@@ -3,7 +3,7 @@
 import { CountryAutocomplete } from "@/components/news/CountryAutocomplete";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
 export default function NewsRequestPage() {
   const router = useRouter();
@@ -13,7 +13,7 @@ export default function NewsRequestPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(event: React.FormEvent) {
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setLoading(true);

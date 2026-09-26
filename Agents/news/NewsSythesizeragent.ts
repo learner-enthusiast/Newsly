@@ -126,7 +126,10 @@ export function storyHasPrimaryArticleSource(story: {
 }
 
 function resolveSynthesizerModel(override?: string): string {
-  return resolveOpenAiModelId(override, process.env.NEWS_SYNTHESIZER_MODEL);
+  return resolveOpenAiModelId(
+    override,
+    process.env.NEWS_SYNTHESIZER_MODEL ?? "gpt-5.4-mini",
+  );
 }
 
 function canonicalUrlKey(raw: string): string | null {

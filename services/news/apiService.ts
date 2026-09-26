@@ -6,7 +6,9 @@ import {
   newsScopeSchema,
   patchNewsRequest,
 } from "@/repositories/newsRequest";
+import { getUserVotesForStories } from "@/repositories/newsStoryVote";
 import { listNewsStoriesByNewsRequestId } from "@/repositories/newsStory";
+import { attachVoteFieldsToStory } from "@/services/news/storyVoteService";
 import { findUserNewsRequest } from "@/repositories/user";
 import { z } from "zod";
 
@@ -39,9 +41,11 @@ function toRequestDate(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00.000Z`);
 }
 
-function serializeStory(story: Awaited<
+type ListedStory = Awaited<
   ReturnType<typeof listNewsStoriesByNewsRequestId>
->[number]) {
+>[number];
+
+function serializeStoryBase(story: ListedStory) {
   return {
     id: story.id,
     newsRequestId: story.newsRequestId,
@@ -55,10 +59,19 @@ function serializeStory(story: Awaited<
     publishedAt: story.publishedAt?.toISOString() ?? null,
     importanceScore:
       story.importanceScore != null ? Number(story.importanceScore) : null,
+    upvotes: story.upvotes,
+    downvotes: story.downvotes,
     sourceUrls: story.sourceUrls,
     createdAt: story.createdAt.toISOString(),
     updatedAt: story.updatedAt.toISOString(),
   };
+}
+
+function serializeStory(
+  story: ListedStory,
+  userVote: "UP" | "DOWN" | null = null,
+) {
+  return attachVoteFieldsToStory(serializeStoryBase(story), userVote);
 }
 
 function serializeNewsRequest(
@@ -78,12 +91,22 @@ function serializeNewsRequest(
   };
 }
 
-async function loadStoriesIfReady(newsRequestId: string, status: string) {
+async function loadStoriesIfReady(
+  newsRequestId: string,
+  status: string,
+  userId: string,
+) {
   if (status !== "success") {
     return [];
   }
   const stories = await listNewsStoriesByNewsRequestId(newsRequestId);
-  return stories.map(serializeStory);
+  const userVotes = await getUserVotesForStories(
+    userId,
+    stories.map((story) => story.id),
+  );
+  return stories.map((story) =>
+    serializeStory(story, userVotes.get(story.id) ?? null),
+  );
 }
 
 async function triggerNewsPipeline(params: {
@@ -141,7 +164,7 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
       };
     }
 
-    const stories = await loadStoriesIfReady(existing.id, existing.status);
+    const stories = await loadStoriesIfReady(existing.id, existing.status, userId);
     return {
       newsRequest: serializeNewsRequest(existing),
       stories,
@@ -182,7 +205,11 @@ export async function getNewsRequestResult(userId: string, newsRequestId: string
     return null;
   }
 
-  const stories = await loadStoriesIfReady(newsRequest.id, newsRequest.status);
+  const stories = await loadStoriesIfReady(
+    newsRequest.id,
+    newsRequest.status,
+    userId,
+  );
 
   return {
     newsRequest: serializeNewsRequest(newsRequest),

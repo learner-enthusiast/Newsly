@@ -13,6 +13,7 @@
     "test:youtube-transcript": "node --import tsx --test Agents/news/YoutubeTranscriptAgent.test.ts",
     "test:youtube-video": "node --import tsx --test Agents/news/YoutubeVideoAgent.test.ts",
     "test:youtube-research": "node --import tsx --test services/news/youtubeResearch.test.ts",
+    "test:story-votes": "node --import tsx --test services/news/storyVoteLogic.test.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

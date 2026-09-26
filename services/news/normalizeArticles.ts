@@ -27,11 +27,65 @@ export const normalizedArticleLinkSchema = z.object({
   sourceType: z.string().min(1),
   publishedAt: z.string().min(1).optional(),
   index: z.number().int().min(0),
-  /** Multiplier for article selector ranking (e.g. 1.3 = 30% boost). */
+  /** Multiplier for article selector ranking (e.g. 1.4 = 40% boost). */
   selectionWeight: z.number().positive().optional(),
+  /** True when the URL came from AI-overview follow-up Google search. */
+  fromAiOverviewFollowUp: z.boolean().optional(),
 });
 
 export type NormalizedArticleLink = z.infer<typeof normalizedArticleLinkSchema>;
+
+/** Top-level marker on Serp payloads fetched from AI-overview follow-up queries. */
+export const SERP_PAYLOAD_AI_OVERVIEW_FOLLOW_UP_KEY = "aiOverviewFollowUpSearch" as const;
+
+/** Per-result marker on merged news/organic rows from AI-overview follow-up Serp. */
+export const SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY = "aiOverviewFollowUp" as const;
+
+export const SOURCE_TYPE_GOOGLE_SEARCH = "google_search";
+export const SOURCE_TYPE_GOOGLE_SEARCH_AI_OVERVIEW =
+  "google_search_ai_overview_follow_up";
+
+export const AI_OVERVIEW_FOLLOW_UP_SELECTION_WEIGHT = 1.4;
+
+export function wrapAiOverviewFollowUpSerpPayload(
+  serpPayload: unknown,
+): Record<string, unknown> {
+  const base =
+    serpPayload && typeof serpPayload === "object"
+      ? { ...(serpPayload as Record<string, unknown>) }
+      : {};
+  return {
+    ...base,
+    [SERP_PAYLOAD_AI_OVERVIEW_FOLLOW_UP_KEY]: true,
+  };
+}
+
+export function isAiOverviewFollowUpSerpPayload(payload: unknown): boolean {
+  return (
+    !!payload &&
+    typeof payload === "object" &&
+    (payload as Record<string, unknown>)[SERP_PAYLOAD_AI_OVERVIEW_FOLLOW_UP_KEY] ===
+      true
+  );
+}
+
+function serpRowIsAiOverviewFollowUp(row: unknown): boolean {
+  return (
+    !!row &&
+    typeof row === "object" &&
+    (row as Record<string, unknown>)[SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY] === true
+  );
+}
+
+function tagSerpRowAsAiOverviewFollowUp(row: unknown): unknown {
+  if (!row || typeof row !== "object") {
+    return row;
+  }
+  return {
+    ...(row as Record<string, unknown>),
+    [SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY]: true,
+  };
+}
 
 function publisherName(
   source: z.infer<typeof serpNewsItemSchema>["source"],
@@ -76,6 +130,7 @@ function canonicalKey(url: string): string | null {
 function toLink(
   item: z.infer<typeof serpNewsItemSchema>,
   sourceType: string,
+  options?: { fromAiOverviewFollowUp?: boolean },
 ): Omit<NormalizedArticleLink, "index"> | null {
   const link = item.link?.trim();
   if (!link) {
@@ -86,13 +141,24 @@ function toLink(
     return null;
   }
 
+  const fromAiOverviewFollowUp =
+    options?.fromAiOverviewFollowUp === true ||
+    serpRowIsAiOverviewFollowUp(item);
+  const resolvedSourceType = fromAiOverviewFollowUp
+    ? SOURCE_TYPE_GOOGLE_SEARCH_AI_OVERVIEW
+    : sourceType;
+
   const parsed = normalizedArticleLinkSchema.omit({ index: true }).safeParse({
     url,
     title: item.title?.trim() || undefined,
     snippet: item.snippet?.trim() || undefined,
     source: publisherName(item.source),
-    sourceType,
+    sourceType: resolvedSourceType,
     publishedAt: parsePublishedAtIso(item),
+    fromAiOverviewFollowUp: fromAiOverviewFollowUp || undefined,
+    selectionWeight: fromAiOverviewFollowUp
+      ? AI_OVERVIEW_FOLLOW_UP_SELECTION_WEIGHT
+      : undefined,
   });
   return parsed.success ? parsed.data : null;
 }
@@ -185,6 +251,8 @@ export function appendGoogleSearchSerpResults(
     ? [...(base.organic_results as unknown[])]
     : [];
 
+  let mergedFollowUp = false;
+
   for (const payload of extraPayloads) {
     if (!payload || typeof payload !== "object") {
       continue;
@@ -193,11 +261,19 @@ export function appendGoogleSearchSerpResults(
       news_results?: unknown;
       organic_results?: unknown;
     };
+    const fromFollowUp = isAiOverviewFollowUpSerpPayload(payload);
+    if (fromFollowUp) {
+      mergedFollowUp = true;
+    }
     if (Array.isArray(record.news_results)) {
-      news.push(...record.news_results);
+      for (const row of record.news_results) {
+        news.push(fromFollowUp ? tagSerpRowAsAiOverviewFollowUp(row) : row);
+      }
     }
     if (Array.isArray(record.organic_results)) {
-      organic.push(...record.organic_results);
+      for (const row of record.organic_results) {
+        organic.push(fromFollowUp ? tagSerpRowAsAiOverviewFollowUp(row) : row);
+      }
     }
   }
 
@@ -205,6 +281,7 @@ export function appendGoogleSearchSerpResults(
     ...base,
     news_results: news,
     ...(organic.length > 0 ? { organic_results: organic } : {}),
+    ...(mergedFollowUp ? { [SERP_PAYLOAD_AI_OVERVIEW_FOLLOW_UP_KEY]: true } : {}),
   };
 }
 
@@ -250,8 +327,6 @@ export function followUpBoostedUrlKeys(
   return boosted;
 }
 
-export const AI_OVERVIEW_FOLLOW_UP_SELECTION_WEIGHT = 1.3;
-
 export function applySelectionWeightBoosts(
   articles: NormalizedArticleLink[],
   boostedUrls: Set<string>,
@@ -260,11 +335,19 @@ export function applySelectionWeightBoosts(
   if (boostedUrls.size === 0) {
     return articles;
   }
-  return articles.map((article) =>
-    boostedUrls.has(article.url)
-      ? { ...article, selectionWeight: weight }
-      : article,
-  );
+  return articles.map((article) => {
+    if (article.fromAiOverviewFollowUp) {
+      return article;
+    }
+    return boostedUrls.has(article.url)
+      ? {
+          ...article,
+          fromAiOverviewFollowUp: true,
+          sourceType: SOURCE_TYPE_GOOGLE_SEARCH_AI_OVERVIEW,
+          selectionWeight: weight,
+        }
+      : article;
+  });
 }
 
 function extractOrganicResults(payload: unknown): z.infer<typeof serpOrganicItemSchema>[] {
@@ -289,6 +372,7 @@ function extractOrganicResults(payload: unknown): z.infer<typeof serpOrganicItem
 export function slimSerpPayloadForNormalize(payload: unknown): {
   news_results: unknown[];
   organic_results?: unknown[];
+  aiOverviewFollowUpSearch?: boolean;
 } {
   if (!payload || typeof payload !== "object") {
     return { news_results: [] };
@@ -310,6 +394,9 @@ export function slimSerpPayloadForNormalize(payload: unknown): {
   return {
     news_results: slimNews,
     ...(slimOrganic ? { organic_results: slimOrganic } : {}),
+    ...(isAiOverviewFollowUpSerpPayload(payload)
+      ? { [SERP_PAYLOAD_AI_OVERVIEW_FOLLOW_UP_KEY]: true }
+      : {}),
   };
 }
 
@@ -326,6 +413,9 @@ function slimSerpNewsRow(row: unknown) {
     iso_date: item.iso_date,
     published_at: item.published_at,
     source: item.source,
+    ...(item[SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY] === true
+      ? { [SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY]: true }
+      : {}),
   };
 }
 
@@ -338,7 +428,46 @@ function slimSerpOrganicRow(row: unknown) {
     link: item.link,
     title: item.title,
     snippet: item.snippet,
+    ...(item[SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY] === true
+      ? { [SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY]: true }
+      : {}),
   };
+}
+
+function partitionSearchNewsResults(
+  payload: unknown,
+): {
+  aiOverviewFollowUp: z.infer<typeof serpNewsItemSchema>[];
+  standard: z.infer<typeof serpNewsItemSchema>[];
+} {
+  const aiOverviewFollowUp: z.infer<typeof serpNewsItemSchema>[] = [];
+  const standard: z.infer<typeof serpNewsItemSchema>[] = [];
+  for (const item of extractNewsResults(payload)) {
+    if (serpRowIsAiOverviewFollowUp(item)) {
+      aiOverviewFollowUp.push(item);
+    } else {
+      standard.push(item);
+    }
+  }
+  return { aiOverviewFollowUp, standard };
+}
+
+function partitionOrganicResults(
+  payload: unknown,
+): {
+  aiOverviewFollowUp: z.infer<typeof serpOrganicItemSchema>[];
+  standard: z.infer<typeof serpOrganicItemSchema>[];
+} {
+  const aiOverviewFollowUp: z.infer<typeof serpOrganicItemSchema>[] = [];
+  const standard: z.infer<typeof serpOrganicItemSchema>[] = [];
+  for (const item of extractOrganicResults(payload)) {
+    if (serpRowIsAiOverviewFollowUp(item)) {
+      aiOverviewFollowUp.push(item);
+    } else {
+      standard.push(item);
+    }
+  }
+  return { aiOverviewFollowUp, standard };
 }
 
 /** Merge top Serp hits from `searchGoogleNews` and `searchGoogle` (news tab). */
@@ -363,28 +492,61 @@ export function normalizeSerpArticles(params: {
     append(toLink(item, "google_news"));
   }
 
-  const searchNews = extractNewsResults(params.googleSearchPayload).slice(0, limit);
-  for (const item of searchNews) {
-    append(toLink(item, "google_search"));
+  const searchPartitions = partitionSearchNewsResults(params.googleSearchPayload);
+  const organicPartitions = partitionOrganicResults(params.googleSearchPayload);
+
+  let searchSlots = limit;
+
+  for (const item of searchPartitions.aiOverviewFollowUp) {
+    if (searchSlots <= 0) {
+      break;
+    }
+    append(toLink(item, SOURCE_TYPE_GOOGLE_SEARCH, { fromAiOverviewFollowUp: true }));
+    searchSlots -= 1;
   }
 
-  if (searchNews.length < limit) {
-    const remaining = limit - searchNews.length;
-    for (const organic of extractOrganicResults(params.googleSearchPayload).slice(
-      0,
-      remaining,
-    )) {
-      append(
-        toLink(
-          {
-            link: organic.link,
-            title: organic.title,
-            snippet: organic.snippet,
-          },
-          "google_search",
-        ),
-      );
+  for (const item of searchPartitions.standard) {
+    if (searchSlots <= 0) {
+      break;
     }
+    append(toLink(item, SOURCE_TYPE_GOOGLE_SEARCH));
+    searchSlots -= 1;
+  }
+
+  for (const organic of organicPartitions.aiOverviewFollowUp) {
+    if (searchSlots <= 0) {
+      break;
+    }
+    append(
+      toLink(
+        {
+          link: organic.link,
+          title: organic.title,
+          snippet: organic.snippet,
+          [SERP_ROW_AI_OVERVIEW_FOLLOW_UP_KEY]: true,
+        },
+        SOURCE_TYPE_GOOGLE_SEARCH,
+        { fromAiOverviewFollowUp: true },
+      ),
+    );
+    searchSlots -= 1;
+  }
+
+  for (const organic of organicPartitions.standard) {
+    if (searchSlots <= 0) {
+      break;
+    }
+    append(
+      toLink(
+        {
+          link: organic.link,
+          title: organic.title,
+          snippet: organic.snippet,
+        },
+        SOURCE_TYPE_GOOGLE_SEARCH,
+      ),
+    );
+    searchSlots -= 1;
   }
 
   return merged.map((row, index) => {
