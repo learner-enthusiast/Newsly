@@ -16,6 +16,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -192,6 +193,7 @@ export function SiteHeader() {
             )}
           </Show>
           <Show when="signed-in">
+            <NotificationBell />
             <UserButton />
           </Show>
         </div>

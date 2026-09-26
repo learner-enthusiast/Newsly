@@ -161,6 +161,11 @@ import {
   wrapAiOverviewFollowUpSerpPayload,
 } from "@/services/news/normalizeArticles";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
+import {
+  newsPipelineCompletedNotification,
+  newsPipelineFailedNotification,
+  tryCreatePipelineNotification,
+} from "@/services/notifications/pipelineNotifications";
 import { z } from "zod";
 
 export const NEWS_PIPELINE_EVENT = "news/pipeline.requested" as const;
@@ -201,6 +206,24 @@ export const newsPipelineFunction = inngest.createFunction(
     name: "News pipeline",
     triggers: [{ event: NEWS_PIPELINE_EVENT }],
     timeouts: { finish: "45m" },
+    onFailure: async ({ event, error, step }) => {
+      const input = newsPipelineEventDataSchema.safeParse(event.data);
+      if (!input.success) {
+        pipelineLog("create-failure-notification", "skipped invalid event data");
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      pipelineLog("create-failure-notification", "start", { error: message });
+      await step.run("create-failure-notification", async () => {
+        await tryCreatePipelineNotification(
+          newsPipelineFailedNotification({
+            userId: input.data.userId,
+            newsRequestId: input.data.newsRequestId,
+          }),
+          { newsRequestId: input.data.newsRequestId },
+        );
+      });
+    },
   },
   async ({ event, step }) => {
     const input = newsPipelineEventDataSchema.parse(event.data);
@@ -816,6 +839,18 @@ export const newsPipelineFunction = inngest.createFunction(
           error: null,
         });
         pipelineLog("mark-request-success", "done");
+      });
+
+      await step.run("create-completion-notification", async () => {
+        pipelineLog("create-completion-notification", "start");
+        await tryCreatePipelineNotification(
+          newsPipelineCompletedNotification({
+            userId: input.userId,
+            newsRequestId: newsRequest.id,
+          }),
+          { newsRequestId: newsRequest.id },
+        );
+        pipelineLog("create-completion-notification", "done");
       });
 
       pipelineLog("step", "entering load-stories");

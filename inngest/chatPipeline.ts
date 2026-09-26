@@ -82,6 +82,11 @@ import {
   type ChatModelResearchSourceRow,
 } from "@/services/chat/researchContextForChatModel";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
+import {
+  chatResearchCompletedNotification,
+  chatResearchFailedNotification,
+  tryCreatePipelineNotification,
+} from "@/services/notifications/pipelineNotifications";
 import { NonRetriableError } from "inngest";
 import { z } from "zod";
 
@@ -161,6 +166,30 @@ export const messageChatPipelineFunction = inngest.createFunction(
     triggers: [{ event: MESSAGE_CHAT_PIPELINE_EVENT }],
     idempotency: "event.data.chatMessageId",
     timeouts: { finish: "30m" },
+    onFailure: async ({ event, error, step }) => {
+      const input = messageChatPipelineEventDataSchema.safeParse(event.data);
+      if (!input.success) {
+        pipelineLog("create-failure-notification", "skipped invalid event data");
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      pipelineLog("create-failure-notification", "start", { error: message });
+      await step.run("create-failure-notification", async () => {
+        const session = await getChatSessionById(input.data.chatSessionId);
+        if (!session) {
+          pipelineLog("create-failure-notification", "skipped missing session");
+          return;
+        }
+        await tryCreatePipelineNotification(
+          chatResearchFailedNotification({
+            userId: session.userId,
+            chatSessionId: input.data.chatSessionId,
+            chatMessageId: input.data.chatMessageId,
+          }),
+          { chatMessageId: input.data.chatMessageId },
+        );
+      });
+    },
   },
   async ({ event, step }) => {
     const input = messageChatPipelineEventDataSchema.parse(event.data);
@@ -190,6 +219,20 @@ export const messageChatPipelineFunction = inngest.createFunction(
 
     if (existingAssistant) {
       pipelineLog("run", "skipped", { reason: "assistant already exists" });
+      await step.run("create-completion-notification", async () => {
+        const session = await getChatSessionById(input.chatSessionId);
+        if (!session) {
+          return;
+        }
+        await tryCreatePipelineNotification(
+          chatResearchCompletedNotification({
+            userId: session.userId,
+            chatSessionId: input.chatSessionId,
+            chatMessageId: input.chatMessageId,
+          }),
+          { chatMessageId: input.chatMessageId },
+        );
+      });
       return existingAssistant;
     }
 
@@ -245,6 +288,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
           return toJsonSafeStepOutput({
             session: {
               id: session.id,
+              userId: session.userId,
               isFromNewsStory: session.isFromNewsStory,
             },
             userMessage: {
@@ -716,6 +760,17 @@ export const messageChatPipelineFunction = inngest.createFunction(
           });
         },
       );
+
+      await step.run("create-completion-notification", async () => {
+        await tryCreatePipelineNotification(
+          chatResearchCompletedNotification({
+            userId: chatContext.session.userId,
+            chatSessionId: input.chatSessionId,
+            chatMessageId: input.chatMessageId,
+          }),
+          { chatMessageId: input.chatMessageId },
+        );
+      });
 
       pipelineLog("run", "finished", {
         assistantMessageId: assistantMessage.id,

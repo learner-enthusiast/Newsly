@@ -8,7 +8,7 @@ import type { SerializedTrendingNewsStory } from "@/services/news/newsRequestTyp
 import { cn } from "@/lib/utils";
 import { ArrowUp } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export type TrendingCardData = {
   id: string;
@@ -57,32 +57,21 @@ type TrendingCardProps = {
 
 export function TrendingCard({ story, className }: TrendingCardProps) {
   const storyImageUrl = story.imageUrl?.trim() || null;
+  const [imageFailed, setImageFailed] = useState(false);
+  const showStoryImage = Boolean(storyImageUrl) && !imageFailed;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [storyImageUrl]);
   const categoryLabel = story.category?.trim() || "";
 
   let categoryMarker: ReactNode = null;
-  if (storyImageUrl) {
-    categoryMarker = (
-      <span
-        className="inline-flex h-5 w-8 shrink-0 overflow-hidden rounded-4xl border border-border bg-muted"
-        title={categoryLabel || undefined}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary publisher URLs */}
-        <img
-          src={storyImageUrl}
-          alt=""
-          className="size-full object-cover"
-          loading="lazy"
-          decoding="async"
-        />
-      </span>
-    );
-  } else if (categoryLabel) {
-    categoryMarker = (
-      <Badge variant="outline" className="w-fit text-[10px]">
-        {categoryLabel}
-      </Badge>
-    );
-  }
+
+  categoryMarker = (
+    <Badge variant="outline" className="w-fit text-[10px]">
+      {categoryLabel}
+    </Badge>
+  );
 
   return (
     <Link
@@ -97,14 +86,26 @@ export function TrendingCard({ story, className }: TrendingCardProps) {
       >
         <div
           className={cn(
-            "relative mx-3 mt-3 aspect-[4/3] rounded-xl bg-linear-to-br",
-            story.categoryTone,
+            "relative mx-3 mt-3 aspect-[4/3] overflow-hidden rounded-xl",
+            !showStoryImage && "bg-linear-to-br",
+            !showStoryImage && story.categoryTone,
           )}
           role="img"
           aria-label={`${story.category} story`}
         >
+          {showStoryImage && storyImageUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element -- publisher URLs */
+            <img
+              src={storyImageUrl}
+              alt=""
+              className="size-full object-cover"
+              loading="lazy"
+              decoding="async"
+              onError={() => setImageFailed(true)}
+            />
+          ) : null}
           {story.rank != null ? (
-            <span className="absolute top-2 left-2 flex size-8 items-center justify-center rounded-full bg-background/90 text-sm font-semibold shadow-sm">
+            <span className="absolute top-2 left-2 z-10 flex size-8 items-center justify-center rounded-full bg-background/90 text-sm font-semibold shadow-sm">
               {story.rank}
             </span>
           ) : null}
@@ -117,7 +118,9 @@ export function TrendingCard({ story, className }: TrendingCardProps) {
               <span className="tabular-nums">{story.upvotes}</span>
             </span>
           </div>
-          <CardTitle className="text-base leading-snug">{story.title}</CardTitle>
+          <CardTitle className="text-base leading-snug">
+            {story.title}
+          </CardTitle>
           <p className="line-clamp-2 text-xs text-muted-foreground">
             {story.description}
           </p>

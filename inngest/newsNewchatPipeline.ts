@@ -63,6 +63,12 @@ import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import { researchUrlKeysFromSources } from "@/services/chat/dedupeResearchArticles";
 import { mergeDirectFirecrawlTargets } from "@/services/chat/directUrlResearch";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
+import {
+  chatResearchFailedNotification,
+  deepDiveCompletedNotification,
+  deepDiveFailedNotification,
+  tryCreatePipelineNotification,
+} from "@/services/notifications/pipelineNotifications";
 import { z } from "zod";
 
 export const CHAT_PIPELINE_EVENT = "chat/pipeline.requested" as const;
@@ -126,6 +132,36 @@ export const chatPipelineFunction = inngest.createFunction(
     name: "Chat research pipeline",
     triggers: [{ event: CHAT_PIPELINE_EVENT }],
     timeouts: { finish: "30m" },
+    onFailure: async ({ event, error, step }) => {
+      const input = chatPipelineEventDataSchema.safeParse(event.data);
+      if (!input.success) {
+        pipelineLog("create-failure-notification", "skipped invalid event data");
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      pipelineLog("create-failure-notification", "start", { error: message });
+      await step.run("create-failure-notification", async () => {
+        const session = await getChatSessionByIdForUser(
+          input.data.chatSessionId,
+          input.data.userId,
+        );
+        const payload =
+          session?.isFromNewsStory === true
+            ? deepDiveFailedNotification({
+                userId: input.data.userId,
+                chatSessionId: input.data.chatSessionId,
+                userMessageId: input.data.userMessageId,
+              })
+            : chatResearchFailedNotification({
+                userId: input.data.userId,
+                chatSessionId: input.data.chatSessionId,
+                chatMessageId: input.data.userMessageId,
+              });
+        await tryCreatePipelineNotification(payload, {
+          userMessageId: input.data.userMessageId,
+        });
+      });
+    },
   },
   async ({ event, step }) => {
     const input = chatPipelineEventDataSchema.parse(event.data);
@@ -507,6 +543,19 @@ export const chatPipelineFunction = inngest.createFunction(
           });
         },
       );
+
+      if (session.isFromNewsStory === true) {
+        await step.run("create-completion-notification", async () => {
+          await tryCreatePipelineNotification(
+            deepDiveCompletedNotification({
+              userId: input.userId,
+              chatSessionId: input.chatSessionId,
+              userMessageId: input.userMessageId,
+            }),
+            { userMessageId: input.userMessageId },
+          );
+        });
+      }
 
       pipelineLog("run", "finished", {
         assistantMessageId: assistantMessage.id,

@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { SignInButton } from "@clerk/nextjs";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 type NewsStoryCardProps = {
   story: SerializedNewsStory;
@@ -51,10 +51,7 @@ function categoryBadgeClass(category: string): string {
   return variants[hash % variants.length]!;
 }
 
-function signInRedirectForStory(
-  storyId: string,
-  explicit?: string,
-): string {
+function signInRedirectForStory(storyId: string, explicit?: string): string {
   if (explicit) {
     return explicit;
   }
@@ -86,31 +83,58 @@ export function NewsStoryCard({
   const guestGated = guestActionsVisible && !showActions;
   const redirectUrl = signInRedirectForStory(story.id, signInRedirectUrl);
   const storyImageUrl = story.imageUrl?.trim() || null;
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const showStoryImage =
+    Boolean(storyImageUrl) && failedImageUrl !== storyImageUrl;
   const categoryLabel = story.category?.trim() || "";
 
   let categoryMarker: ReactNode = null;
-  if (storyImageUrl) {
-    categoryMarker = (
-      <span
-        className="inline-flex h-5 w-8 shrink-0 overflow-hidden rounded-4xl border border-border bg-muted"
-        title={categoryLabel || undefined}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary publisher URLs */}
-        <img
-          src={storyImageUrl}
-          alt=""
-          className="size-full object-cover"
-          loading="lazy"
-          decoding="async"
-        />
-      </span>
-    );
-  } else if (categoryLabel) {
-    categoryMarker = (
-      <Badge variant="outline" className={categoryBadgeClass(categoryLabel)}>
-        {categoryLabel}
-      </Badge>
-    );
+
+  categoryMarker = (
+    <Badge variant="outline" className={categoryBadgeClass(categoryLabel)}>
+      {categoryLabel}
+    </Badge>
+  );
+
+  const readFullStoryTrigger = (
+    <Button type="button" variant="link" size="sm" className="gap-1 px-0">
+      Read full story
+      <ArrowRight className="size-4" aria-hidden />
+    </Button>
+  );
+
+  let readFullStoryControl: ReactNode = null;
+  const fullStoryContent = story.content?.trim();
+  if (fullStoryContent) {
+    if (guestGated) {
+      readFullStoryControl = (
+        <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+          {readFullStoryTrigger}
+        </SignInButton>
+      );
+    } else {
+      readFullStoryControl = (
+        <Sheet>
+          <SheetTrigger render={readFullStoryTrigger} />
+          <SheetContent
+            side="right"
+            className="w-full sm:max-w-lg px-3 mx-3"
+          >
+            <SheetHeader>
+              <SheetTitle className="font-display text-left text-xl leading-snug">
+                {story.title}
+              </SheetTitle>
+            </SheetHeader>
+            <div className="mt-4 max-h-[calc(100dvh-8rem)] overflow-y-auto pr-1">
+              <ChatMarkdown
+                content={fullStoryContent}
+                className="text-foreground"
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+      );
+    }
   }
 
   return (
@@ -132,14 +156,33 @@ export function NewsStoryCard({
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row">
             <div
-              className="relative h-36 w-full shrink-0 overflow-hidden rounded-xl bg-linear-to-br from-muted via-accent/25 to-secondary sm:h-28 sm:w-40"
-              aria-hidden={!story.sourceUrls.length}
+              className={cn(
+                "relative h-36 w-full shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-40",
+                !showStoryImage &&
+                  "bg-linear-to-br from-muted via-accent/25 to-secondary",
+              )}
+              role={showStoryImage ? undefined : "img"}
+              aria-label={
+                showStoryImage ? undefined : `${story.category} story`
+              }
             >
-              <div className="absolute inset-0 flex items-end p-3">
-                <span className="text-xs font-medium text-foreground/70">
-                  {story.category}
-                </span>
-              </div>
+              {showStoryImage && storyImageUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element -- publisher URLs */
+                <img
+                  src={storyImageUrl}
+                  alt=""
+                  className="size-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => setFailedImageUrl(storyImageUrl)}
+                />
+              ) : (
+                <div className="absolute inset-0 flex items-end p-3">
+                  <span className="text-xs font-medium text-foreground/70">
+                    {story.category}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="min-w-0 flex-1">
@@ -234,53 +277,7 @@ export function NewsStoryCard({
                     />
                   ) : null}
 
-                  {story.content?.trim() ? (
-                    guestGated ? (
-                      <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
-                        <Button
-                          type="button"
-                          variant="link"
-                          size="sm"
-                          className="gap-1 px-0"
-                        >
-                          Read full story
-                          <ArrowRight className="size-4" aria-hidden />
-                        </Button>
-                      </SignInButton>
-                    ) : (
-                      <Sheet>
-                        <SheetTrigger
-                          render={
-                            <Button
-                              type="button"
-                              variant="link"
-                              size="sm"
-                              className="gap-1 px-0"
-                            >
-                              Read full story
-                              <ArrowRight className="size-4" aria-hidden />
-                            </Button>
-                          }
-                        />
-                        <SheetContent
-                          side="right"
-                          className="w-full sm:max-w-lg px-3 mx-3"
-                        >
-                          <SheetHeader>
-                            <SheetTitle className="font-display text-left text-xl leading-snug">
-                              {story.title}
-                            </SheetTitle>
-                          </SheetHeader>
-                          <div className="mt-4 max-h-[calc(100dvh-8rem)] overflow-y-auto pr-1">
-                            <ChatMarkdown
-                              content={story.content}
-                              className="text-foreground"
-                            />
-                          </div>
-                        </SheetContent>
-                      </Sheet>
-                    )
-                  ) : null}
+                  {readFullStoryControl}
                 </div>
               </div>
             </div>
