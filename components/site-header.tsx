@@ -1,5 +1,7 @@
 "use client";
 
+import { LANDING_NAV_LINKS } from "@/components/landing/LandingNavbar";
+import { GetStartedButton } from "@/components/landing/GetStartedButton";
 import {
   Show,
   SignInButton,
@@ -7,25 +9,24 @@ import {
   UserButton,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
-import { Search } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Menu, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const MARKETING_LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/#features", label: "Features" },
-  { href: "/#how-it-works", label: "How it works" },
-  { href: "/#topics", label: "Topics" },
-  { href: "/#pricing", label: "Pricing" },
-] as const;
 
 export function SiteHeader() {
   const pathname = usePathname();
   const isMarketingHome = pathname === "/";
 
   return (
-    <header className="z-50 shrink-0 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
-      <div className="landing-section flex items-center gap-4 py-4">
+    <header className="sticky top-0 z-50 shrink-0 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
+      <div className="landing-section flex items-center gap-3 py-3 sm:gap-4 sm:py-4">
         <Link href="/" className="font-brand shrink-0 text-2xl text-foreground">
           Newsly
         </Link>
@@ -33,10 +34,10 @@ export function SiteHeader() {
         <Show when="signed-out">
           {isMarketingHome ? (
             <nav
-              className="hidden flex-1 items-center justify-center gap-6 md:flex"
+              className="hidden flex-1 items-center justify-center gap-6 lg:flex"
               aria-label="Marketing"
             >
-              {MARKETING_LINKS.map((link) => (
+              {LANDING_NAV_LINKS.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
@@ -103,30 +104,92 @@ export function SiteHeader() {
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <Show when="signed-out">
             {isMarketingHome ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="hidden sm:inline-flex"
-                aria-label="Search"
-                disabled
-              >
-                <Search />
-              </Button>
-            ) : null}
-            <SignInButton>
-              <button
-                type="button"
-                className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Sign in
-              </button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <Button variant="brand" size="sm" className="hidden sm:inline-flex">
-                {isMarketingHome ? "Get Started" : "Sign up"}
-              </Button>
-            </SignUpButton>
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="hidden sm:inline-flex"
+                  aria-label="Search (coming soon)"
+                  disabled
+                >
+                  <Search />
+                </Button>
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    className="hidden text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline"
+                  >
+                    Sign In
+                  </button>
+                </SignInButton>
+                <div className="hidden sm:block">
+                  <GetStartedButton size="sm" label="Get Started" />
+                </div>
+
+                <Sheet>
+                  <SheetTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        className="lg:hidden"
+                        aria-label="Open menu"
+                      />
+                    }
+                  >
+                    <Menu />
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-[min(100%,320px)]">
+                    <SheetHeader>
+                      <SheetTitle className="font-brand text-left text-xl">
+                        Newsly
+                      </SheetTitle>
+                    </SheetHeader>
+                    <nav className="mt-4 flex flex-col gap-1" aria-label="Mobile marketing">
+                      {LANDING_NAV_LINKS.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          className="rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted"
+                        >
+                          {link.label}
+                        </Link>
+                      ))}
+                    </nav>
+                    <div className="mt-6 flex flex-col gap-3 border-t border-border/40 pt-4">
+                      <SignInButton mode="modal">
+                        <Button type="button" variant="outline" className="w-full">
+                          Sign In
+                        </Button>
+                      </SignInButton>
+                      <SignUpButton mode="modal">
+                        <Button type="button" variant="brand-accent" className="w-full">
+                          Get Started
+                        </Button>
+                      </SignUpButton>
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              </>
+            ) : (
+              <>
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Sign in
+                  </button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <Button variant="brand" size="sm" className="hidden sm:inline-flex">
+                    Sign up
+                  </Button>
+                </SignUpButton>
+              </>
+            )}
           </Show>
           <Show when="signed-in">
             <UserButton />

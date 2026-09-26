@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:guardrails": "node --import tsx --test Agents/chat/guardrails.rules.test.ts",
+    "test:guardrails": "node --import tsx --test Agents/chat/guardrails.rules.test.ts Agents/chat/guardrails.context.test.ts",
     "test:query-enhancer": "node --import tsx --test Agents/chat/queryEnhancerAgent.test.ts",
     "test:youtube-transcript": "node --import tsx --test Agents/news/YoutubeTranscriptAgent.test.ts",
     "test:youtube-video": "node --import tsx --test Agents/news/YoutubeVideoAgent.test.ts",

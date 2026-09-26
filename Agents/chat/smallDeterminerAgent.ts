@@ -18,6 +18,7 @@
 
 import {
   assertGuardrailAllowed,
+  normalizeGuardrailChatHistory,
   runStockResearchGuardrails,
   type GuardrailCheckResult,
 } from "@/Agents/chat/guardrails";
@@ -448,8 +449,10 @@ async function applyGuardrails(
     };
   }
 
+  const chatHistory = normalizeGuardrailChatHistory(params.recentMessages);
   const guardrail = await runStockResearchGuardrails({
     userPrompt: params.userPrompt,
+    chatHistory: chatHistory.length > 0 ? chatHistory : undefined,
     model: params.guardrailModel,
     abortSignal: params.abortSignal,
   });
