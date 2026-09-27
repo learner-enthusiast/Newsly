@@ -1,102 +1,201 @@
 # Newsly
 
-Newsly is a news-intelligence and research platform built as a Next.js application. It turns configurable news requests and user research questions into **evidence-backed briefings and chat answers** by orchestrating SerpAPI discovery, Firecrawl scraping, LLM-based selection and synthesis, and PostgreSQL persistence—including **pgvector** reuse for follow-up chat research.
+> A Next.js app that turns news briefing requests and chat research into evidence-backed stories and answers using SerpAPI, Firecrawl, OpenAI agents, PostgreSQL, and Inngest-backed pipelines.
 
-This document describes the repository **as implemented today**. It is written for developers onboarding to the codebase, not as product marketing.
-
----
-
-## What This Project Is
-
-### Problem
-
-Raw search results and RSS-style aggregation are insufficient for structured financial and economic research:
-
-- Search snippets are incomplete and noisy (ads, navigation, unrelated modules).
-- A single query does not produce ranked **stories** with linked **sources**.
-- Follow-up questions need **session context** and **reuse of prior research**, not a full news briefing rerun.
-
-Newsly addresses this with **two deliberately different research systems**:
-
-| System | Orientation | Primary output |
-|--------|-------------|----------------|
-| **News pipeline** | Broad discovery, multi-engine Serp, YouTube branch, story clustering | `NewsStory` + `NewsSource` rows tied to a `NewsRequest` |
-| **Chat research pipeline** | Targeted, latency-sensitive, context-aware | `ChatMessage` (assistant) + session-scoped `ResearchSource` rows |
-
-A third workflow, **news-story deep dive**, reuses the chat-style research stack for the **first** research turn on a story-linked session (`chat/pipeline.requested`), without pgvector reuse on that path.
-
-### What users can do (implemented)
-
-- **Generate a news briefing** (`/news`): date, scope (`local` / `world` / `both`), location, categories, custom query, story count, language, optional source domains.
-- **Poll briefing progress** via `NewsRequest.loadingLogs` and status (`pending` / `success` / `failed`).
-- **Browse community stories** (`/newsStory`), **view a story** (`/newsStory/[storyId]`), **vote**, **save** stories (`users.saved_stories`), see **trending** on the landing page.
-- **Start a deep dive** from a story → `ChatSession` linked to `NewsStory` → first answer via `chat/pipeline.requested`.
-- **General chat** (`/chat`): create session, send messages → `chat/message.research.requested` with vector reuse, Serp, Firecrawl, cleaning, ChatModel.
-- **Sign in** with Clerk; app user rows sync to `users`.
-
-### Evidence → synthesis flow (conceptual)
-
-There is **no** separate `Document` / `Claim` / `Event` entity layer in the database. Evidence and synthesis are represented practically as:
-
-1. **Raw / normalized search hits** (in-memory during pipelines; Serp payloads normalized in `services/news/normalizeArticles.ts` and `services/chat/normalizeSerpResults.ts`).
-2. **Scraped markdown** (Firecrawl).
-3. **Cleaned article text** (News pipeline + message chat pipeline via `NewsContentCleanerAgent`; **not** applied in the deep-dive first-run pipeline today).
-4. **Persisted evidence**: `NewsSource` (briefing), `ResearchSource` (chat), optional YouTube transcript fields on `NewsSource`.
-5. **Synthesized output**: `NewsStory.content` / `summary` (briefing) or assistant `ChatMessage.content` (chat).
+This README describes the repository **as implemented today**. It is written for developers onboarding to the codebase and for architecture review—not as product marketing.
 
 ---
 
-## Core Capabilities
+## What problem does it solve?
 
-| Capability | Status | Notes |
-|------------|--------|--------|
-| News briefing generation | ✅ | `news/pipeline.requested` |
-| Targeted chat research | ✅ | `chat/message.research.requested` |
-| News story deep dive (first turn) | ✅ | `chat/pipeline.requested` |
-| Serp: Google News, Google Search (news tab), YouTube | ✅ | News + chat (chat: targeted Serp + AI Overview follow-ups) |
-| AI Overview follow-up searches | ✅ | News pipeline; message chat via `fetchAndNormalizeChatSerpResearch` |
-| Firecrawl scraping | ✅ | Batched `Promise.all` per URL list |
-| Content cleaning | ✅ | News pipeline + message chat; **not** deep-dive pipeline |
-| YouTube transcripts (supporting evidence) | ✅ | News pipeline (required primary **article** for stories); lightweight branch in message chat |
-| pgvector session research reuse | ✅ | Message chat only; embeddings on `ResearchSource.description` |
-| Guardrails + determiner + query enhancement | ✅ | Message chat + deep dive; news-story skips query enhancer when `isNewsStory` |
-| Progress / loading logs | ✅ | `NewsRequest.loadingLogs` |
-| Voting / trending | ✅ | `NewsStoryVote`, `/api/news/trending`, public story feed |
-| Saved stories | ✅ | `users.saved_stories`, `/api/news/stories/saved` |
-| Clerk authentication | ✅ | `proxy.ts`, `lib/auth.ts` |
-| Research source indexing (async) | ✅ | `research/source.index.requested` |
-| Quick actions / try-these-questions (API) | ✅ | `/api/chat/quickactions`, `/api/chat/trythesequestion` |
-| Notifications UI + pipeline hooks | ❌ | `Notification` model + `repositories/notification.ts` exist; **no** API routes or pipeline writes found |
-| Script generation UI | ❌ | `Script` model in schema; **no** app usage located |
-| `relevanceAgent` in production path | ❌ | Agent exists under `Agents/chat/relevanceAgent.ts` but is **not** imported by pipelines |
+Researchers and news readers who care about **markets, policy, and local/world events** often face:
+
+- **Fragmented information** across Google News, web results, YouTube, and one-off searches.
+- **Snippets instead of sources**—search UIs rarely produce ranked stories with retrievable article text and transcripts.
+- **No durable session context**—generic chat forgets what was already scraped or deduplicated in an earlier turn.
+- **Manual synthesis**—turning many URLs into one structured briefing or story is repetitive and error-prone.
+
+Normal search returns links; normal chat hallucinates or omits citations. Newsly combines **planned multi-engine discovery** (briefings), **targeted chat research** (follow-up questions), **scraped evidence persistence**, and **LLM synthesis** so outputs stay tied to stored sources.
 
 ---
 
-## System Architecture
+## How does it solve the problem?
+
+The product stitches several workflows that exist in code:
+
+**Briefing (news request)**
+
+User configures date, scope (`local` / `world` / `both`), location, categories, story count, and optional filters → `NewsRequest` is created → Inngest runs the **news pipeline** → search planning → Serp (Google News, news-tab search, YouTube) → optional AI Overview follow-up queries → article selection → Firecrawl → content cleaning → YouTube analysis branch → **NewsSynthesizer** → `NewsStory` + `NewsSource` rows → user polls progress and reads stories on `/news` and `/newsStory`.
+
+**Contextual chat research**
+
+User opens `/chat` or continues a session → each user message enqueues **message chat research** → guardrails → query enhancement (except deep-dive sessions) → **small determiner** chooses vector reuse, Serp tools, and/or direct Firecrawl URLs → parallel evidence gathering → cleaned scrapes saved as **`ResearchSource`** → **ChatModel** answer (or story handoff—see below).
+
+**Deep dive on a public story**
+
+From a story page, user starts research tied to that story → `ChatSession` with `isFromNewsStory` and selected `NewsSource` IDs → first turn uses the **deep-dive chat pipeline** (story + sources as prompt context, Serp, Firecrawl, no pgvector on that path) → follow-ups use the full message chat pipeline (vectors + cleaning).
+
+**User-created story from chat**
+
+On **general chat only** (not story-anchored sessions), when the determiner sets `shouldCreateStory`, the message pipeline creates a **draft** `NewsStory` (`isUserCreated: true`), passes **prepared research** (Serp hits, YouTube evidence, selected articles, existing session research) to the **chat story pipeline**, and notifies the user when synthesis completes. Owner can edit, publish, or return to chat.
+
+**Bookmarks vs my stories**
+
+- **`users.saved_stories`**: UUID list of **community** stories the user bookmarked (`/newsStory/bookmarks`, save API).
+- **User-created stories**: rows with `isUserCreated: true` listed at `/newsStory/saved` (“My stories”).
+
+Relationship in one line:
+
+`User intent → durable job (Inngest) → external search/scrape → normalized evidence in DB → agent synthesis → NewsStory and/or ChatMessage + notifications`
+
+---
+
+## Key features
+
+### Research
+
+- Configurable **news requests** with loading logs and retry (`NewsRequest.status`: `pending` | `success` | `failed`).
+- **Search planning** with budgets scaled by `storyCount` (`services/news/newsSearchPlanning.ts`).
+- **AI Overview follow-up** searches in news and chat Serp paths.
+- **YouTube** transcript branch in briefings; lighter YouTube evidence in message chat.
+
+### News intelligence
+
+- Multi-story **briefings** per successful request.
+- **Trending** and paginated public story feeds.
+- **Up/down votes** on accessible stories.
+- Date and trading-recommendation filters on article candidates.
+
+### Chat
+
+- General research chat and **story deep-dive** sessions.
+- **Guardrails**, **query enhancer**, **determiner**-driven Serp/Firecrawl/vector branches.
+- **Quick actions** and **try these questions** API helpers for the UI.
+- Session **rename**, **bookmark**, **delete**; auto title from first message on new user chats.
+- **Stories launcher** in chat (count + list APIs per session).
+
+### Stories
+
+- System **`NewsStory`** rows from briefings (`isUserCreated: false`, default `publishStatus: published`).
+- Chat-origin **user stories** (`isUserCreated: true`, start as **draft** with placeholder title/slug until pipeline finishes).
+- Owner **PATCH**, **publish** / **unpublish** APIs; draft visible only to owner.
+
+### Search / retrieval
+
+- SerpAPI wrappers under `SERP/` and chat/news services.
+- **pgvector** on **`ResearchSource.description`** for session-scoped similarity in message chat (top 8, min similarity 0.72).
+- Async **chat message embeddings** (summarized text)—indexed in background; similarity helpers exist but are **not** wired into the live chat pipeline today.
+
+### User features
+
+- **Clerk** sign-in; local `User` row synced from Clerk.
+- **In-app notifications** (pipeline completion/failure) with bell UI and REST API.
+- Bookmark community stories; list owned chat-generated stories.
+
+---
+
+## Third-party libraries and services
+
+### Runtime libraries (application)
+
+| Name | Purpose | Where |
+|------|---------|--------|
+| **Next.js 16** | App Router, API routes, pages | `app/` |
+| **React 19** | UI | `components/` |
+| **TypeScript** | Typing across repo | — |
+| **Prisma 7** | ORM, migrations | `db/schema/`, `repositories/` |
+| **pg** + **@prisma/adapter-pg** | PostgreSQL driver for Prisma | `db/client.ts` |
+| **Inngest** | Durable workflows | `inngest/`, `app/api/inngest` |
+| **OpenAI SDK** | Chat completions + embeddings | `clients/AIClient.ts`, `Agents/` |
+| **Vercel AI SDK (`ai`)** | Optional gateway path in AIClient | `clients/AIClient.ts` |
+| **serpapi** | Google News / Search / YouTube | `clients/serpCleint.ts`, `SERP/` |
+| **firecrawl** | URL → markdown | `clients/FireCrawlClient.ts`, `services/firecrawl/` |
+| **@clerk/nextjs** | Auth middleware and components | `proxy.ts`, `app/` |
+| **Zod** | Validation for APIs and agents | services, agents |
+| **react-markdown** + **remark-gfm** | Render story/chat markdown | components |
+| **Tailwind CSS 4**, **shadcn**, **@base-ui/react** | Styling and UI primitives | `components/ui/` |
+| **GSAP** | Landing motion (reduced-motion aware) | landing components |
+| **sonner** | Toasts | layout |
+| **i18n-iso-countries** | Country metadata in news UI | news forms |
+
+### External services (credentials required)
+
+| Service | Purpose | Where |
+|---------|---------|--------|
+| **PostgreSQL + pgvector** | Primary data; `vector(1536)` columns | Docker `pgvector/pgvector:pg16`, port **5434** |
+| **Clerk** | Authentication | env `CLERK_*`, `NEXT_PUBLIC_CLERK_*` |
+| **OpenAI** | Agents, synthesizer, embeddings (`text-embedding-3-small`) | `OPENAI_API_KEY`, per-agent model env vars |
+| **SerpAPI** | All programmatic search | `SERPAPI_API_KEY` |
+| **Firecrawl** | Scraping after URL selection | `FIRECRAWL_API_KEY` |
+| **Inngest** | Cloud/dev execution of functions | `INNGEST_*`, local `pnpm inngest:dev` |
+
+### Development tooling
+
+| Name | Purpose |
+|------|---------|
+| **pnpm 10.20.0** | Package manager (`packageManager` in `package.json`) |
+| **ESLint** + **eslint-config-next** | Lint |
+| **tsx** | Node tests for agents/services |
+| **Prisma CLI** | `db:migrate`, `db:generate`, etc. |
+
+---
+
+## Technology stack
+
+| Layer | Technology | Purpose |
+|------|------------|---------|
+| Frontend | Next.js 16, React 19 | Pages, API routes, RSC/client components |
+| Styling | Tailwind 4, shadcn/ui | Layout and design system |
+| Backend | Next.js Route Handlers | `app/api/*` |
+| Database | PostgreSQL 16 (Docker) | Relational data |
+| ORM | Prisma 7 | Schema, migrations, client in `db/generated/` |
+| Vector search | pgvector extension | `chat_resource_embeddings`, `chat_message_embeddings` |
+| AI | OpenAI (+ optional AI SDK gateway) | Agents, synthesis, embeddings |
+| Search | SerpAPI | News discovery and chat research |
+| Scraping | Firecrawl | Article markdown |
+| Background jobs | Inngest | News, chat, story, index pipelines |
+| Authentication | Clerk | User identity and middleware |
+| Validation | Zod | Request bodies and event payloads |
+
+---
+
+## Architecture
 
 ```
-User (browser)
+Browser (Next.js UI)
       ↓
-Next.js App Router (app/, components/)
+app/api/*  +  services/*  +  repositories/*
       ↓
-Route handlers (app/api/*) + services/*
+Clerk middleware (proxy.ts) on routes
       ↓
-Inngest (durable workflows)  ←── HTTP cannot hold 30–45m research
+Inngest (HTTP cannot hold 30–45m research)
       ↓
-┌─────────────────────────────────────────────────────────────┐
-│ news/pipeline.requested          → newsPipelineFunction      │
-│ chat/pipeline.requested          → chatPipelineFunction      │
-│   (newsNewchatPipeline.ts)       (deep dive first turn)      │
-│ chat/message.research.requested  → messageChatPipelineFunction│
-│ research/source.index.requested  → researchSourceDescription │
-└─────────────────────────────────────────────────────────────┘
+Pipelines: news | deep-dive chat | message chat | chat story | indexers
       ↓
-External services: SerpAPI, Firecrawl, OpenAI (via clients/AIClient.ts), YouTube/transcript fetchers
+SerpAPI · Firecrawl · OpenAI · YouTube/transcript fetchers
       ↓
-PostgreSQL + pgvector (ChatResourceEmbedding)
+PostgreSQL (+ pgvector)
       ↓
-Frontend polls / refetches (news request polling, chat session state)
+UI polling / refetch (news requests, chat sessions, notifications)
 ```
+
+**Frontend** (`app/`, `components/`): landing, news briefing UI, story pages, chat layout, notification bell.
+
+**API layer**: thin route handlers calling services; enqueue Inngest events for long work.
+
+**Authentication**: Clerk middleware; `requireAuthenticatedUser` upserts `User` via Clerk IDs.
+
+**Agents** (`Agents/`): LLM steps for planning, selection, cleaning, synthesis, guardrails, chat replies—invoked inside Inngest `step.run` blocks or services.
+
+**Pipeline orchestration** (`inngest/*.ts`): retries, parallelism, idempotency keys, failure notifications.
+
+**Research persistence**: `NewsSource` (briefing evidence), `ResearchSource` (chat evidence), optional transcripts on sources.
+
+**Embeddings**: async indexers after inserts; message chat reads **`ChatResourceEmbedding`** for reuse.
+
+**Synthesis**: `NewsSynthesizerAgent` for briefings and chat stories; `ChatModel` for conversational answers.
+
+**Notifications**: `services/notifications/pipelineNotifications.ts` → `Notification` rows → `/api/notifications` + `NotificationBell`.
 
 ```mermaid
 flowchart TB
@@ -104,612 +203,478 @@ flowchart TB
   FE --> API[app/api]
   API --> SVC[services + repositories]
   SVC --> ING[Inngest]
-  ING --> NP[News Pipeline]
-  ING --> DD[Deep Dive Pipeline]
-  ING --> MC[Message Chat Pipeline]
-  ING --> IDX[Research Source Index]
+  ING --> NP[newsPipeline]
+  ING --> DD[newsNewchatPipeline]
+  ING --> MC[chatPipeline]
+  ING --> CS[chatstoryPipeline]
+  ING --> RSI[researchSourceDescription]
+  ING --> CME[chatMessageEmbedding]
   NP --> SERP[SerpAPI]
   MC --> SERP
   DD --> SERP
+  CS --> SERP
   NP --> FC[Firecrawl]
   MC --> FC
   DD --> FC
-  NP --> OAI[OpenAI Agents]
+  CS --> FC
+  NP --> OAI[OpenAI]
   MC --> OAI
   DD --> OAI
-  MC --> VEC[pgvector]
-  NP --> PG[(PostgreSQL)]
+  CS --> OAI
+  MC --> VEC[pgvector research]
+  RSI --> VEC
+  CME --> PG[(PostgreSQL)]
+  NP --> PG
   MC --> PG
   DD --> PG
-  IDX --> PG
+  CS --> PG
   PG --> FE
 ```
 
----
-
-## Technology Stack
-
-| Technology | Role in this project |
-|------------|----------------------|
-| **Next.js 16** | App Router, API routes, RSC/client pages (`app/`) |
-| **React 19** | UI (`components/`) |
-| **TypeScript** | Entire application |
-| **Prisma 7** | ORM; schema in `db/schema/`; client output `db/generated/`; config `prisma.config.ts` |
-| **PostgreSQL** | Primary datastore |
-| **pgvector** | `chat_resource_embeddings.embedding vector(1536)`; Docker image `pgvector/pgvector:pg16` |
-| **Inngest** | Durable pipeline execution; served at `app/api/inngest/route.ts` |
-| **SerpAPI** | Google News, Google Search, YouTube; wrapper `SERP/index.ts`, client `clients/serpCleint.ts` |
-| **Firecrawl** | URL → markdown scrape; `clients/FireCrawlClient.ts`, `services/firecrawl/scrapeUrls.ts` |
-| **OpenAI** | Chat/completions + embeddings via `clients/AIClient.ts` (`text-embedding-3-small`, 1536 dims) |
-| **Clerk** | Auth; `@clerk/nextjs`, middleware `proxy.ts` |
-| **Vercel AI SDK (`ai`)** | Used inside `AIClient` as optional gateway path |
-| **Zod** | Request validation, agent I/O schemas |
-| **Tailwind CSS 4 + shadcn** | UI styling |
-| **GSAP** | Landing / card motion (optional, reduced-motion aware) |
+Registered functions: `inngest/index.ts` → served at `app/api/inngest/route.ts`.
 
 ---
 
-## Repository Structure
+## Research pipeline architecture
 
-```
-my-app/
-├── app/                    # Next.js routes (pages + app/api/*)
-├── Agents/                 # LLM agents (news + chat); note capital A
-├── clients/                # AIClient, Firecrawl, Serp, Inngest client
-├── components/             # React UI (news/, chat/, landing/, ui/)
-├── db/
-│   ├── schema/schema.prisma
-│   ├── schema/migrations/
-│   ├── client.ts           # Prisma + pg adapter
-│   └── generated/          # Prisma client (generated)
-├── docker-compose.yml      # Postgres + pgvector on port 5434
-├── hooks/                  # e.g. useNewsRequestPolling, useRecentNewsRequests
-├── inngest/                # Pipeline function definitions
-├── lib/                    # auth, fonts, openAiModel resolution
-├── repositories/           # Thin Prisma access layer
-├── services/               # Business logic (news/, chat/, firecrawl/)
-├── SERP/                   # Serp engine helpers and types
-├── prisma.config.ts        # Prisma 7 config (schema path, migrations)
-├── proxy.ts                # Clerk middleware
-└── package.json            # pnpm scripts (dev, db:*, inngest:dev, tests)
-```
+**Event:** `news/pipeline.requested`  
+**Function:** `newsPipelineFunction` (`inngest/newsPipeline.ts`)  
+**Producer:** `POST /api/news` (via `services/news/apiService.ts`)  
+**Timeout:** 45 minutes  
 
-**Important entry points**
+| Stage | Role |
+|-------|------|
+| `load-news-request` | Load config; fail if missing |
+| `plan-search-queries` | `buildNewsSearchExecutionPlans` from request fields |
+| `save-search-queries` | Persist planned queries on `NewsRequest.searchQuery` |
+| `fetch-and-normalize-serp` | Parallel engines; normalize links; optional AI Overview follow-ups |
+| YouTube branch | Select videos → transcripts → analyze → synthesize facts for synthesizer |
+| `select-articles` | `ResearchArticleSelectorAgent` on normalized hits (parallel with YouTube) |
+| `scrape-selected-articles` | Firecrawl + `NewsContentCleanerAgent` per URL |
+| `synthesize-stories` | `NewsSynthesizerAgent` (target `storyCount`) |
+| `persist-stories-and-sources` | Create `NewsStory` (system defaults) + `NewsSource`; skip rows without primary article source |
+| `mark-request-success` | `NewsRequest.status = success` |
+| `create-completion-notification` | Idempotent user notification |
+| `mark-request-failed` | On error: `status = failed`, failure notification |
 
-| Path | Responsibility |
-|------|----------------|
-| `inngest/newsPipeline.ts` | Briefing generation workflow |
-| `inngest/chatPipeline.ts` | Follow-up message research |
-| `inngest/newsNewchatPipeline.ts` | Deep-dive first chat turn (`chat/pipeline.requested`) |
-| `inngest/researchSourceDescriptionPipeline.ts` | Async embedding index for `ResearchSource` |
-| `inngest/index.ts` | Registers all functions for `/api/inngest` |
-| `services/news/apiService.ts` | News request create, poll, public story APIs |
-| `services/chat/sendChatMessage.ts` | User message + enqueue message pipeline |
-| `services/news/newsSearchPlanning.ts` | Serp budgets from `storyCount` |
-| `services/news/normalizeArticles.ts` | Serp normalization, date filter, trading-tip filter, AI Overview weighting |
+Filters include strict request-date matching, trading-recommendation exclusion, and **YouTube as supporting evidence only** (primary article required at persist).
 
 ---
 
-## Data Model
+## Chat pipeline architecture
+
+Three related workflows:
+
+### 1. Message chat research (general + deep-dive follow-ups)
+
+**Event:** `chat/message.research.requested`  
+**Function:** `messageChatPipelineFunction` (`inngest/chatPipeline.ts`)  
+**Producer:** `POST /api/chat/[chatSessionId]` (`sendChatMessage.ts`)  
+**Idempotency:** `event.data.chatMessageId`; skips if assistant reply already exists  
+
+Flow:
+
+1. Load session/messages; optional **auto-rename** session title from first user message.
+2. **Determiner** (`smallDeterminerAgent`): guardrails → query enhancer (skipped when `isFromNewsStory`) → plan vector / Serp / Firecrawl / story creation.
+3. Parallel branches: **vector** (`searchSimilarChatResourceIds`), **Serp** (+ AI Overview where configured), **YouTube** evidence.
+4. **Article synthesizer** (chat) + preload existing session sources.
+5. Dedupe candidates → Firecrawl → **clean** → save **`ResearchSource`** (bounded concurrency).
+6. If **`shouldCreateStory`** and **not** `isFromNewsStory`: create pending user story + emit **`chat/story.research.requested`** with **prepared context** (no second guardrails/enhancer pass); short assistant “writing your story” message.
+7. Else: **ChatModel** → save assistant `ChatMessage` → completion notification.
+
+### 2. Deep-dive first turn
+
+**Event:** `chat/pipeline.requested`  
+**Function:** `chatPipelineFunction` in `inngest/newsNewchatPipeline.ts`  
+**Producer:** `POST /api/newsStoryChat`  
+
+Builds research prompt from **`NewsStory` + `NewsSource`** (`newsNewChatAgent`); determiner with `isNewsStory: true`; Serp → article pick → Firecrawl → **`ResearchSource`** inserts; **no** pgvector reuse; **no** content cleaner on scrape today. Answer via **ChatModel**. Follow-ups use message chat pipeline.
+
+### 3. Chat story pipeline (one user story)
+
+**Event:** `chat/story.research.requested`  
+**Function:** `chatStoryPipelineFunction` (`inngest/chatstoryPipeline.ts`)  
+**Producer:** message chat pipeline after `createPendingChatNewsStory`  
+
+Reuses **prepared** Serp hits, YouTube evidence, selected articles, and session research from the message pipeline. Runs **chat story research gap agent** for optional extra Serp/Firecrawl only when needed → **NewsSynthesizer** with `targetStoryCount: 1` → updates same `NewsStory` + `NewsSource` rows → completion notification. Does **not** re-run guardrails or query enhancer.
+
+**Distinction:** Message chat optimizes for **answers** (and triggers story jobs); chat story pipeline optimizes for **one synthesized NewsStory** using evidence already paid for in the prior step.
+
+---
+
+## Agent architecture
+
+Models resolve via `lib/openAiModel.ts` (env overrides per agent, else `OPENAI_MODEL`, else `gpt-4o-mini`). News synthesizer defaults include `NEWS_SYNTHESIZER_MODEL` / `gpt-5.4-mini` where configured.
+
+| Agent | Input | Responsibility | Output | Used in |
+|-------|--------|----------------|--------|---------|
+| **Search planner** | News generation config | Build Serp execution plans only | Query plans | News pipeline planning |
+| **GAI Overview search generator** | Serp overview payload | Extra news-tab queries | Search strings | News + chat Serp helpers |
+| **Research article selector** | Normalized candidates | Pick URLs to scrape | URL list | News pipeline; via chat article synthesizer |
+| **News content cleaner** | Raw markdown | Strip nav/ads; validate article | Clean text | News + message chat (not deep-dive first turn) |
+| **News synthesizer** | Articles + YouTube facts | Cluster into stories | Story drafts | News pipeline; chat story pipeline |
+| **YouTube video / transcript / synthesize agents** | YouTube Serp | Select videos, transcripts, facts | Structured evidence | News pipeline; chat YouTube branch |
+| **Guardrails** | User prompt | Block unsafe/off-topic patterns | Allow/block | Determiner (all chat paths) |
+| **Query enhancer** | Prompt + context | Sharpen research query | Enhanced prompt | Determiner (non–deep-dive flag) |
+| **Small determiner** | Prompt, session flags | Choose tools, vector, story creation | Tool plan | All chat pipelines |
+| **Article synthesizer (chat)** | Serp hits | Rank/limit URLs for chat | Selected articles | Chat pipelines |
+| **Chat model** | Prompt + evidence + history | Markdown answer | Assistant text | Message chat, deep dive |
+| **News new chat agent** | Story + sources | Long research brief | Prompt text | Deep-dive pipeline |
+| **Chat story research gap agent** | Prepared evidence counts | Optional extra Serp/scrape | Gap plan | Chat story pipeline |
+| **Research source description** | Research source body | Short description for embedding | Text + vector enqueue | Index pipeline |
+| **Chat message summarizer vector** | Message content | Memory summary for embedding | Text | Message index pipeline |
+| **Chat session title agent** | First user message | Session title | Title string | Message chat auto-rename |
+| **Quick action / try these** | Session context | UI suggestion strings | JSON suggestions | Chat UI API routes |
+| **Relevance agent** | — | — | — | **Not imported by pipelines** (experimental/unused) |
+
+---
+
+## Data / database architecture
 
 Schema: `db/schema/schema.prisma`.
 
-### Entity roles
-
 | Model | Role |
 |-------|------|
-| **User** | Clerk-synced identity; owns requests, chats, votes, saved story IDs |
-| **NewsRequest** | User briefing job: config JSON, status, loading logs |
-| **NewsStory** | Synthesized story for a successful request (Markdown `content`) |
-| **NewsSource** | Evidence row per story (URL, scraped/cleaned content, transcript, image) |
-| **ResearchSource** | Chat-session evidence (scraped content; optional `description` for vectors) |
-| **ChatSession** | Thread; optional link to `NewsStory` (`isFromNewsStory`) |
+| **User** | Clerk-linked identity; owns requests, chats, votes, notifications, owned stories; **`saved_stories`** UUID[] for bookmarks |
+| **NewsRequest** | Briefing job config, `loadingLogs`, `status`, planned `searchQuery` |
+| **NewsStory** | Synthesized story (`summary`, `content`, votes, `imageUrl`); system vs user-created; **`publishStatus`** |
+| **NewsSource** | Evidence for a story (URL, scraped/cleaned content, transcript, type) |
+| **ResearchSource** | Chat-session evidence (full `content`; optional `description` for vectors) |
+| **ChatSession** | Thread; optional `newsStoryId` link; `isFromNewsStory`; `isBookmarked` |
 | **ChatMessage** | User/agent turns |
-| **ChatResourceEmbedding** | pgvector row keyed by `ResearchSource.id` (`chat_resource_id`) |
-| **NewsStoryVote** | Per-user up/down on published stories |
-| **Script** | Schema only (podcast/script artifact)—not wired in app code found |
-| **Notification** | Schema + repository—no API/pipeline integration found |
+| **ChatResourceEmbedding** | pgvector row keyed by `ResearchSource.id` |
+| **ChatMessageEmbedding** | pgvector row keyed by `ChatMessage.id` |
+| **NewsStoryVote** | Per-user up/down |
+| **Notification** | In-app alerts with optional `dedupeKey` |
+| **Script** | Schema + relations only—**no API or UI** located |
 
-### Key fields
+**Conversation data:** `ChatSession`, `ChatMessage`, optional message embeddings (memory—not cited as story evidence).
 
-- **NewsRequest**: `date`, `scope`, `location`, `categories[]`, `customQuery`, `storyCount`, `searchQuery` (planned Serp queries), `loadingLogs[]`, `status`.
-- **NewsStory**: `slug`, `summary`, `content`, `category`, `newsSourceIds[]`, `imageUrl`, vote counters.
-- **ChatSession**: `newsSourceId[]` (subset of story sources for deep dive), `isFromNewsStory`.
+**Research / evidence:** `ResearchSource` (+ embeddings) for chat; `NewsSource` for published story citations.
 
-### ER diagram (simplified)
+**Published / briefing story data:** `NewsStory` + `NewsSource`, tied to `NewsRequest` and/or chat origin fields (`chatSessionId`, `ownerId`).
 
 ```mermaid
 erDiagram
   User ||--o{ NewsRequest : owns
   User ||--o{ ChatSession : owns
+  User ||--o{ NewsStory : owns_user_stories
   User ||--o{ NewsStoryVote : casts
+  User ||--o{ Notification : receives
   NewsRequest ||--o{ NewsStory : produces
   NewsStory ||--o{ NewsSource : cites
-  NewsStory ||--o{ ChatSession : deep_dive
+  NewsStory ||--o{ ChatSession : deep_dive_link
+  ChatSession ||--o{ NewsStory : chat_origin
   ChatSession ||--o{ ChatMessage : contains
   ChatSession ||--o{ ResearchSource : accumulates
   ResearchSource ||--o| ChatResourceEmbedding : indexed_as
-  User ||--o{ Notification : receives
+  ChatMessage ||--o| ChatMessageEmbedding : memory_index
 ```
 
-### Data flow summary
-
-1. **Briefing**: `NewsRequest` → pipeline → many `NewsStory` + `NewsSource`.
-2. **Deep dive**: `ChatSession` + first user message → `ResearchSource` rows + agent reply.
-3. **Follow-up chat**: same session → more `ResearchSource` + embeddings → later turns may skip Serp via vector + determiner.
+Public visibility: `services/news/newsStoryAccess.ts` — system stories from **successful** requests, or user stories with **`publishStatus: published`**. Draft user stories are owner-only.
 
 ---
 
-## News Pipeline
+## Vector / semantic search
 
-**Event:** `news/pipeline.requested`  
-**Function:** `newsPipelineFunction` (`inngest/newsPipeline.ts`)  
-**Timeout:** 45 minutes  
-**Trigger payload:** `{ userId, newsRequestId, date, scope, location, categories, customQuery, storyCount, language, sources, serpHl, ... }` (merged with persisted request)
+| Aspect | Research sources | Chat messages |
+|--------|------------------|---------------|
+| **Stored in** | `chat_resource_embeddings` | `chat_message_embeddings` |
+| **Vector** | `vector(1536)` | `vector(1536)` |
+| **Model** | `text-embedding-3-small` via `AIClient.embedText` | Same |
+| **Text embedded** | LLM **description** of each `ResearchSource` | Summarized turn text from **chatMessageSummarizerVectorAgent** |
+| **When** | After `ResearchSource` insert → `research/source.index.requested` | After `ChatMessage` insert → `chat/message.index.requested` |
+| **Query** | `searchSimilarChatResourceIds` scoped to session | `searchSimilarChatMessageIds` in repository |
+| **Used in live chat** | **Yes**—message chat pipeline (top **8**, min similarity **0.72**) | **No**—indexer runs; similarity search **not** called from `chatPipeline.ts` today |
 
-### Lifecycle
+Embeddings support **reuse of prior chat evidence**, not replacement of fresh Serp when the determiner requests tools.
 
+---
+
+## Engineering & Design
+
+### Separation of concerns
+
+- **Search** (Serp helpers, normalization) is separate from **scraping** (Firecrawl) and **cleaning** (dedicated agent).
+- **Research persistence** (`ResearchSource`, `NewsSource`) is separate from **synthesis** (synthesizer / chat model).
+- **Briefing** (`newsPipeline`) and **chat** (`chatPipeline`, `newsNewchatPipeline`, `chatstoryPipeline`) share utilities but use different budgets and outputs.
+
+### Background processing
+
+Research exceeds HTTP timeouts (30–45m). API routes persist intent and enqueue Inngest; steps checkpoint progress and retry on failure.
+
+### Idempotency
+
+- Message chat: skip if assistant message already exists for user message; Inngest idempotency on `chatMessageId`.
+- Chat story pipeline: idempotency on `storyId`; skip if story no longer in “generating” placeholder state.
+- Notifications: `dedupeKey` + unique constraint on `(userId, dedupeKey)`.
+
+### Deduplication
+
+Canonical URL keys (`canonicalResearchUrl`, session dedupe before Firecrawl/insert); merge helpers for chat model context.
+
+### Evidence handling
+
+Stories store synthesized markdown; sources store scraped/cleaned text separately. Chat research accumulates **`ResearchSource`** rows per session for reuse and audit.
+
+### Reuse
+
+Shared Firecrawl helper, Serp normalization, content cleaner, synthesizer, and notification helpers across pipelines. Chat story pipeline consumes **prepared** payload from message chat to avoid repeating Serp/Firecrawl work.
+
+### Cost control
+
+- Determiner limits Serp tool calls and direct Firecrawl URLs (caps in agent/service code).
+- Vector branch skips Serp when similarity hits suffice (`useExistingResearch`).
+- Search planning clamps Serp/scrape budgets from `storyCount`.
+- Chat story gap agent adds Serp/scrape **only when** gap analysis requests it.
+- Bounded concurrency (e.g. **4**) on `ResearchSource` inserts.
+
+---
+
+## Story architecture
+
+Single **`NewsStory`** model for both system briefings and chat-origin stories.
+
+| | System story | User-created story |
+|--|--------------|-------------------|
+| **`isUserCreated`** | `false` | `true` |
+| **Origin** | `newsRequestId` from briefing | `chatSessionId`, `ownerId` |
+| **`publishStatus`** | Default **`published`** when persisted from briefing | Starts **`draft`**; owner publishes |
+| **Public feed** | When parent `NewsRequest.status = success` | When **`published`** |
+| **Generating state** | N/A | Placeholder slug/title until chat story pipeline completes; `generationError` on failure |
+
+Owner APIs: `PATCH /api/news/stories/[storyId]`, `POST/DELETE .../publish`. UI: edit sheet, publish/move to draft, “My stories” vs community list.
+
+System stories behave as before (votes, save/bookmark, deep dive). Published user stories behave like public stories for readers; **only the owner** edits or changes publish state.
+
+---
+
+## Deep dive architecture
+
+1. User opens a **publicly accessible** story (`canViewerAccessNewsStoryPage`).
+2. `POST /api/newsStoryChat` with `newsStoryId` and optional `researchRequest`.
+3. Service creates **`ChatSession`** (`isFromNewsStory: true`, `newsStoryId`, selected source IDs), user message, enqueues **`chat/pipeline.requested`**.
+
+**Context supplied:** full story fields, chosen **`NewsSource`** rows, user research text (or default research request), then Serp/scraped **`ResearchSource`** rows and chat history on follow-ups.
+
+Deep dive is **not** limited to story owners—any viewer who can see the story may start research on it. **Draft** user stories remain owner-only and are not publicly deep-divable.
+
+After the first turn, **`chat/message.research.requested`** applies (vectors, cleaning, determiner rules for story-anchored sessions).
+
+---
+
+## Setup
+
+### Prerequisites
+
+- **Node.js** compatible with `@types/node` **20** and Next 16 (LTS Node 20+ recommended).
+- **pnpm** **10.20.0** (see `packageManager` in `package.json`).
+- **Docker** (recommended) for PostgreSQL with pgvector, or another Postgres 16+ instance with `vector` extension.
+- Accounts/keys: **Clerk**, **OpenAI**, **SerpAPI**, **Firecrawl**, **Inngest** (dev mode supported locally).
+
+### Clone
+
+```bash
+git clone https://github.com/learner-enthusiast/puja-planner-.git
+cd my-app
 ```
-NewsRequest (pending)
-  → plan-search-queries (buildNewsSearchExecutionPlans)
-  → save-search-queries
-  → fetch-and-normalize-serp (parallel engines per tier)
-  → [parallel] YouTube branch  |  Article branch
-  → synthesize-stories
-  → persist-stories-and-sources
-  → mark-request-success
+
+(Remote from `git remote -v` on this workspace; rename directory if your clone path differs.)
+
+### Install dependencies
+
+```bash
+pnpm install
 ```
 
-### Stage reference
+### Environment variables
 
-| Stage | Input | Output | Parallelism | Failure behavior |
-|-------|--------|--------|-------------|------------------|
-| **load-news-request** | IDs | Config + row | — | Throws if not found |
-| **plan-search-queries** | `NewsGenerationConfig` | Execution plans (local/world tiers) | — | — |
-| **save-search-queries** | Plans | Updates `searchQuery` JSON | — | — |
-| **fetch-and-normalize-serp** | Plans | Normalized article links + YouTube Serp payload | `Promise.all` across engines/plans | Continues with partial Serp; AI Overview follow-ups optional |
-| **select-youtube-videos** … **synthesize-youtube-transcript-facts** | YouTube Serp | Structured YouTube evidence for synthesizer | YouTube branch sequential steps | YouTube optional; stories still require **primary article** sources |
-| **select-articles** | Normalized hits | URLs for scrape (`ResearchArticleSelectorAgent`) | Runs **parallel** with YouTube branch | — |
-| **scrape-selected-articles** | URLs | Cleaned markdown per URL | Firecrawl parallel; **cleaner parallel** per page | Drops failed scrape, invalid cleaner result, trading-tip pages |
-| **synthesize-stories** | Articles + YouTube evidence | Story drafts (`NewsSynthesizerAgent`) | After both branches | Model: `NEWS_SYNTHESIZER_MODEL` or `gpt-5.4-mini` |
-| **persist-stories-and-sources** | Drafts | DB rows | Sequential story creates | Skips stories without primary article source |
-| **mark-request-failed** | Error | `status=failed` | — | On any thrown error in try block |
+Copy `.env.example` to `.env`. Never commit secrets.
 
-### Filters and constraints (implemented)
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Yes | Clerk browser SDK |
+| `CLERK_SECRET_KEY` | Yes | Clerk server API |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Yes | Sign-in route (default `/sign-in`) |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Yes | Sign-up route |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL` | Yes | Post sign-in redirect |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` | Yes | Post sign-up redirect |
+| `DATABASE_URL` | Yes | PostgreSQL connection (see Docker port **5434**) |
+| `DB_URL` | No | Alternate name read by `prisma.config.ts` |
+| `OPENAI_API_KEY` | Yes | LLM + embeddings |
+| `OPENAI_MODEL` | No | Default model (else `gpt-4o-mini`) |
+| `OPENAI_BASE_URL` | No | Custom OpenAI endpoint |
+| `OPENAI_PROJECT_ID` | No | OpenAI project scoping |
+| `DETERMINER_MODEL`, `GUARDRAIL_MODEL`, `CHAT_MODEL`, `QUERY_ENHANCER_MODEL`, `NEWS_SYNTHESIZER_MODEL`, `NEWS_NEW_CHAT_MODEL`, etc. | No | Per-agent overrides (see `.env.example`) |
+| `AI_GATEWAY_API_KEY`, `AI_MODEL` | No | Optional Vercel AI SDK gateway |
+| `FIRECRAWL_API_KEY` | Yes | Scraping |
+| `SERPAPI_API_KEY` | Yes | Search |
+| `SERPAPI_TIMEOUT_MS` | No | Serp client timeout if set in code |
+| `INNGEST_DEV` | Dev | Set `1` for local dev server |
+| `INNGEST_APP_ID` | Deploy | Inngest app id |
+| `INNGEST_EVENT_KEY` | Deploy | Inngest event key |
 
-- **Date window**: `filterArticlesNearRequestDate` — strict match to request calendar day, with previous-day evening UTC exception (`articlePublishedMatchesRequestDate`).
-- **Trading recommendations**: excluded at normalize/select/scrape/synthesizer fallback (`isTradingRecommendationArticle`).
-- **AI Overview follow-up**: generator agent → extra Google Search (news tab) queries; hits tagged with `selectionWeight` **1.4** (`AI_OVERVIEW_FOLLOW_UP_SELECTION_WEIGHT`).
-- **YouTube**: supporting evidence only; `storyHasPrimaryArticleSource` enforced at persist.
+### Database
 
-### `storyCount` scaling (`services/news/newsSearchPlanning.ts`)
-
-| Function | Formula (clamped) |
-|----------|-------------------|
-| `serpResultsPerEngine(n)` | `min(30, max(15, n * 3))` |
-| `articleCandidateBudget(n)` | `min(40, max(15, n * 5))` |
-| `maxArticlesToScrape(n)` | `min(20, max(n + 2, n * 2))` |
-
-Synthesizer targets up to **`storyCount`** stories.
-
----
-
-## Chat Research Pipeline
-
-**Event:** `chat/message.research.requested`  
-**Function:** `messageChatPipelineFunction` (`inngest/chatPipeline.ts`)  
-**Idempotency:** `event.data.chatMessageId`  
-**Timeout:** 30 minutes  
-
-**Purpose:** Answer **one user message** in an existing session using **guardrails**, optional **query enhancement**, **pgvector reuse**, **fresh Serp** (with AI Overview follow-ups where applicable), **YouTube evidence**, Firecrawl, **content cleaning**, and **ChatModel**.
-
-### Why it differs from the News Pipeline
-
-| Dimension | News pipeline | Message chat pipeline |
-|-----------|---------------|------------------------|
-| Goal | Discover & cluster many stories | Answer one question quickly |
-| Search breadth | Multi-tier, multi-engine, large budgets | Determiner-chosen Serp calls only |
-| Vector reuse | No | Yes (`searchSimilarChatResourceIds`, limit 8, min similarity **0.72**) |
-| Query enhancer | N/A | Yes (skipped when `isNewsStory` on deep-dive sessions for follow-ups—see determiner) |
-| Article pick | `ResearchArticleSelectorAgent` + news prompts | `ArticleSynthesizerAgent` (`topPercent: 40`, `maxArticles: 6`) |
-| Output | `NewsStory` | `ChatMessage` + `ResearchSource` |
-| Cleaning | Yes | Yes (`runNewsContentCleanerAgent` after Firecrawl) |
-
-### Flow
-
-```
-check-existing-assistant-reply (idempotent skip)
-  → fetch-chat-context ∥ count-research-embeddings
-  → run-determiner (guardrails → enhancer → Serp/firecrawl URL plan)
-  → [parallel] vector-research-branch | serp-research-branch | youtube-research-branch
-  → run-article-synthesizer ∥ preload-session-research-sources
-  → dedupe-research-candidates
-  → firecrawl-and-save-research (clean + bounded concurrent inserts, concurrency 4)
-  → generate-assistant-reply (ChatModel)
-  → save-assistant-message
+```bash
+docker compose up -d
+pnpm db:migrate
+pnpm db:generate
 ```
 
-### Determiner outputs (`smallDeterminerAgent`)
+Postgres listens on **localhost:5434** (`docker-compose.yml`). Extension `vector` is created via `docker/postgres/init.sql`.
 
-- `useExistingResearch` + `existingResearchQuery` (semantic query against embeddings)
-- `useTools` + validated Serp tool calls
-- `firecrawlUrls` (direct URLs, capped—see `MAX_DETERMINER_FIRECRAWL_URLS`)
-- Guardrail block → short agent refusal message step
+### Development server
 
----
+Terminal 1:
 
-## News Story Deep Dive
-
-**Event:** `chat/pipeline.requested`  
-**Function:** `chatPipelineFunction` in `inngest/newsNewchatPipeline.ts` (exported name collides with generic “chat pipeline”—this is the **deep-dive** handler)
-
-**Payload:** `{ userId, chatSessionId, userMessageId }`
-
-### Starting a deep dive
-
-1. Client calls `POST /api/newsStoryChat` with `{ newsStoryId, researchRequest? }`.
-2. Service creates `ChatSession` (`isFromNewsStory: true`, `newsStoryId`, selected `newsSourceId[]`), user message, enqueues `chat/pipeline.requested`.
-
-### Research prompt
-
-- **`build-research-prompt`**: loads `NewsStory` + `NewsSource` rows; `runNewsNewChatAgent` builds a long research brief (default `DEFAULT_NEWS_RESEARCH_REQUEST` if user text empty).
-
-### Evidence collection
-
-- **Determiner** runs with `isNewsStory: true` (skips query enhancer path inside agent).
-- Serp → `ArticleSynthesizerAgent` (40% / 6 max) → batch Firecrawl → **`ResearchSource` inserts** (concurrency 4).
-- **Does not** run pgvector reuse on this pipeline.
-- **Does not** run `NewsContentCleanerAgent` on scraped markdown today (raw/truncated Firecrawl text stored, fallback to title).
-
-### Answer
-
-- `runChatModelAgent` with research prompt, Serp hits, scraped sources, recent chat history (optimized single history fetch).
-- Persists agent `ChatMessage`.
-
-Follow-up turns on the same session use **`chat/message.research.requested`** (full chat pipeline with vectors + cleaning).
-
----
-
-## AI / Agent Architecture
-
-Models resolve via `lib/openAiModel.ts`: override → agent env var → `OPENAI_MODEL` → `gpt-4o-mini`.
-
-| Agent | File | Called from | Must NOT |
-|-------|------|-------------|----------|
-| **Search planner** | `Agents/news/searchPlanner.ts` | News search planning | Execute Serp (planning only) |
-| **Research article selector** | `Agents/news/ResearchArticleSelectorAgent.ts` | News pipeline, `ArticleSynthesizerAgent` | Write final stories/answers |
-| **News content cleaner** | `Agents/news/NewsContentCleanerAgent.ts` | News + message chat pipelines | Summarize, invent facts, merge articles |
-| **News synthesizer** | `Agents/news/NewsSythesizeragent.ts` | News pipeline | Replace need for article sources with YouTube-only stories |
-| **GAI Overview search generator** | `Agents/news/GAIOverviewSearchGeneratorAgents.ts` | News pipeline (and chat Serp helper) | — |
-| **YouTube video selector** | `Agents/news/YoutubeVideoAgent.ts` | `services/news/youtubeResearch.ts` | — |
-| **YouTube transcript analyzer** | `Agents/news/YoutubeTranscriptAgent.ts` | YouTube branch | — |
-| **YouTube transcript synthesize** | `Agents/news/YoutubeTranscriptSyntesizeAgent.ts` | YouTube branch | — |
-| **Stock guardrails** | `Agents/chat/guardrails.ts` | Determiner | Answer research questions |
-| **Query enhancer** | `Agents/chat/queryEnhancerAgent.ts` | Determiner (non–news-story flag) | — |
-| **Small determiner** | `Agents/chat/smallDeterminerAgent.ts` | All chat pipelines | — |
-| **Article synthesizer (chat)** | `Agents/chat/ArticleSythesizerAgent.ts` | Chat pipelines | — |
-| **Chat model** | `Agents/chat/chatModel.ts` | Chat + deep dive | — |
-| **News new chat agent** | `Agents/chat/newsNewChatAgent.ts` | Deep-dive prompt build | — |
-| **Research source description** | `Agents/chat/researchSourceDescriptionAgent.ts` | Index pipeline | — |
-| **Quick action / try these** | `Agents/chat/UIChatAgents/*` | UI suggestion API routes | Browse web |
-| **Relevance agent** | `Agents/chat/relevanceAgent.ts` | *(unused in pipelines)* | — |
-
----
-
-## Search Architecture
-
-Implementation hub: `SERP/index.ts` + `services/news/normalizeArticles.ts` + chat helpers in `services/chat/chatSerpResearch.ts` / `chatSerpWithAiOverview.ts`.
-
-| Mechanism | Use |
-|-----------|-----|
-| **Google News** | Briefing discovery per tier |
-| **Google Search (`tbm: nws`)** | Web news tab results |
-| **YouTube search** | Candidate videos; transcripts in news pipeline |
-| **AI Overview** | Detected in Serp payload → follow-up query generation → extra searches |
-| **Location** | Serp `location` / `gl` / `hl` from request config |
-| **Categories** | Keyword expansion (`NEWS_CATEGORY_KEYWORDS`), combined into queries—not one API call per category |
-| **Deduplication** | Canonical URL keys (`canonicalResearchUrl`, session dedupe helpers) |
-| **Direct URLs** | Determiner `firecrawlUrls` merged via `mergeDirectFirecrawlTargets` |
-
-Multiple mechanisms exist because **news discovery** needs breadth, while **chat** needs targeted evidence and optional overview expansion without rerunning an entire briefing plan.
-
----
-
-## Vector Search
-
-| Item | Value |
-|------|--------|
-| **Stored in** | `chat_resource_embeddings` (vector only; text on `research_sources.description`) |
-| **Vector** | `vector(1536)` |
-| **Embedding model** | `text-embedding-3-small` (via `AIClient.embedText`) |
-| **Text embedded** | LLM-generated **description** of each `ResearchSource` (not full raw HTML) |
-| **When** | Async after `createResearchSource` → `research/source.index.requested` |
-| **Query** | `searchSimilarChatResourceIds` with session scope |
-| **Limits** | Top **8**, min similarity **0.72** (message chat pipeline constants) |
-| **Combined with fresh Serp** | Determiner sets `useExistingResearch`; branches run in parallel; ChatModel merges vector rows + new scrapes |
-
----
-
-## Firecrawl
-
-- **When**: After URL selection (news scrape step; chat `firecrawl-and-save-research`; deep dive `scrape-and-persist-sources`).
-- **Batching**: `scrapeUrlsWithFirecrawl` → `Promise.all` over URLs; failed URL → `null`, caller falls back (e.g. title-only).
-- **News pipeline**: raw markdown passed to **cleaner** before synthesizer.
-- **Chat pipeline**: clean before `ResearchSource` insert; triggers embedding enqueue.
-- **Dedupe**: Session URL keys before insert; fresh re-fetch before scrape on chat path to avoid races.
-
----
-
-## Content Cleaning
-
-`NewsContentCleanerAgent`: strips ads, nav, promos, related-articles modules, etc.; outputs `{ cleanedContent, isValidArticle }`.
-
-**Must NOT** (enforced in prompt/schema intent): invent facts, rewrite to match requested date/location, merge multiple articles, replace synthesis step.
-
-Invalid articles are dropped from news scrape results; chat pipeline skips or falls back per step logic.
-
----
-
-## YouTube Research
-
-**News pipeline (heavy):** Serp YouTube → select videos → fetch transcripts → analyze → synthesize facts → fed into `NewsSynthesizerAgent` as supporting rows; transcripts also stored on `NewsSource.transcript` when linked.
-
-**Message chat (lightweight):** `fetchChatYoutubeEvidence` in parallel with Serp/vector branches; stored as research context for ChatModel—not full briefing clustering.
-
----
-
-## Inngest Architecture
-
-| Function ID | Event | Input | Idempotency / notes |
-|-------------|-------|-------|---------------------|
-| `news-pipeline` | `news/pipeline.requested` | `userId`, `newsRequestId`, generation fields | Failure → `mark-request-failed` + rethrow (Inngest retry) |
-| `chat-pipeline` | `chat/pipeline.requested` | `userId`, `chatSessionId`, `userMessageId` | Deep dive first turn |
-| `message-chat-research-pipeline` | `chat/message.research.requested` | `chatSessionId`, `chatMessageId` | **Idempotent** on `chatMessageId`; skips if assistant reply exists |
-| `research-source-description-index` | `research/source.index.requested` | `researchSourceId`, `chatSessionId` | Fire-and-forget from repository |
-
-**Why Inngest:** Research runs exceed HTTP timeouts (30–45m), require retries, parallel steps, and durable checkpoints— impractical inside a single API request.
-
-**Local dev:** `pnpm inngest:dev` (points at `http://localhost:3000/api/inngest`).
-
----
-
-## Performance / Concurrency
-
-- News: parallel Serp engines; **YouTube ∥ article** branches after normalize; parallel Firecrawl; parallel cleaner calls.
-- Message chat: vector ∥ Serp ∥ YouTube; synthesizer ∥ preload sources; bounded **4** concurrent `ResearchSource` inserts.
-- Deep dive: parallel session/message load; synthesizer ∥ preload existing sources; same insert concurrency pattern.
-- Chat pipelines record **`durationMs`** on major steps (deep-dive file).
-
----
-
-## Persistence / Database Flow
-
-| When | What writes |
-|------|-------------|
-| `POST /api/news` | `NewsRequest` + Inngest event |
-| News pipeline success | `NewsStory`, `NewsSource`, request `success` |
-| News pipeline failure | request `failed`, error string |
-| Chat user send | `ChatMessage` (user) + Inngest event |
-| Chat pipeline success | `ResearchSource`(s), `ChatMessage` (agent) |
-| `createResearchSource` | Row insert + enqueue index event |
-| Index pipeline | `ResearchSource.description`, `ChatResourceEmbedding` |
-| Vote API | `NewsStoryVote` + counter updates (via service) |
-| Save story API | `users.saved_stories` array update |
-
-**Notifications:** repository supports CRUD; **no pipeline hook** found.
-
----
-
-## Notifications
-
-**Not implemented end-to-end.** The `Notification` model and `repositories/notification.ts` exist, but there are no `app/api` routes referencing them and no `createNotification` calls from Inngest handlers in this repo. Do not expect in-app notifications until wired.
-
----
-
-## Authentication and Authorization
-
-- **Clerk** middleware on app + API routes (`proxy.ts`).
-- **`getAuthenticatedUser` / `requireAuthenticatedUser`** upsert Clerk user to `users` via `upsertUserFromClerk`.
-- Resources scoped by `userId` in repositories (`getNewsRequestByIdForUser`, `getChatSessionByIdForUser`, etc.).
-- Public read: published stories (`newsRequest.status = success`) for `/newsStory` feed and story pages; votes/saves require auth.
-
----
-
-## API / Application Flow
-
-| Method | Route | Auth | Purpose |
-|--------|-------|------|---------|
-| POST | `/api/news` | Yes | Create briefing → `news/pipeline.requested` |
-| GET | `/api/news` | Yes | Recent requests |
-| GET/POST | `/api/news/[newsId]` | Yes | Poll/retry request |
-| GET | `/api/news/stories` | Optional viewer | Paginated public stories |
-| GET | `/api/news/stories/[storyId]` | Optional | Story page payload |
-| GET/POST/DELETE | `/api/news/stories/[storyId]/vote` | Yes | Vote |
-| GET/POST/DELETE | `/api/news/stories/[storyId]/save` | Yes | Saved stories list |
-| GET | `/api/news/stories/saved` | Yes | Paginated saved feed |
-| GET | `/api/news/trending` | Public | Landing trending |
-| POST | `/api/newsStoryChat` | Yes | Start deep dive → `chat/pipeline.requested` |
-| GET | `/api/newsStoryChat` | Yes | List chat sessions |
-| POST | `/api/chat` | Yes | New general chat session |
-| POST | `/api/chat/[chatSessionId]` | Yes | Send message → `chat/message.research.requested` |
-| GET | `/api/chat/quickactions/[chatSessionId]` | Yes | Quick action suggestions |
-| GET | `/api/chat/trythesequestion/[chatSessionId]` | Yes | Suggested questions |
-| GET | `/api/me` | Yes | Current user |
-| * | `/api/inngest` | Inngest | Workflow serve |
-
----
-
-## Frontend
-
-| Route | Experience |
-|-------|------------|
-| `/` | Landing (signed out) or dashboard (signed in) |
-| `/news` | Create briefing (categories, country autocomplete, story count) |
-| `/news/[newsId]` | Poll progress, story cards, deep dive, save/vote |
-| `/newsStory` | Community story list |
-| `/newsStory/saved` | Saved stories (auth) |
-| `/newsStory/[storyId]` | Story detail + deep dive entry |
-| `/chat`, `/chat/[chatSessionId]` | Research chat UI |
-| `/sign-in`, `/sign-up` | Clerk |
-
-Polling: `useNewsRequestPolling` drives briefing UI from `/api/news/[newsId]`. Chat waits on pipeline-completed messages in session.
-
----
-
-## Environment Variables
-
-See `.env.example`. Names only:
-
-| Variable | Purpose |
-|----------|---------|
-| `NEXT_PUBLIC_CLERK_*`, `CLERK_SECRET_KEY` | Clerk auth URLs and secret |
-| `DATABASE_URL` / `DB_URL` | PostgreSQL connection |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_PROJECT_ID` | OpenAI client |
-| `DETERMINER_MODEL`, `GUARDRAIL_MODEL`, `CHAT_MODEL`, `QUERY_ENHANCER_MODEL`, `NEWS_SYNTHESIZER_MODEL`, `NEWS_NEW_CHAT_MODEL`, `NEWS_CONTENT_CLEANER_MODEL`, `RESEARCH_ARTICLE_SELECTOR_MODEL`, … | Per-agent overrides |
-| `FIRECRAWL_API_KEY` | Firecrawl |
-| `SERPAPI_API_KEY`, `SERPAPI_TIMEOUT_MS` | SerpAPI |
-| `INNGEST_DEV`, `INNGEST_APP_ID`, `INNGEST_EVENT_KEY` | Inngest |
-| `AI_GATEWAY_API_KEY`, `AI_MODEL` | Optional AI SDK gateway |
-
-Never commit secrets.
-
----
-
-## Running Locally
-
-1. **Clone** the repository.
-2. **Install:** `pnpm install` (packageManager: pnpm@10.20.0).
-3. **Env:** copy `.env.example` → `.env` and fill required keys.
-4. **Database:** `docker compose up -d` (Postgres **5434**, pgvector enabled via `docker/postgres/init.sql`).
-5. **Migrate:** `pnpm db:migrate` (schema in `db/schema/migrations/`).
-6. **Generate client:** `pnpm db:generate` (also runs on `postinstall` / `pnpm dev`).
-7. **App:** `pnpm dev` (runs `prisma generate && next dev`).
-8. **Inngest:** in another terminal, `pnpm inngest:dev`.
-
-Optional tests: `pnpm test:news-generation`, `pnpm test:guardrails`, etc. (see `package.json`).
-
----
-
-## Development Workflow
-
-1. **New agent:** add under `Agents/`, Zod schemas, use `createAIClient` / `aiClient`, wire from a pipeline `step.run` or service.
-2. **New pipeline step:** add `step.run("name", ...)` in the relevant `inngest/*.ts` file; keep side effects inside steps.
-3. **New Inngest function:** define in `inngest/`, export from `inngest/index.ts`, register in `inngestFunctions`.
-4. **Schema change:** edit `db/schema/schema.prisma`, `pnpm db:migrate`, fix repositories/services.
-5. **New API route:** `app/api/.../route.ts`, call services, enqueue Inngest with `inngest.send`.
-6. **Test pipeline:** run app + Inngest dev, trigger via UI or send event through Inngest CLI/dev server.
-
----
-
-## Error Handling and Reliability
-
-- Inngest **retries** on thrown errors; message chat **skips duplicate work** if assistant message already exists.
-- Serp/Firecrawl partial failure: continue with available evidence; null scrapes fall back to titles.
-- Cleaner marks `isValidArticle: false` → row dropped (news) or skipped (chat).
-- Guardrail block → user-visible refusal message, no Serp burn.
-- News request failure: persisted `failed` status + error string; UI retry via `POST /api/news/[newsId]`.
-- Chat failure: `save-error-message` step writes agent failure text when implemented in pipeline catch paths.
-
----
-
-## Design Principles (visible in code)
-
-- **Evidence before synthesis** — scrape and clean (where enabled) before LLM story/answer.
-- **Separate briefing vs chat** — different budgets, agents, and persistence models.
-- **Parallelize independent I/O** — Serp, vector, YouTube, preload queries.
-- **Bounded concurrency** — DB inserts capped (e.g. 4) to protect the pool.
-- **Persist reusable research** — `ResearchSource` + embeddings for follow-ups.
-- **Session URL dedupe** — avoid duplicate Firecrawl/DB work.
-- **Primary article requirement** — news stories cannot be YouTube-only.
-- **Graceful degradation** — optional branches (YouTube, overview, failed URLs) do not always abort the run.
-
----
-
-## Limitations
-
-- **Deep-dive pipeline** does not run content cleaner or pgvector on the first turn.
-- **`Notification`**, **`Script`**: schema/repository only; no product UI/API integration found.
-- **`relevanceAgent`**: not connected to live pipelines.
-- **Notifications** and some UI suggestion endpoints may return errors if sessions/messages are empty—handled at API layer.
-- News date filtering is **strict** (not a ±3 day window).
-- Research pipelines depend on external API quotas (Serp, Firecrawl, OpenAI).
-
----
-
-## Future Extension Points
-
-- Wire `Notification` creation on `NewsRequest` success / chat completion.
-- Use `Script` model for podcast/script export from chat research.
-- Apply `NewsContentCleanerAgent` to deep-dive Firecrawl results.
-- Connect or remove unused `relevanceAgent`.
-- Shadow DB migrations in CI using the same ordered migration history as local.
-
----
-
-## Final Architecture Diagram
-
-```mermaid
-flowchart LR
-  subgraph Frontend
-    LP[Landing / Dashboard]
-    NP[News UI]
-    SP[Story pages]
-    CP[Chat UI]
-  end
-
-  subgraph API
-    AN[app/api/news]
-    AC[app/api/chat]
-    AS[app/api/newsStoryChat]
-  end
-
-  subgraph Inngest
-    INF[news/pipeline.requested]
-    IFC[chat/pipeline.requested]
-    IFM[chat/message.research.requested]
-    IFI[research/source.index.requested]
-  end
-
-  subgraph External
-    SERP[SerpAPI]
-    FC[Firecrawl]
-    OAI[OpenAI]
-  end
-
-  subgraph Data
-    PG[(PostgreSQL)]
-    VEC[(pgvector embeddings)]
-  end
-
-  LP --> AN
-  NP --> AN
-  SP --> AS
-  CP --> AC
-  AN --> INF
-  AS --> IFC
-  AC --> IFM
-  INF --> SERP
-  IFC --> SERP
-  IFM --> SERP
-  INF --> FC
-  IFC --> FC
-  IFM --> FC
-  INF --> OAI
-  IFC --> OAI
-  IFM --> OAI
-  IFM --> VEC
-  IFI --> OAI
-  IFI --> VEC
-  INF --> PG
-  IFC --> PG
-  IFM --> PG
-  IFI --> PG
-  PG --> SP
-  PG --> CP
+```bash
+pnpm dev
 ```
+
+Runs `prisma generate && next dev`.
+
+Terminal 2:
+
+```bash
+pnpm inngest:dev
+```
+
+Points Inngest dev server at `http://localhost:3000/api/inngest`.
+
+---
+
+## Project structure
+
+```text
+my-app/
+├── app/                    # Pages and app/api route handlers
+├── Agents/                 # LLM agents (news + chat)
+├── clients/                # AIClient, Firecrawl, Serp, Inngest
+├── components/             # UI (news/, chat/, landing/, notifications/)
+├── db/
+│   ├── schema/schema.prisma
+│   ├── schema/migrations/
+│   └── client.ts
+├── docker-compose.yml      # Postgres + pgvector (port 5434)
+├── hooks/                  # Client hooks (polling, etc.)
+├── inngest/                # Pipeline function definitions
+├── lib/                    # auth, fonts, model resolution
+├── repositories/           # Prisma access layer
+├── services/               # Business logic (news/, chat/, notifications/)
+├── SERP/                   # Serp engine helpers
+├── prisma.config.ts        # Prisma 7 config
+├── proxy.ts                # Clerk middleware
+└── package.json
+```
+
+Generated output: `db/generated/` (Prisma client). Omit `node_modules`, `.next` from mental model.
+
+---
+
+## Development workflow
+
+| Task | Command |
+|------|---------|
+| Dev server | `pnpm dev` |
+| Production build | `pnpm build` |
+| Start production | `pnpm start` |
+| Lint | `pnpm lint` |
+| Typecheck | `pnpm typecheck` |
+| Prisma generate | `pnpm db:generate` |
+| Migrate (dev) | `pnpm db:migrate` |
+| Migrate (deploy) | `pnpm db:migrate:deploy` |
+| Studio | `pnpm db:studio` |
+| Inngest dev | `pnpm inngest:dev` |
+| Tests | `pnpm test:guardrails`, `pnpm test:query-enhancer`, `pnpm test:small-determiner`, `pnpm test:news-generation`, `pnpm test:story-votes`, YouTube tests—see `package.json` |
+
+New schema changes: edit `db/schema/schema.prisma` → `pnpm db:migrate` → update repositories/services. New Inngest functions: export from `inngest/index.ts` and register in `inngestFunctions`.
+
+---
+
+## API / event architecture
+
+### Important HTTP flows
+
+| Flow | Method | Route | Effect |
+|------|--------|-------|--------|
+| Create briefing | POST | `/api/news` | `NewsRequest` + `news/pipeline.requested` |
+| Poll briefing | GET | `/api/news/[newsId]` | Status, logs, stories |
+| Public stories | GET | `/api/news/stories` | Paginated feed |
+| Story page | GET | `/api/news/stories/[storyId]` | Detail + access rules |
+| Vote | POST/DELETE | `/api/news/stories/[storyId]/vote` | Votes |
+| Bookmark story | POST/DELETE | `/api/news/stories/[storyId]/save` | Updates `users.saved_stories` |
+| My stories | GET | `/api/news/stories/saved` | User-created stories |
+| Bookmarks list | GET | `/api/news/stories/bookmarks` | Bookmarked community stories |
+| Publish draft | POST/DELETE | `/api/news/stories/[storyId]/publish` | Owner publish/unpublish |
+| Edit story | PATCH | `/api/news/stories/[storyId]` | Owner metadata/content |
+| Start deep dive | POST | `/api/newsStoryChat` | Session + `chat/pipeline.requested` |
+| New chat | POST | `/api/chat` | General session |
+| Send message | POST | `/api/chat/[chatSessionId]` | `chat/message.research.requested` |
+| Session CRUD | PATCH/DELETE | `/api/chat/[chatSessionId]` | Title, bookmark, delete |
+| Session stories | GET | `/api/chat/[chatSessionId]/stories` | Chat-origin stories |
+| Notifications | GET/PATCH | `/api/notifications/*` | List, read, read-all |
+
+### Inngest events
+
+| Event | Producer | Consumer | Purpose |
+|-------|----------|----------|---------|
+| `news/pipeline.requested` | News API service | `newsPipelineFunction` | Full briefing |
+| `chat/pipeline.requested` | `newsStoryChatService` | `chatPipelineFunction` (`newsNewchatPipeline.ts`) | Deep-dive first turn |
+| `chat/message.research.requested` | `sendChatMessage` / chat service | `messageChatPipelineFunction` | Per-message research |
+| `chat/story.research.requested` | Message chat pipeline | `chatStoryPipelineFunction` | Finish user story |
+| `research/source.index.requested` | Research source repository enqueue | `researchSourceDescriptionFunction` | Description + vector |
+| `chat/message.index.requested` | Chat message repository enqueue | `chatMessageEmbeddingFunction` | Message memory vector |
+
+---
+
+## Security / authorization
+
+- **Clerk** protects API routes via middleware; handlers call `requireAuthenticatedUser` where needed.
+- **NewsRequest**, **ChatSession**, and owner story mutations scoped by **`userId`** in repositories.
+- **Public read**: stories matching `publicNewsStoryWhere` (successful system briefings or **published** user stories).
+- **Draft user stories**: visible only when `ownerId` matches viewer.
+- **Publish / PATCH story**: owner-only services.
+- **Deep dive**: requires access to the story page (public published/system, or owner draft—not arbitrary private stories).
+
+Do not commit `.env` or API keys.
+
+---
+
+## Limitations / trade-offs
+
+- **External quotas**: SerpAPI, Firecrawl, and OpenAI usage dominate cost and failure modes.
+- **Latency**: Briefings and story generation run minutes; UI depends on polling and notifications.
+- **Deep-dive first turn**: no content cleaner and no pgvector reuse on that pipeline path.
+- **Strict date filtering** on briefing articles (not a loose date window).
+- **`Script` model**: no product API/UI yet.
+- **`relevanceAgent`**: not connected to pipelines.
+- **Chat message vectors**: indexed asynchronously; similarity retrieval not used in message chat pipeline code paths today.
+- **News stories** require a **primary article source**; YouTube-only briefing rows are skipped at persist.
+
+---
+
+## Future work
+
+Reasonable extension points visible from schema and code comments (not a committed roadmap):
+
+- Product surface for **`Script`** (podcast/script export from chat research).
+- Wire **chat message embedding** search into context assembly if conversational memory retrieval is desired.
+- Apply **NewsContentCleanerAgent** to deep-dive Firecrawl results.
+- Remove or integrate unused **`relevanceAgent`**.
+
+---
+
+## GitHub
+
+Configured remote (from `git remote -v`):
+
+- **origin:** `https://github.com/learner-enthusiast/puja-planner-.git`
+
+Package name in `package.json` is `my-app`; product name in the UI is **Newsly**.
 
 ---
 
 ## License / project meta
 
-Private application (`"private": true` in `package.json`). Refer to repository owners for deployment and licensing terms.
+`"private": true` in `package.json`. Refer to repository owners for deployment and licensing terms.
