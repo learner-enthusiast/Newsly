@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/db";
+import type { NewsStoryStatus } from "@/db/generated/client";
 
 const newsStoryIdSchema = z.uuid("id must be a uuid");
 const newsRequestIdSchema = z.uuid("newsRequestId must be a uuid");
@@ -8,7 +9,23 @@ const userIdSchema = z.string().min(1, "userId is required");
 const newsSourceIdSchema = z.uuid();
 
 const newsStoryWriteSchema = z.object({
-  newsRequestId: newsRequestIdSchema,
+  newsRequestId: newsRequestIdSchema.optional().nullable(),
+  chatSessionId: z.uuid().optional().nullable(),
+  ownerId: userIdSchema.optional().nullable(),
+  status: z
+    .enum([
+      "PENDING",
+      "READY",
+      "FAILED",
+      "DRAFT",
+      "PUBLISHED",
+      "ARCHIVED",
+    ])
+    .optional(),
+  creator: z.enum(["SYSTEM", "USER"]).optional(),
+  provenance: z
+    .enum(["SYSTEM", "USER_RESEARCHED", "USER_EDITED"])
+    .optional(),
   title: z.string().min(1),
   description: z.string().min(1).nullable().optional(),
   slug: z.string().min(1),
@@ -51,10 +68,100 @@ export async function getNewsStoryById(id: string) {
 }
 
 export async function getNewsStoryByIdForUser(storyId: string, userId: string) {
+  const parsedUserId = userIdSchema.parse(userId);
+  const parsedStoryId = newsStoryIdSchema.parse(storyId);
   return prisma.newsStory.findFirst({
     where: {
+      id: parsedStoryId,
+      OR: [
+        { newsRequest: { userId: parsedUserId } },
+        { ownerId: parsedUserId },
+      ],
+    },
+  });
+}
+
+export async function createPendingChatNewsStory(input: {
+  chatSessionId: string;
+  ownerId: string;
+  storyId?: string;
+}) {
+  const chatSessionId = z.uuid().parse(input.chatSessionId);
+  const ownerId = userIdSchema.parse(input.ownerId);
+  const slug = `pending-${Date.now()}`;
+
+  return prisma.newsStory.create({
+    data: {
+      ...(input.storyId ? { id: newsStoryIdSchema.parse(input.storyId) } : {}),
+      newsRequestId: null,
+      chatSessionId,
+      ownerId,
+      status: "PENDING",
+      creator: "USER",
+      provenance: "USER_RESEARCHED",
+      title: "Story in progress",
+      slug,
+      summary: "Research and synthesis in progress.",
+      content: "Story generation is in progress.",
+      category: "general",
+    },
+  });
+}
+
+export async function markChatNewsStoryFailed(storyId: string) {
+  return prisma.newsStory.updateMany({
+    where: {
       id: newsStoryIdSchema.parse(storyId),
-      newsRequest: { userId: userIdSchema.parse(userId) },
+      status: "PENDING",
+    },
+    data: { status: "FAILED" },
+  });
+}
+
+export async function getChatNewsStoryForPipeline(input: {
+  storyId: string;
+  userId: string;
+  chatSessionId: string;
+}) {
+  return prisma.newsStory.findFirst({
+    where: {
+      id: newsStoryIdSchema.parse(input.storyId),
+      ownerId: userIdSchema.parse(input.userId),
+      chatSessionId: z.uuid().parse(input.chatSessionId),
+    },
+  });
+}
+
+export async function applyChatStorySynthesis(input: {
+  storyId: string;
+  title: string;
+  description: string | null;
+  slug: string;
+  summary: string;
+  content: string;
+  category: string;
+  location: string | null;
+  imageUrl: string | null;
+  importanceScore: number | null;
+  newsSourceIds: string[];
+  publishedAt?: Date | null;
+}) {
+  return prisma.newsStory.update({
+    where: { id: newsStoryIdSchema.parse(input.storyId) },
+    data: {
+      title: input.title,
+      description: input.description,
+      slug: input.slug,
+      summary: input.summary,
+      content: input.content,
+      category: input.category,
+      location: input.location,
+      imageUrl: input.imageUrl,
+      importanceScore: input.importanceScore,
+      newsSourceIds: input.newsSourceIds,
+      publishedAt: input.publishedAt ?? null,
+      status: "READY",
+      provenance: "USER_RESEARCHED",
     },
   });
 }
@@ -113,7 +220,13 @@ export async function getPublishedNewsStoryWithSources(storyId: string) {
   const row = await prisma.newsStory.findFirst({
     where: {
       id: newsStoryIdSchema.parse(storyId),
-      newsRequest: { status: "success" },
+      OR: [
+        { newsRequest: { status: "success" } },
+        {
+          newsRequestId: null,
+          status: { in: ["READY", "PUBLISHED", "DRAFT"] },
+        },
+      ],
     },
     include: {
       newsRequest: true,
@@ -153,8 +266,114 @@ export async function getPublishedNewsStoryWithSources(storyId: string) {
   };
 }
 
+const chatOriginStoryStatusesForOwner = [
+  "PENDING",
+  "READY",
+  "FAILED",
+  "DRAFT",
+  "PUBLISHED",
+  "ARCHIVED",
+] as const satisfies readonly NewsStoryStatus[];
+
+/** Latest chat-origin story for a session (owner-only lookup). */
+export async function getLatestChatOriginStoryForSession(input: {
+  chatSessionId: string;
+  ownerId: string;
+}) {
+  return prisma.newsStory.findFirst({
+    where: {
+      chatSessionId: z.uuid().parse(input.chatSessionId),
+      ownerId: userIdSchema.parse(input.ownerId),
+      newsRequestId: null,
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      creator: true,
+      provenance: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+}
+
+/** Story page bundle for public briefing stories, public chat stories, or owner chat drafts. */
+export async function getNewsStoryWithSourcesForPage(
+  storyId: string,
+  viewerUserId: string | null,
+) {
+  const row = await prisma.newsStory.findUnique({
+    where: { id: newsStoryIdSchema.parse(storyId) },
+    include: {
+      newsRequest: true,
+      sources: {
+        select: { id: true, url: true, title: true, domain: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  if (!row) {
+    return null;
+  }
+
+  const isBriefingStory =
+    row.newsRequest != null && row.newsRequest.status === "success";
+
+  const isPublicChatStory =
+    row.newsRequestId == null &&
+    (row.status === "READY" || row.status === "PUBLISHED");
+
+  const isOwnerChatStory =
+    viewerUserId != null &&
+    row.ownerId === viewerUserId &&
+    row.chatSessionId != null &&
+    row.newsRequestId == null &&
+    chatOriginStoryStatusesForOwner.includes(row.status);
+
+  if (!isBriefingStory && !isPublicChatStory && !isOwnerChatStory) {
+    return null;
+  }
+
+  const { sources, newsRequest, ...story } = row;
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const ordered =
+    story.newsSourceIds.length > 0
+      ? story.newsSourceIds
+          .map((sourceId) => byId.get(sourceId))
+          .filter((source): source is (typeof sources)[number] => source != null)
+      : sources;
+
+  return {
+    newsRequest,
+    story: {
+      ...story,
+      sourceUrls: ordered.map((source) =>
+        newsStorySourceUrlSchema.parse({
+          id: source.id,
+          url: source.url,
+          title: source.title,
+          domain: source.domain,
+        }),
+      ),
+    },
+  };
+}
+
+const visiblePublicChatStoryStatuses: NewsStoryStatus[] = [
+  "READY",
+  "PUBLISHED",
+];
+
 const publishedStoryWhere = {
-  newsRequest: { status: "success" as const },
+  OR: [
+    { newsRequest: { status: "success" as const } },
+    {
+      newsRequestId: null,
+      status: { in: visiblePublicChatStoryStatuses },
+    },
+  ],
 };
 
 const publishedStoryOrderBy = [
@@ -165,6 +384,7 @@ const publishedStoryOrderBy = [
 
 function mapStoryRowWithSources<
   T extends {
+    id: string;
     newsSourceIds: string[];
     sources: {
       id: string;
@@ -237,12 +457,24 @@ export async function listTrendingNewsStories(input: {
 
   return prisma.newsStory.findMany({
     where: {
-      newsRequest: { status: "success" },
-      OR: [
-        { publishedAt: { gte: input.since } },
+      AND: [
         {
-          publishedAt: null,
-          createdAt: { gte: input.since },
+          OR: [
+            { newsRequest: { status: "success" } },
+            {
+              newsRequestId: null,
+              status: { in: ["READY", "PUBLISHED"] },
+            },
+          ],
+        },
+        {
+          OR: [
+            { publishedAt: { gte: input.since } },
+            {
+              publishedAt: null,
+              createdAt: { gte: input.since },
+            },
+          ],
         },
       ],
     },

@@ -5,6 +5,11 @@ import { NewsRecentRequestsSidebar } from "@/components/news/results/NewsRecentR
 import { NewsRequestSummaryCard } from "@/components/news/results/NewsRequestSummaryCard";
 import { NewsStoryCard } from "@/components/news/results/NewsStoryCard";
 import { NewsStoryPageHeader } from "@/components/news/results/NewsStoryPageHeader";
+import {
+  NewsStoryStatusPanel,
+  shouldRenderFullStoryBody,
+  shouldShowStoryEngagement,
+} from "@/components/news/results/NewsStoryStatusPanel";
 import { NewsStorySignInBanner } from "@/components/news/results/NewsStorySignInBanner";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +27,7 @@ import { useRef, type RefObject } from "react";
 
 type NewsStoryDetailViewProps = {
   data: NewsStoryPagePayload;
+  pollWarning?: string | null;
   isSignedIn: boolean;
   showActions: boolean;
   deepDiveStoryId: string | null;
@@ -34,6 +40,7 @@ type NewsStoryDetailViewProps = {
 
 export function NewsStoryDetailView({
   data,
+  pollWarning = null,
   isSignedIn,
   showActions,
   deepDiveStoryId,
@@ -44,6 +51,8 @@ export function NewsStoryDetailView({
   onSaveToggle,
 }: NewsStoryDetailViewProps) {
   const { story, newsRequest, canViewFullBriefing } = data;
+  const showFullBody = shouldRenderFullStoryBody(story);
+  const showEngagement = shouldShowStoryEngagement(story);
   const { recentRequests, recentLoading } = useRecentNewsRequests(isSignedIn);
   const headerRef = useRef<HTMLElement>(null);
   const leftRef = useRef<HTMLElement>(null);
@@ -51,8 +60,10 @@ export function NewsStoryDetailView({
 
   const rightSidebar = (
     <div className="flex flex-col gap-4">
-      <NewsRequestSummaryCard request={newsRequest} />
-      <KeyTopicsSidebar stories={[story]} />
+      {newsRequest ? (
+        <NewsRequestSummaryCard request={newsRequest} />
+      ) : null}
+      <KeyTopicsSidebar stories={showFullBody ? [story] : []} />
     </div>
   );
 
@@ -79,7 +90,7 @@ export function NewsStoryDetailView({
                 <NewsRecentRequestsSidebar
                   recentRequests={recentRequests}
                   recentLoading={recentLoading}
-                  activeRequestId={newsRequest.id}
+                  activeRequestId={newsRequest?.id}
                 />
               </div>
             </SheetContent>
@@ -110,7 +121,7 @@ export function NewsStoryDetailView({
             <NewsRecentRequestsSidebar
               recentRequests={recentRequests}
               recentLoading={recentLoading}
-              activeRequestId={newsRequest.id}
+              activeRequestId={newsRequest?.id}
             />
           </div>
         ) : null}
@@ -119,24 +130,28 @@ export function NewsStoryDetailView({
           <NewsStoryPageHeader
             story={story}
             canViewFullBriefing={canViewFullBriefing}
-            newsRequestId={newsRequest.id}
+            newsRequestId={newsRequest?.id ?? null}
             headerRef={headerRef}
           />
 
+          <NewsStoryStatusPanel story={story} pollWarning={pollWarning} />
+
           {isSignedIn ? <div className="lg:hidden">{rightSidebar}</div> : null}
 
-          <NewsStoryCard
-            story={story}
-            rank={1}
-            showActions={showActions}
-            guestActionsVisible={!isSignedIn}
-            deepDiveStoryId={deepDiveStoryId}
-            votingStoryId={votingStoryId}
-            savingStoryId={savingStoryId}
-            onDeepDive={onDeepDive}
-            onVote={onVote}
-            onSaveToggle={onSaveToggle}
-          />
+          {showFullBody ? (
+            <NewsStoryCard
+              story={story}
+              rank={1}
+              showActions={showActions && showEngagement}
+              guestActionsVisible={!isSignedIn && showEngagement}
+              deepDiveStoryId={deepDiveStoryId}
+              votingStoryId={votingStoryId}
+              savingStoryId={savingStoryId}
+              onDeepDive={onDeepDive}
+              onVote={onVote}
+              onSaveToggle={onSaveToggle}
+            />
+          ) : null}
         </div>
 
         {isSignedIn ? (

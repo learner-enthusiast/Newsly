@@ -11,11 +11,16 @@ import {
   normalizeSerpCallResults,
   type SerpCallResult,
 } from "@/services/chat/chatSerpResearch";
+import { sanitizeSerpToolInput } from "@/Agents/chat/smallDeterminerAgent";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import {
   mergeNormalizedSerpHits,
   normalizeSerpEnginePayload,
 } from "@/services/chat/normalizeSerpResults";
+import {
+  normalizeSerpApiLocation,
+  serpSearchWithLocationFallback,
+} from "@/services/chat/serpApiLocation";
 
 export const CHAT_AI_OVERVIEW_MAX_FOLLOW_UP = 3;
 const AI_OVERVIEW_FOLLOW_UP_ENGINE = "google_search_ai_overview_follow_up";
@@ -25,17 +30,20 @@ async function runSerpCallWithAiOverviewFlag(
   useAiOverviewFollowUp: boolean,
 ): Promise<unknown> {
   const engine = serpEngines[call.tool];
-  const baseInput = {
+  const baseInput = sanitizeSerpToolInput(call.tool, {
     ...(call.input as Record<string, unknown>),
     num: CHAT_SERP_NUM,
+  });
+  const search = async (params: Record<string, unknown>) => {
+    if (useAiOverviewFollowUp && call.tool === "searchGoogle") {
+      return engine.fn({
+        ...params,
+        trigger_ai_overview: true,
+      });
+    }
+    return engine.fn(params);
   };
-  if (useAiOverviewFollowUp && call.tool === "searchGoogle") {
-    return engine.fn({
-      ...baseInput,
-      trigger_ai_overview: true,
-    });
-  }
-  return engine.fn(baseInput);
+  return serpSearchWithLocationFallback(search, baseInput);
 }
 
 async function fetchInitialSerpPayloads(
@@ -123,17 +131,25 @@ export async function fetchAndNormalizeChatSerpResearch(input: {
             )?.input as Record<string, unknown> | undefined;
 
             const followUpPayloads = await Promise.all(
-              queries.map((q) =>
-                serpEngines.searchGoogle.fn({
+              queries.map((q) => {
+                const followUpInput = sanitizeSerpToolInput("searchGoogle", {
                   q,
                   num: CHAT_SERP_NUM,
                   ...(sharedFromCall?.gl ? { gl: sharedFromCall.gl } : {}),
                   ...(sharedFromCall?.hl ? { hl: sharedFromCall.hl } : {}),
                   ...(sharedFromCall?.location
-                    ? { location: sharedFromCall.location }
+                    ? {
+                        location: normalizeSerpApiLocation(
+                          String(sharedFromCall.location),
+                        ),
+                      }
                     : {}),
-                }),
-              ),
+                });
+                return serpSearchWithLocationFallback(
+                  (params) => serpEngines.searchGoogle.fn(params),
+                  followUpInput,
+                );
+              }),
             );
 
             followUpResults = followUpPayloads.map((payload) => ({

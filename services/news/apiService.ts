@@ -8,7 +8,7 @@ import {
 } from "@/repositories/newsRequest";
 import { getUserVotesForStories } from "@/repositories/newsStoryVote";
 import {
-  getPublishedNewsStoryWithSources,
+  getNewsStoryWithSourcesForPage,
   listNewsStoriesByNewsRequestId,
   listPublishedNewsStoriesPaginated,
 } from "@/repositories/newsStory";
@@ -29,6 +29,11 @@ import {
   getNewsRequestsByUserId,
 } from "@/repositories/user";
 import { z } from "zod";
+import type {
+  NewsStoryCreator,
+  NewsStoryProvenance,
+  NewsStoryStatus,
+} from "@/services/news/newsRequestTypes";
 
 export const requestNewsBodySchema = newsGenerationRequestSchema;
 
@@ -43,10 +48,20 @@ type ListedStory = Awaited<
   ReturnType<typeof listNewsStoriesByNewsRequestId>
 >[number];
 
-function serializeStoryBase(story: ListedStory) {
+type PageStoryRow = ListedStory & {
+  status?: NewsStoryStatus;
+  creator?: NewsStoryCreator;
+  provenance?: NewsStoryProvenance;
+  ownerId?: string | null;
+};
+
+function serializeStoryBase(story: PageStoryRow) {
   return {
     id: story.id,
     newsRequestId: story.newsRequestId,
+    status: story.status ?? "READY",
+    creator: story.creator ?? "SYSTEM",
+    provenance: story.provenance ?? "SYSTEM",
     title: story.title,
     description: story.description,
     slug: story.slug,
@@ -67,7 +82,7 @@ function serializeStoryBase(story: ListedStory) {
 }
 
 function serializeStory(
-  story: ListedStory,
+  story: PageStoryRow,
   userVote: "UP" | "DOWN" | null = null,
   userSaved = false,
 ) {
@@ -301,7 +316,7 @@ export async function getNewsStoryPageResult(
   storyId: string,
   viewerUserId: string | null,
 ) {
-  const bundle = await getPublishedNewsStoryWithSources(storyId);
+  const bundle = await getNewsStoryWithSourcesForPage(storyId, viewerUserId);
   if (!bundle) {
     return null;
   }
@@ -317,15 +332,24 @@ export async function getNewsStoryPageResult(
     : false;
 
   const story = serializeStory(
-    bundle.story as ListedStory,
+    bundle.story as PageStoryRow,
     userVotes.get(bundle.story.id) ?? null,
     userSaved,
   );
 
+  const ownerId =
+    "ownerId" in bundle.story && typeof bundle.story.ownerId === "string"
+      ? bundle.story.ownerId
+      : null;
+
   return {
-    newsRequest: serializeNewsRequest(bundle.newsRequest),
+    newsRequest: bundle.newsRequest
+      ? serializeNewsRequest(bundle.newsRequest)
+      : null,
     story,
-    canViewFullBriefing: viewerUserId === bundle.newsRequest.userId,
+    canViewFullBriefing: bundle.newsRequest
+      ? viewerUserId === bundle.newsRequest.userId
+      : ownerId != null && viewerUserId === ownerId,
   };
 }
 

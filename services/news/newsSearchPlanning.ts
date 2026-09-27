@@ -4,6 +4,7 @@ import {
 } from "@/Agents/news/searchPlanner";
 import type { NewsScope } from "@/lib/newsScope";
 import type { NewsGenerationConfig } from "@/services/news/newsGenerationRequest";
+import { normalizeSerpApiLocation } from "@/services/chat/serpApiLocation";
 import { z } from "zod";
 
 export const newsSearchContextSchema = z.object({
@@ -249,7 +250,9 @@ export function buildNewsSearchExecutionPlans(
     const searchQuery = buildGoogleQueryFromContext(tierCtx, tier, "search");
 
     const serpLocation =
-      tier === "local" && location ? location : undefined;
+      tier === "local" && location
+        ? normalizeSerpApiLocation(location)
+        : undefined;
 
     return {
       tier,

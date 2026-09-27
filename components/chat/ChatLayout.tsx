@@ -12,6 +12,7 @@ import {
   hasAssistantReplyAfterLastUser,
   type ChatSessionSummary,
 } from "@/services/chat/chatUiUtils";
+import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -35,6 +36,7 @@ type ChatMessage = {
 type ChatState = {
   chatSessionId: string;
   status: "initializing" | "ready" | "failed";
+  storyCreation: ChatStoryCreationPayload | null;
   messages: ChatMessage[];
   chatSession: {
     id: string;
@@ -85,7 +87,10 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     return payload;
   }, [chatSessionId]);
 
-  const shouldPoll = state === null || state.status === "initializing";
+  const shouldPoll =
+    state === null ||
+    state.status === "initializing" ||
+    state?.storyCreation?.status === "PENDING";
 
   useEffect(() => {
     let cancelled = false;
@@ -99,7 +104,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         }
         setError(null);
         void loadSessions();
-        if (payload.status === "initializing") {
+        if (payload.status === "initializing" || payload.storyCreation?.status === "PENDING") {
           timer = setTimeout(poll, POLL_MS);
         }
       } catch (pollError) {
@@ -351,6 +356,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
                   ? state.chatSession.title
                   : null
               }
+              storyCreation={state.storyCreation}
               onPrompt={handlePrompt}
               onRetry={() => {
                 const lastUser = [...visibleMessages]

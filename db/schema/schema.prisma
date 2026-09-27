@@ -34,6 +34,7 @@ model User {
   scripts        Script[]
   newsStoryVotes NewsStoryVote[]
   notifications  Notification[]
+  ownedNewsStories NewsStory[]
 
   @@map("users")
 }
@@ -54,6 +55,29 @@ enum NewsRequestStatus {
   @@map("news_request_status")
 }
 
+enum NewsStoryStatus {
+  PENDING
+  READY
+  FAILED
+
+  @@map("news_story_status")
+}
+
+enum NewsStoryCreator {
+  SYSTEM
+  USER
+
+  @@map("news_story_creator")
+}
+
+enum NewsStoryProvenance {
+  SYSTEM
+  USER_RESEARCHED
+  USER_EDITED
+
+  @@map("news_story_provenance")
+}
+
 model NewsRequest {
   id          String            @id @default(uuid()) @db.Uuid
   userId      String            @map("user_id")
@@ -71,6 +95,7 @@ model NewsRequest {
   createdAt   DateTime          @default(now()) @map("created_at")
   completedAt DateTime?         @map("completed_at")
 
+
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   stories     NewsStory[]
   loadingLogs String[]    @default([]) @map("loading_logs")
@@ -82,31 +107,43 @@ model NewsRequest {
 }
 
 model NewsStory {
-  id              String    @id @default(uuid()) @db.Uuid
-  newsRequestId   String    @map("news_request_id") @db.Uuid
+  id              String              @id @default(uuid()) @db.Uuid
+  newsRequestId   String?             @map("news_request_id") @db.Uuid
+  chatSessionId   String?             @map("chat_session_id") @db.Uuid
+  ownerId         String?             @map("owner_id")
+  status          NewsStoryStatus     @default(PENDING)
+  creator         NewsStoryCreator    @default(SYSTEM)
+  provenance      NewsStoryProvenance @default(SYSTEM)
   title           String
   description     String?
   slug            String
-  summary         String    @db.Text
-  content         String    @db.Text
+  summary         String              @db.Text
+  content         String              @db.Text
   category        String
   location        String?
-  publishedAt     DateTime? @map("published_at")
-  importanceScore Decimal?  @map("importance_score") @db.Decimal(10, 4)
-  upvotes         Int       @default(0)
-  downvotes       Int       @default(0)
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  newsSourceIds   String[]  @default([]) @map("news_source_ids") @db.Uuid
-  imageUrl        String?   @map("image_url") @db.Text
+  publishedAt     DateTime?           @map("published_at")
+  importanceScore Decimal?            @map("importance_score") @db.Decimal(10, 4)
+  upvotes         Int                 @default(0)
+  downvotes       Int                 @default(0)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  newsSourceIds   String[]            @default([]) @map("news_source_ids") @db.Uuid
+  imageUrl        String?             @map("image_url") @db.Text
+  isUserCreated Boolean         @default(false) @map("is_user_created")
 
-  newsRequest  NewsRequest     @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
-  sources      NewsSource[]
-  chatSessions ChatSession[]
-  votes        NewsStoryVote[]
+  newsRequest       NewsRequest?  @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
+  originChatSession ChatSession?  @relation("ChatStoryOrigin", fields: [chatSessionId], references: [id], onDelete: SetNull)
+  owner             User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  sources           NewsSource[]
+  chatSessions      ChatSession[] @relation("ChatSessionLinkedStory")
+  votes             NewsStoryVote[]
 
   @@unique([newsRequestId, slug])
   @@index([newsRequestId])
+  @@index([chatSessionId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([ownerId, status])
   @@index([upvotes, publishedAt])
   @@map("news_stories")
 }
@@ -168,7 +205,8 @@ model ChatSession {
   isFromNewsStory Boolean  @default(false) @map("is_from_news_story")
 
   user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  newsStory             NewsStory?                 @relation(fields: [newsStoryId], references: [id], onDelete: SetNull)
+  newsStory             NewsStory?                 @relation("ChatSessionLinkedStory", fields: [newsStoryId], references: [id], onDelete: SetNull)
+  originStories         NewsStory[]                @relation("ChatStoryOrigin")
   messages              ChatMessage[]
   researchSources       ResearchSource[]
   scripts               Script[]

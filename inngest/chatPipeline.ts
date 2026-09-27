@@ -1,32 +1,41 @@
 /**
- * Message chat research pipeline (normal / follow-up chat)
+ * Message chat research pipeline (general / follow-up chat)
  *
- * Event: chat/message.research.requested
- * Input: { chatSessionId, chatMessageId } — one user message to answer.
+ * Event: `chat/message.research.requested`
+ * Input: `{ chatSessionId, chatMessageId }` — one user turn to answer.
  *
- * Purpose: Process a single user turn in an existing chat session — optionally
- * reuse prior session research (pgvector), optionally run fresh Serp + Firecrawl,
- * then write one assistant reply. Used for general chats and follow-ups after
- * the first message (not the news-story “deep dive” first-run event).
+ * Trigger: `POST /api/chat/[chatSessionId]` → `sendChatMessage` → Inngest send.
+ * Idempotency: `event.data.chatMessageId` (skip if assistant reply already exists).
+ * Timeout: 30 minutes.
  *
- * Steps:
- * 1. check-existing-assistant-reply — Skip work if this user message already has
- *    an assistant reply (Inngest retry idempotency).
- * 2. fetch-chat-context + count-research-embeddings (parallel) — Session/message
- *    validation, recent turns for determiner + final model, embedding inventory.
- * 3. run-determiner — Guardrails, query enhance, decide useExistingResearch,
- *    useTools, and Serp tool calls.
- * 4. save-guardrail-message — If blocked, save a short agent refusal and stop.
- * 5. vector-research-branch + serp-research-branch + youtube-research-branch
- *    (parallel) — Vector retrieval; targeted Serp (+ optional AI Overview follow-ups);
- *    optional lightweight YouTube transcripts.
+ * Purpose:
+ * Process a single user message in an existing session. Reuse prior session
+ * research via pgvector when the determiner allows; otherwise run targeted Serp,
+ * optional YouTube evidence, Firecrawl + cleaning, and persist `ResearchSource`
+ * rows. Produce either a normal ChatModel Markdown reply OR hand off to the
+ * chat story pipeline when the user asked to create a news story.
+ *
+ * Not used for the first news-story deep-dive turn (`chat/pipeline.requested`).
+ *
+ * Story branch (`shouldCreateStory`, original chat only): after step 8, creates
+ * PENDING `NewsStory`, emits `chat/story.research.requested` with prepared context,
+ * saves a short agent status message, skips `generate-assistant-reply`.
+ *
+ * Steps (normal path):
+ * 1. check-existing-assistant-reply — Idempotent skip.
+ * 2. fetch-chat-context + count-research-embeddings (parallel).
+ * 3. run-determiner — Guardrails, query enhance, tools/vector/Serp/story intent.
+ * 4. save-guardrail-message — If blocked, refusal and stop.
+ * 5. vector + serp + youtube branches (parallel).
  * 6. run-article-synthesizer + preload-session-research-sources (parallel).
- * 7. dedupe-research-candidates — Fresh session URL keys before scrape selection.
- * 8. firecrawl-and-save-research — Batch Firecrawl, parallel content cleaning,
- *    concurrent ResearchSource inserts (+ optional YouTube evidence).
- * 9. generate-assistant-reply — Chat model Markdown using history + research context.
- * 10. save-assistant-message — Persist agent message (idempotent on retry).
- * 11. save-error-message — On failure, save a failure agent message when appropriate.
+ * 7. dedupe-research-candidates.
+ * 8. firecrawl-and-save-research.
+ * 9. create-chat-story-and-trigger — Story intent only (see above).
+ * 10. generate-assistant-reply — Chat model Markdown.
+ * 11. save-assistant-message.
+ * 12. create-completion-notification.
+ *
+ * Failure: save-error-message; onFailure → chat research failed notification.
  */
 
 import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";
@@ -82,6 +91,8 @@ import {
   type ChatModelResearchSourceRow,
 } from "@/services/chat/researchContextForChatModel";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
+import { CHAT_STORY_PIPELINE_EVENT } from "@/inngest/chatstoryPipeline";
+import { createPendingChatNewsStory } from "@/repositories/newsStory";
 import {
   chatResearchCompletedNotification,
   chatResearchFailedNotification,
@@ -703,6 +714,75 @@ export const messageChatPipelineFunction = inngest.createFunction(
         existingResearchRows,
         newResearchRows,
       );
+
+      if (determiner.shouldCreateStory) {
+        const storyHandoff = await step.run(
+          "create-chat-story-and-trigger",
+          async () => {
+            pipelineLog("create-chat-story-and-trigger", "start");
+            const story = await createPendingChatNewsStory({
+              chatSessionId: input.chatSessionId,
+              ownerId: chatContext.session.userId,
+            });
+
+            await inngest.send({
+              name: CHAT_STORY_PIPELINE_EVENT,
+              data: {
+                storyId: story.id,
+                chatSessionId: input.chatSessionId,
+                userId: chatContext.session.userId,
+                chatMessageId: input.chatMessageId,
+                enhancedPrompt: researchPrompt,
+                recentMessages: chatContext.recentMessages,
+                chatHistory: chatContext.chatHistoryForModel,
+                determiner: {
+                  useTools: determiner.useTools,
+                  useExistingResearch: determiner.useExistingResearch,
+                  existingResearchQuery: determiner.existingResearchQuery,
+                  firecrawlUrls: determiner.firecrawlUrls,
+                  evidence: determiner.evidence,
+                  shouldCreateStory: true,
+                  storyCreationReason: determiner.storyCreationReason ?? null,
+                },
+                existingResearch: researchContext,
+                serpHits,
+                youtubeEvidence,
+                selectedArticles,
+              },
+            });
+
+            const again = await findAssistantReplyAfterUserMessage(
+              input.chatSessionId,
+              input.chatMessageId,
+            );
+            if (again) {
+              return toJsonSafeStepOutput({
+                storyId: story.id,
+                status: "PENDING" as const,
+                assistantMessageId: again.id,
+              });
+            }
+
+            const message = await createChatMessage({
+              chatSessionId: input.chatSessionId,
+              role: "agent",
+              content:
+                "I'm researching and writing your news story. You'll be notified when it's ready to review.",
+            });
+
+            pipelineLog("create-chat-story-and-trigger", "done", {
+              storyId: story.id,
+            });
+
+            return toJsonSafeStepOutput({
+              storyId: story.id,
+              status: "PENDING" as const,
+              assistantMessageId: message.id,
+            });
+          },
+        );
+        return storyHandoff;
+      }
 
       const assistantMarkdown = await step.run(
         "generate-assistant-reply",

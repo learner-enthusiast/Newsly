@@ -79,22 +79,30 @@
  *
  * 12. persist-stories-and-sources
  *     Append “Preparing your briefing.”
- *     Create `NewsStory` + `NewsSource` rows; skip synthesized stories without a
- *     primary article source; patch `newsSourceIds`; attach YouTube transcripts
- *     on sources when available.
+ *     Create `NewsStory` + `NewsSource` rows (`status=READY`, `creator/provenance=
+ *     SYSTEM`, `newsRequestId` set); skip synthesized stories without a primary
+ *     article source; patch `newsSourceIds`; attach YouTube transcripts on sources.
  *
  * 13. mark-request-success
  *     `NewsRequest.status = success`, `completedAt` set, `error` cleared.
  *
- * 14. load-stories
+ * 14. create-completion-notification
+ *     Idempotent notification linking to the news request / briefing UI.
+ *
+ * 15. load-stories
  *     Reload persisted stories from DB (function return value).
  *
  * ── Failure path ─────────────────────────────────────────────────────────────
  *
- * mark-request-failed — On any thrown error in the try block: set request
- * `failed`, store error message, set `completedAt`, rethrow for Inngest retries.
+ * mark-request-failed — On thrown error in try: set request `failed`, store message,
+ * set `completedAt`, rethrow for Inngest retries.
+ *
+ * onFailure → create-failure-notification (news briefing failed; dedupe by request id).
  *
  * Timeout: 45 minutes (`timeouts.finish`).
+ *
+ * Chat-origin stories (`chatSessionId`, PENDING → READY) are handled by
+ * `chat/story.research.requested`, not this pipeline.
  */
 
 import { runGaiOverviewSearchGeneratorAgent } from "@/Agents/news/GAIOverviewSearchGeneratorAgents";
@@ -788,6 +796,9 @@ export const newsPipelineFunction = inngest.createFunction(
 
           const savedStory = await createNewsStory({
             newsRequestId: newsRequest.id,
+            status: "READY",
+            creator: "SYSTEM",
+            provenance: "SYSTEM",
             title: story.title,
             description: story.description,
             slug: story.slug,

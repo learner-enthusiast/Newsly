@@ -6,6 +6,7 @@ import {
   ShimmerLoadingStatus,
 } from "@/components/ui/shimmer-loading-status";
 import type { StoryVoteState } from "@/components/news/StoryVoteControls";
+import { useNewsStoryPolling } from "@/hooks/useNewsStoryPolling";
 import type { NewsStoryPagePayload } from "@/services/news/newsRequestTypes";
 import {
   applyCounterDelta,
@@ -15,7 +16,7 @@ import {
 } from "@/services/news/storyVoteLogic";
 import { useAuth } from "@clerk/nextjs";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export default function NewsStoryPage() {
@@ -29,58 +30,21 @@ export default function NewsStoryPage() {
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
 
-  const [data, setData] = useState<NewsStoryPagePayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
-  const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
-  const [savingStoryId, setSavingStoryId] = useState<string | null>(null);
   const voteLockRef = useRef<Set<string>>(new Set());
   const saveLockRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (!storyId || !isLoaded) {
-      return;
-    }
+  const {
+    data,
+    setData,
+    error: loadError,
+    pollWarning,
+    isLoading,
+  } = useNewsStoryPolling(storyId && isLoaded ? storyId : undefined);
 
-    let cancelled = false;
-
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch(`/api/news/stories/${storyId}`, {
-          cache: "no-store",
-        });
-        const payload = (await response.json()) as NewsStoryPagePayload & {
-          error?: string;
-        };
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to load story");
-        }
-        if (!cancelled) {
-          setData(payload);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setData(null);
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Failed to load story",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [storyId, isLoaded, isSignedIn]);
+  const error = loadError;
+  const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
+  const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
+  const [savingStoryId, setSavingStoryId] = useState<string | null>(null);
 
   async function onDeepDive(targetStoryId: string) {
     if (!isSignedIn) {
@@ -259,7 +223,7 @@ export default function NewsStoryPage() {
     );
   }
 
-  if (loading || !isLoaded) {
+  if (isLoading || !isLoaded) {
     return (
       <ShimmerLoadingStatus
         messages={NEWS_STORY_LOADING_MESSAGES}
@@ -280,6 +244,7 @@ export default function NewsStoryPage() {
   return (
     <NewsStoryDetailView
       data={data}
+      pollWarning={pollWarning}
       isSignedIn={Boolean(isSignedIn)}
       showActions={Boolean(isSignedIn)}
       deepDiveStoryId={deepDiveStoryId}

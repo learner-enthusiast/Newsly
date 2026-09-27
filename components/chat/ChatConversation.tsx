@@ -1,6 +1,7 @@
 "use client";
 
 import { AssistantMessage } from "@/components/chat/AssistantMessage";
+import { ChatStoryCreationCard } from "@/components/chat/ChatStoryCreationCard";
 import { ChatDeepDiveBanner } from "@/components/chat/ChatDeepDiveBanner";
 import { ChatLoading } from "@/components/chat/ChatLoading";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
@@ -9,6 +10,7 @@ import {
   hasAssistantReplyAfterLastUser,
   isAssistantRole,
 } from "@/services/chat/chatUiUtils";
+import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -24,6 +26,7 @@ type ChatConversationProps = {
   status: "initializing" | "ready" | "failed";
   showWelcome: boolean;
   storyTitle?: string | null;
+  storyCreation?: ChatStoryCreationPayload | null;
   onPrompt: (prompt: string) => void;
   onRetry?: () => void;
   composerDisabled?: boolean;
@@ -34,6 +37,7 @@ export function ChatConversation({
   status,
   showWelcome,
   storyTitle,
+  storyCreation,
   onPrompt,
   onRetry,
   composerDisabled,
@@ -67,6 +71,10 @@ export function ChatConversation({
           />
         ),
       )}
+
+      {storyCreation ? (
+        <ChatStoryCreationCard storyCreation={storyCreation} />
+      ) : null}
 
       {showResearching ? <ChatLoading variant="researching" /> : null}
 

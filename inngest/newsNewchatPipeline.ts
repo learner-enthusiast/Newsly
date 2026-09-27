@@ -1,29 +1,43 @@
 /**
  * News-story chat pipeline (first deep-dive run)
  *
- * Event: chat/pipeline.requested
- * Input: { userId, chatSessionId, userMessageId }
+ * Event: `chat/pipeline.requested`
+ * Input: `{ userId, chatSessionId, userMessageId }`
  *
- * Purpose: Handle the first research chat tied to a news story (or legacy start
- * flow): build a long research brief from the story + news sources, run Serp,
- * scrape articles, and produce the initial assistant answer. Does not use
- * pgvector session research on this path; isNewsStory skips query enhancement
- * when the session is a deep dive.
+ * Trigger: `POST /api/newsStoryChat` (deep dive) or `startNewChat` with
+ * `newsStoryId` → first user message on a story-anchored session.
+ * Timeout: 30 minutes.
  *
- * Steps:
- * 1. load-chat-session — Verify the session belongs to the user.
- * 2. load-user-message — Load the triggering user message content.
- * 3. build-research-prompt — For news deep dives, expand story + news sources
- *    into a research prompt; otherwise use raw user text.
- * 4. run-determiner — Guardrails and Serp routing (with recent messages when
- *    not a news-story session).
- * 5. save-guardrail-message — Save refusal if guardrails block the prompt.
- * 6. fetch-and-normalize-serp — Execute Serp calls and merge normalized hits.
+ * Purpose:
+ * Handle the first research turn for a chat session tied to a published
+ * `NewsStory` (`isFromNewsStory=true`). Builds a long research brief from the
+ * story fields + linked `NewsSource` scraped text via `runNewsNewChatAgent`,
+ * then Serp, article selection, Firecrawl, and ChatModel reply. Does not use
+ * pgvector session research on this path. Query enhancement is skipped when
+ * `isNewsStory` is true on the determiner.
+ *
+ * General chats use `chat/message.research.requested` (chatPipeline.ts) instead.
+ *
+ * ── Happy-path steps ────────────────────────────────────────────────────────
+ *
+ * 1. load-chat-session — Verify session belongs to `userId`.
+ * 2. load-user-message — Load triggering user message content.
+ * 3. build-research-prompt — Story deep dive: expand story + sources; else raw text.
+ * 4. run-determiner — Guardrails + Serp routing (`recentMessages` when not news story).
+ * 5. save-guardrail-message — Persist refusal if guardrails block.
+ * 6. fetch-and-normalize-serp — Execute determiner Serp calls; merge normalized hits.
  * 7. select-articles — Article synthesizer chooses URLs to scrape.
- * 8. scrape-and-persist-sources — Firecrawl + save ResearchSource rows for chat.
- * 9. generate-assistant-reply — Chat model answer with Serp + scraped context.
- * 10. save-assistant-message — Persist the agent Markdown reply.
- * 11. save-error-message — On failure, save an agent error message for the UI.
+ * 8. preload-existing-research-sources — Session sources for reply context (parallel).
+ * 9. scrape-and-persist-sources — Firecrawl + `ResearchSource` rows + cleaning.
+ * 10. generate-assistant-reply — ChatModel with Serp + scraped context.
+ * 11. save-assistant-message — Persist agent Markdown.
+ * 12. create-completion-notification — Deep-dive or chat completion notification.
+ *
+ * ── Failure path ────────────────────────────────────────────────────────────
+ *
+ * save-error-message — Agent error message for the UI when appropriate.
+ * onFailure → create-failure-notification (deep dive vs general chat variant by
+ * `session.isFromNewsStory`; dedupe by `userMessageId`).
  */
 
 import { runArticleSynthesizerAgent } from "@/Agents/chat/ArticleSythesizerAgent";

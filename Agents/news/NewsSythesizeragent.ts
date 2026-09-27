@@ -52,6 +52,8 @@ export const newsSynthesizerParamsSchema = z.object({
   location: z.string().min(1).nullable().optional(),
   userPrompt: z.string().min(1).optional(),
   targetStoryCount: z.number().int().min(1).max(12).optional(),
+  /** When set, the first synthesized story uses this id (chat story pipeline). */
+  fixedStoryId: z.uuid().optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
 });
@@ -291,8 +293,9 @@ function fallbackStory(
   newsRequestId: string,
   location: string | null,
   usedSlugs: Set<string>,
+  fixedStoryId?: string,
 ): SynthesizedNewsStory {
-  const id = crypto.randomUUID();
+  const id = fixedStoryId ?? crypto.randomUUID();
   const body = article.scrapedContent?.trim() || article.title;
   const markdownContent = fallbackStoryMarkdownContent(article);
 
@@ -317,6 +320,7 @@ function claimStories(
   articles: IndexedArticle[],
   newsRequestId: string,
   location: string | null,
+  fixedStoryId?: string,
 ): SynthesizedNewsStory[] {
   const byKey = new Map(articles.map((article) => [article.key, article]));
   const claimed = new Set<string>();
@@ -328,7 +332,8 @@ function claimStories(
   );
 
   for (const modelStory of ranked) {
-    const id = crypto.randomUUID();
+    const id =
+      fixedStoryId && stories.length === 0 ? fixedStoryId : crypto.randomUUID();
     const matchedArticles: IndexedArticle[] = [];
     const matchedKeys: string[] = [];
 
@@ -401,7 +406,15 @@ function claimStories(
       continue;
     }
     claimed.add(article.key);
-    stories.push(fallbackStory(article, newsRequestId, null, usedSlugs));
+    stories.push(
+      fallbackStory(
+        article,
+        newsRequestId,
+        null,
+        usedSlugs,
+        fixedStoryId && stories.length === 0 ? fixedStoryId : undefined,
+      ),
+    );
   }
 
   return stories.sort((left, right) => right.importanceScore - left.importanceScore);
@@ -531,7 +544,13 @@ async function runSynthesizer(
     abortSignal,
   });
 
-  const stories = claimStories(raw.stories, articles, parsed.newsRequestId, location);
+  const stories = claimStories(
+    raw.stories,
+    articles,
+    parsed.newsRequestId,
+    location,
+    parsed.fixedStoryId,
+  );
   const parsedStories = synthesizedNewsStorySchema.array().parse(stories);
   if (parsed.targetStoryCount) {
     return parsedStories.slice(0, parsed.targetStoryCount);

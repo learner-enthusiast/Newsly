@@ -1,19 +1,22 @@
 /**
  * Research source description + vector index (background)
  *
- * Event: research/source.index.requested
- * Input: { researchSourceId, chatSessionId }
+ * Event: `research/source.index.requested`
+ * Input: `{ researchSourceId, chatSessionId }`
  *
- * Purpose: After a chat ResearchSource is saved, summarize scraped content into
- * a short description, store it on the row, and embed the description for
- * pgvector similarity search in later chat turns. Enqueued fire-and-forget from
- * createResearchSource — does not block the main chat pipelines.
+ * Trigger: `enqueueResearchSourceIndexing` from `createResearchSource` (fire-and-forget).
+ * Timeout: 15 minutes.
+ *
+ * Purpose:
+ * After a chat `ResearchSource` row is saved (Firecrawl / YouTube / etc.), produce
+ * a short plain-text description, store it on the row, and embed it in
+ * `chat_resource_embeddings` for pgvector similarity search in later chat turns.
+ * Does not block message chat or chat story pipelines.
  *
  * Steps:
- * 1. load-research-source — Load row and verify chatSessionId matches.
- * 2. summarize-source — LLM produces ~10–15 line plain-text description.
- * 3. persist-description-and-embedding — Update ResearchSource.description and
- *    upsert chat_resource_embeddings (vector of the description) for search.
+ * 1. load-research-source — Load row; verify `chatSessionId` matches event.
+ * 2. summarize-source — `runResearchSourceDescriptionAgent` on scraped content.
+ * 3. persist-description-and-embedding — Update description + upsert vector index.
  */
 
 import { runResearchSourceDescriptionAgent } from "@/Agents/chat/researchSourceDescriptionAgent";

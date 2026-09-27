@@ -12,7 +12,7 @@ import { useState, type ReactNode } from "react";
 
 export type TrendingCardData = {
   id: string;
-  newsRequestId: string;
+  newsRequestId: string | null;
   category: string;
   categoryTone: string;
   imageUrl: string | null;

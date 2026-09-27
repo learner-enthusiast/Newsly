@@ -12,7 +12,7 @@ import type { RefObject } from "react";
 type NewsStoryPageHeaderProps = {
   story: SerializedNewsStory;
   canViewFullBriefing: boolean;
-  newsRequestId: string;
+  newsRequestId?: string | null;
   className?: string;
   headerRef?: RefObject<HTMLElement | null>;
 };
@@ -55,7 +55,7 @@ export function NewsStoryPageHeader({
               <Badge variant="outline">{publishedLabel}</Badge>
             ) : null}
           </div>
-          {canViewFullBriefing ? (
+          {canViewFullBriefing && newsRequestId ? (
             <Button variant="link" className="h-auto p-0" nativeButton={false} render={<Link href={`/news/${newsRequestId}`} />}>
               View full briefing
             </Button>

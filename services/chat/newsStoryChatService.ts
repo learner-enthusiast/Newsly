@@ -12,9 +12,11 @@ import {
 } from "@/repositories/chatSession";
 import { listNewsSourcesByNewsStoryId } from "@/repositories/newsSource";
 import {
+  getLatestChatOriginStoryForSession,
   getNewsStoryById,
   getNewsStoryByIdForUser,
 } from "@/repositories/newsStory";
+import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { z } from "zod";
 
 export const newsStoryChatBodySchema = z.object({
@@ -77,6 +79,52 @@ function deriveChatSessionStatus(
   }
 
   return "ready";
+}
+
+function deriveStoryCreationForChatState(
+  messages: { role: string; createdAt: Date }[],
+  latestStory: Awaited<
+    ReturnType<typeof getLatestChatOriginStoryForSession>
+  >,
+): ChatStoryCreationPayload | null {
+  if (!latestStory) {
+    return null;
+  }
+
+  if (latestStory.status === "PENDING" || latestStory.status === "FAILED") {
+    return {
+      storyId: latestStory.id,
+      status: latestStory.status,
+      creator: latestStory.creator,
+      provenance: latestStory.provenance,
+    };
+  }
+
+  let lastUserCreatedAt: Date | null = null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]!.role === "user") {
+      lastUserCreatedAt = messages[index]!.createdAt;
+      break;
+    }
+  }
+
+  if (!lastUserCreatedAt) {
+    return null;
+  }
+
+  if (
+    (latestStory.status === "READY" || latestStory.status === "DRAFT") &&
+    latestStory.updatedAt >= lastUserCreatedAt
+  ) {
+    return {
+      storyId: latestStory.id,
+      status: latestStory.status,
+      creator: latestStory.creator,
+      provenance: latestStory.provenance,
+    };
+  }
+
+  return null;
 }
 
 async function resolveStorySourceIds(newsStoryId: string): Promise<string[]> {
@@ -160,10 +208,16 @@ export async function getNewsStoryChatState(
 
   const messages = await listChatMessagesByChatSessionId(chatSessionId);
   const status = deriveChatSessionStatus(messages);
+  const latestStory = await getLatestChatOriginStoryForSession({
+    chatSessionId: session.id,
+    ownerId: userId,
+  });
+  const storyCreation = deriveStoryCreationForChatState(messages, latestStory);
 
   return {
     chatSessionId: session.id,
     status,
+    storyCreation,
     messages: messages.map(serializeMessage),
     chatSession: {
       id: session.id,

@@ -10,8 +10,13 @@ export const PIPELINE_NOTIFICATION_TYPES = {
   NEWS_PIPELINE_COMPLETED: "NEWS_PIPELINE_COMPLETED",
   CHAT_RESEARCH_COMPLETED: "CHAT_RESEARCH_COMPLETED",
   DEEP_DIVE_COMPLETED: "DEEP_DIVE_COMPLETED",
+  CHAT_STORY_COMPLETED: "CHAT_STORY_COMPLETED",
   RESEARCH_FAILED: "RESEARCH_FAILED",
 } as const;
+
+export function newsStoryPagePath(storyId: string): string {
+  return `/newsStory/${storyId}`;
+}
 
 export function newsRequestPagePath(newsRequestId: string): string {
   return `/news/${newsRequestId}`;
@@ -195,6 +200,42 @@ export function deepDiveFailedNotification(input: {
     dedupeKey: buildDedupeKey(
       `${PIPELINE_NOTIFICATION_TYPES.RESEARCH_FAILED}:deep-dive`,
       input.userMessageId,
+    ),
+  };
+}
+
+export function chatStoryCompletedNotification(input: {
+  userId: string;
+  storyId: string;
+}) {
+  return {
+    userId: input.userId,
+    type: PIPELINE_NOTIFICATION_TYPES.CHAT_STORY_COMPLETED,
+    title: "Story ready",
+    message: "Your news story is ready to review.",
+    link: newsStoryPagePath(input.storyId),
+    read: false as const,
+    dedupeKey: buildDedupeKey(
+      PIPELINE_NOTIFICATION_TYPES.CHAT_STORY_COMPLETED,
+      input.storyId,
+    ),
+  };
+}
+
+export function chatStoryFailedNotification(input: {
+  userId: string;
+  storyId: string;
+}) {
+  return {
+    userId: input.userId,
+    type: PIPELINE_NOTIFICATION_TYPES.RESEARCH_FAILED,
+    title: "Story generation failed",
+    message: "We couldn't complete your news story.",
+    link: newsStoryPagePath(input.storyId),
+    read: false as const,
+    dedupeKey: buildDedupeKey(
+      `${PIPELINE_NOTIFICATION_TYPES.RESEARCH_FAILED}:chat-story`,
+      input.storyId,
     ),
   };
 }

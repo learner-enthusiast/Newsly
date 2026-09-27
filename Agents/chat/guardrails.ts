@@ -111,8 +111,11 @@ const GUARDRAIL_SYSTEM = [
   "4) Company background: founders, management, factories, locations, customers, competitors, industry, capacity, contracts, history.",
   "5) Industry and economic research: trends, supply chains, commodities, trade, inflation, rates, policy, sector analysis.",
   "6) Market/financial research: prices, revenue, valuation, dividends, statements, performance, analyst context.",
+  "7) News story creation: user asks to create, write, draft, prepare, or publish a news story or article on a business, market, company, or economic topic — including turning prior chat research into a story (category market_news). This is core product functionality, not creative fiction.",
   "",
   "Examples that MUST be allowed:",
+  '- "Create a news story about Quality Power\'s acquisition of WinWin" / "Write an article on diesel export trends"',
+  '- "Turn this research into a publishable story" / "Draft a news story from our conversation"',
   '- "What is Quality Power?" / "Where is Quality Power headquartered?"',
   '- "What does WinWin do?" / "Quality Power is buying WinWin — what does WinWin manufacture?"',
   '- "Why is Quality Power buying WinWin?" / "What could this acquisition mean?" / "Strategic importance of this acquisition?"',
@@ -131,6 +134,7 @@ const GUARDRAIL_SYSTEM = [
   "- Short, ambiguous, or multi-part company/transaction questions: ALLOW.",
   '- Analytical "why / what does it mean / is it important" on business events: ALLOW (research analysis, not personalized investment advice).',
   "- Do not block because the prompt lacks stock-market vocabulary.",
+  "- Requests to create/write/draft a news story or article on research topics: ALLOW (market_news), not off_topic.",
   "",
   'Brief greetings / \"what can you do\" → product_meta, allowed yes.',
   "",
@@ -180,6 +184,10 @@ const NON_RESEARCH_ENTITY_EXCLUSIONS =
 
 const STRATEGIC_BUSINESS_ANALYSIS_SIGNAL =
   /\b(strategic importance|strategically important|why is this important|what could this mean|what does this mean for|business significance|significance of (?:the |this )?(?:deal|acquisition|merger|transaction))\b/i;
+
+/** User wants to create/draft a news story or article (product story pipeline). */
+const NEWS_STORY_CREATION_SIGNAL =
+  /\b(?:create|write|draft|prepare|generate|publish)(?:\s+\w+){0,8}\s+(?:a\s+)?(?:news\s+)?(?:story|stories|article|articles)\b|\b(?:news\s+story|news\s+article)s?\b|\b(?:turn|convert)(?:\s+\w+){0,10}\s+into\s+(?:a\s+)?(?:news\s+)?(?:story|stories|article|articles)\b|\b(?:make|build)(?:\s+\w+){0,6}\s+(?:a\s+)?(?:news\s+)?(?:story|stories|article|articles)\b/i;
 
 const POLICY_VIOLATION_RULES: Array<{
   pattern: RegExp;
@@ -374,6 +382,10 @@ export function classifyClearlyInScopePrompt(
     return "product_meta";
   }
 
+  if (NEWS_STORY_CREATION_SIGNAL.test(prompt)) {
+    return "market_news";
+  }
+
   if (matchTradeEconomics(prompt)) {
     return "trade_economics";
   }
@@ -484,6 +496,16 @@ export function runStockResearchGuardrailRules(
       allowed: true,
       category: "product_meta",
       reason: "Product or greeting meta prompt.",
+      source: "rules",
+    };
+  }
+
+  if (NEWS_STORY_CREATION_SIGNAL.test(prompt)) {
+    return {
+      allowed: true,
+      category: "market_news",
+      reason:
+        "News story or article creation request within product functionality.",
       source: "rules",
     };
   }

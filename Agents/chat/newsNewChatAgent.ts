@@ -23,7 +23,7 @@ export const DEFAULT_NEWS_RESEARCH_REQUEST =
 /** Fields aligned with `NewsStory` (Prisma) used as model context. */
 export const newsStoryContextSchema = z.object({
   id: z.uuid(),
-  newsRequestId: z.uuid(),
+  newsRequestId: z.uuid().nullable().optional(),
   title: z.string().min(1),
   description: z.string().nullable().optional(),
   slug: z.string().min(1),

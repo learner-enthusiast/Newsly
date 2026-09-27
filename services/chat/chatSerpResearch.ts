@@ -8,6 +8,10 @@ import {
   normalizeSerpEnginePayload,
   type NormalizedSerpHit,
 } from "@/services/chat/normalizeSerpResults";
+import {
+  normalizeSerpApiLocation,
+  serpSearchWithLocationFallback,
+} from "@/services/chat/serpApiLocation";
 
 export const CHAT_SERP_NUM = 20;
 
@@ -19,7 +23,10 @@ export async function runSerpToolCall(
     ...(call.input as Record<string, unknown>),
     num: CHAT_SERP_NUM,
   });
-  return engine.fn(input);
+  return serpSearchWithLocationFallback(
+    (params) => engine.fn(params),
+    input,
+  );
 }
 
 export type SerpCallResult = {

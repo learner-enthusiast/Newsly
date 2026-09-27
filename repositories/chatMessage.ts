@@ -1,3 +1,5 @@
+import { chatRoleForMemoryDescription } from "@/Agents/chat/chatMessageSummarizerVectorAgent";
+import { enqueueChatMessageVectorIndexing } from "@/inngest/chatMessageEmbeddingPipeline";
 import { z } from "zod";
 import { prisma } from "@/db";
 
@@ -20,9 +22,18 @@ export type ChatMessagePutInput = z.input<typeof chatMessagePutSchema>;
 export type ChatMessagePatchInput = z.input<typeof chatMessagePatchSchema>;
 
 export async function createChatMessage(input: ChatMessageCreateInput) {
-  return prisma.chatMessage.create({
+  const saved = await prisma.chatMessage.create({
     data: chatMessageWriteSchema.parse(input),
   });
+
+  if (chatRoleForMemoryDescription(saved.role)) {
+    enqueueChatMessageVectorIndexing({
+      chatMessageId: saved.id,
+      chatSessionId: saved.chatSessionId,
+    });
+  }
+
+  return saved;
 }
 
 export async function getChatMessageById(id: string) {

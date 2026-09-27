@@ -35,6 +35,7 @@ import {
   MAX_DETERMINER_FIRECRAWL_URLS,
   validateDeterminerFirecrawlUrls,
 } from "@/services/chat/directUrlResearch";
+import { normalizeSerpApiLocation } from "@/services/chat/serpApiLocation";
 
 const SERP_TOOL_NAMES = [
   "searchGoogle",
@@ -201,6 +202,10 @@ export function sanitizeSerpToolInput(
 
   if (typeof next.q === "string") {
     next.q = next.q.trim();
+  }
+
+  if (typeof next.location === "string" && next.location.trim()) {
+    next.location = normalizeSerpApiLocation(next.location);
   }
 
   return next;

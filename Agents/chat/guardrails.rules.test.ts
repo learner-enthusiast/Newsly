@@ -65,6 +65,18 @@ const COMPANY_AND_TRANSACTION_ALLOW = [
       "Quality Power to buy WinWin what is quality power what is win win and where they are located and why is this important",
     category: "company_and_transaction_research",
   },
+  {
+    prompt: "Create a news story about India's diesel exports",
+    category: "market_news",
+  },
+  {
+    prompt: "Write me an article on Quality Power buying WinWin",
+    category: "market_news",
+  },
+  {
+    prompt: "Turn this research into a publishable news story",
+    category: "market_news",
+  },
 ];
 
 function assertAllowedByRules(prompt: string) {
