@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { prisma } from "@/db";
-import type { NewsStoryStatus } from "@/db/generated/client";
+import type { PublishStatus } from "@/db/generated/client";
+import {
+  canViewerAccessNewsStoryPage,
+  publicNewsStoryWhere,
+} from "@/services/news/newsStoryAccess";
 
 const newsStoryIdSchema = z.uuid("id must be a uuid");
 const newsRequestIdSchema = z.uuid("newsRequestId must be a uuid");
@@ -12,20 +16,9 @@ const newsStoryWriteSchema = z.object({
   newsRequestId: newsRequestIdSchema.optional().nullable(),
   chatSessionId: z.uuid().optional().nullable(),
   ownerId: userIdSchema.optional().nullable(),
-  status: z
-    .enum([
-      "PENDING",
-      "READY",
-      "FAILED",
-      "DRAFT",
-      "PUBLISHED",
-      "ARCHIVED",
-    ])
-    .optional(),
-  creator: z.enum(["SYSTEM", "USER"]).optional(),
-  provenance: z
-    .enum(["SYSTEM", "USER_RESEARCHED", "USER_EDITED"])
-    .optional(),
+  isUserCreated: z.boolean().optional(),
+  publishStatus: z.enum(["draft", "published"]).optional(),
+  generationError: z.string().nullable().optional(),
   title: z.string().min(1),
   description: z.string().min(1).nullable().optional(),
   slug: z.string().min(1),
@@ -81,7 +74,7 @@ export async function getNewsStoryByIdForUser(storyId: string, userId: string) {
   });
 }
 
-export async function createPendingChatNewsStory(input: {
+export async function createUserChatNewsStoryShell(input: {
   chatSessionId: string;
   ownerId: string;
   storyId?: string;
@@ -96,9 +89,8 @@ export async function createPendingChatNewsStory(input: {
       newsRequestId: null,
       chatSessionId,
       ownerId,
-      status: "PENDING",
-      creator: "USER",
-      provenance: "USER_RESEARCHED",
+      isUserCreated: true,
+      publishStatus: "draft",
       title: "Story in progress",
       slug,
       summary: "Research and synthesis in progress.",
@@ -108,13 +100,23 @@ export async function createPendingChatNewsStory(input: {
   });
 }
 
-export async function markChatNewsStoryFailed(storyId: string) {
+/** @deprecated alias */
+export const createPendingChatNewsStory = createUserChatNewsStoryShell;
+
+export async function markChatNewsStoryFailed(storyId: string, errorMessage: string) {
   return prisma.newsStory.updateMany({
     where: {
       id: newsStoryIdSchema.parse(storyId),
-      status: "PENDING",
+      isUserCreated: true,
+      publishStatus: "draft",
+      generationError: null,
     },
-    data: { status: "FAILED" },
+    data: {
+      generationError: errorMessage.slice(0, 2000),
+      title: "Story generation failed",
+      summary: "We could not finish this story.",
+      content: "Story generation failed. You can try creating a new story from chat.",
+    },
   });
 }
 
@@ -160,9 +162,104 @@ export async function applyChatStorySynthesis(input: {
       importanceScore: input.importanceScore,
       newsSourceIds: input.newsSourceIds,
       publishedAt: input.publishedAt ?? null,
-      status: "READY",
-      provenance: "USER_RESEARCHED",
+      generationError: null,
     },
+  });
+}
+
+export async function listUserCreatedStoriesForOwner(input: {
+  ownerId: string;
+  page: number;
+  limit: number;
+}) {
+  const ownerId = userIdSchema.parse(input.ownerId);
+  const page = Math.max(1, input.page);
+  const limit = Math.min(Math.max(1, input.limit), 50);
+  const skip = (page - 1) * limit;
+
+  const where = {
+    ownerId,
+    isUserCreated: true,
+  };
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.newsStory.count({ where }),
+    prisma.newsStory.findMany({
+      where,
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      skip,
+      take: limit,
+      include: {
+        sources: {
+          select: { id: true, url: true, title: true, domain: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    page,
+    limit,
+    total,
+    stories: rows.map((row) => mapStoryRowWithSources(row)),
+  };
+}
+
+export async function updateUserCreatedStoryForOwner(input: {
+  storyId: string;
+  ownerId: string;
+  data: {
+    title?: string;
+    description?: string | null;
+    summary?: string;
+    content?: string;
+    category?: string;
+    location?: string | null;
+    imageUrl?: string | null;
+    newsSourceIds?: string[];
+  };
+}) {
+  const storyId = newsStoryIdSchema.parse(input.storyId);
+  const ownerId = userIdSchema.parse(input.ownerId);
+  const existing = await prisma.newsStory.findFirst({
+    where: { id: storyId, ownerId, isUserCreated: true },
+    select: { id: true },
+  });
+  if (!existing) {
+    return null;
+  }
+  return prisma.newsStory.update({
+    where: { id: storyId },
+    data: input.data,
+  });
+}
+
+export async function setUserStoryPublishStatus(input: {
+  storyId: string;
+  ownerId: string;
+  publishStatus: PublishStatus;
+}) {
+  const storyId = newsStoryIdSchema.parse(input.storyId);
+  const ownerId = userIdSchema.parse(input.ownerId);
+  const existing = await prisma.newsStory.findFirst({
+    where: { id: storyId, ownerId, isUserCreated: true },
+    select: { id: true, generationError: true, slug: true, title: true },
+  });
+  if (!existing) {
+    return null;
+  }
+  if (
+    input.publishStatus === "published" &&
+    (existing.generationError ||
+      existing.slug.startsWith("pending-") ||
+      existing.title === "Story in progress")
+  ) {
+    throw new Error("Story is not ready to publish");
+  }
+  return prisma.newsStory.update({
+    where: { id: storyId },
+    data: { publishStatus: input.publishStatus },
   });
 }
 
@@ -219,14 +316,7 @@ const trendingStorySelect = {
 export async function getPublishedNewsStoryWithSources(storyId: string) {
   const row = await prisma.newsStory.findFirst({
     where: {
-      id: newsStoryIdSchema.parse(storyId),
-      OR: [
-        { newsRequest: { status: "success" } },
-        {
-          newsRequestId: null,
-          status: { in: ["READY", "PUBLISHED", "DRAFT"] },
-        },
-      ],
+      AND: [{ id: newsStoryIdSchema.parse(storyId) }, publicNewsStoryWhere],
     },
     include: {
       newsRequest: true,
@@ -266,15 +356,6 @@ export async function getPublishedNewsStoryWithSources(storyId: string) {
   };
 }
 
-const chatOriginStoryStatusesForOwner = [
-  "PENDING",
-  "READY",
-  "FAILED",
-  "DRAFT",
-  "PUBLISHED",
-  "ARCHIVED",
-] as const satisfies readonly NewsStoryStatus[];
-
 /** Latest chat-origin story for a session (owner-only lookup). */
 export async function getLatestChatOriginStoryForSession(input: {
   chatSessionId: string;
@@ -284,14 +365,16 @@ export async function getLatestChatOriginStoryForSession(input: {
     where: {
       chatSessionId: z.uuid().parse(input.chatSessionId),
       ownerId: userIdSchema.parse(input.ownerId),
-      newsRequestId: null,
+      isUserCreated: true,
     },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
-      status: true,
-      creator: true,
-      provenance: true,
+      isUserCreated: true,
+      publishStatus: true,
+      generationError: true,
+      slug: true,
+      title: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -318,21 +401,16 @@ export async function getNewsStoryWithSourcesForPage(
     return null;
   }
 
-  const isBriefingStory =
-    row.newsRequest != null && row.newsRequest.status === "success";
+  const allowed = canViewerAccessNewsStoryPage({
+    isUserCreated: row.isUserCreated,
+    publishStatus: row.publishStatus,
+    ownerId: row.ownerId,
+    viewerUserId,
+    newsRequestSuccess:
+      row.newsRequest != null && row.newsRequest.status === "success",
+  });
 
-  const isPublicChatStory =
-    row.newsRequestId == null &&
-    (row.status === "READY" || row.status === "PUBLISHED");
-
-  const isOwnerChatStory =
-    viewerUserId != null &&
-    row.ownerId === viewerUserId &&
-    row.chatSessionId != null &&
-    row.newsRequestId == null &&
-    chatOriginStoryStatusesForOwner.includes(row.status);
-
-  if (!isBriefingStory && !isPublicChatStory && !isOwnerChatStory) {
+  if (!allowed) {
     return null;
   }
 
@@ -361,20 +439,7 @@ export async function getNewsStoryWithSourcesForPage(
   };
 }
 
-const visiblePublicChatStoryStatuses: NewsStoryStatus[] = [
-  "READY",
-  "PUBLISHED",
-];
-
-const publishedStoryWhere = {
-  OR: [
-    { newsRequest: { status: "success" as const } },
-    {
-      newsRequestId: null,
-      status: { in: visiblePublicChatStoryStatuses },
-    },
-  ],
-};
+const publishedStoryWhere = publicNewsStoryWhere;
 
 const publishedStoryOrderBy = [
   { upvotes: "desc" as const },
@@ -458,15 +523,7 @@ export async function listTrendingNewsStories(input: {
   return prisma.newsStory.findMany({
     where: {
       AND: [
-        {
-          OR: [
-            { newsRequest: { status: "success" } },
-            {
-              newsRequestId: null,
-              status: { in: ["READY", "PUBLISHED"] },
-            },
-          ],
-        },
+        publicNewsStoryWhere,
         {
           OR: [
             { publishedAt: { gte: input.since } },

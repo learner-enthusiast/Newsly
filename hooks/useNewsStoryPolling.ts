@@ -2,7 +2,7 @@
 
 import {
   NEWS_STORY_POLL_MS,
-  shouldPollNewsStoryStatus,
+  shouldPollNewsStory,
 } from "@/services/news/newsStoryPollingLogic";
 import type { NewsStoryPagePayload } from "@/services/news/newsRequestTypes";
 import { useCallback, useEffect, useState } from "react";
@@ -67,7 +67,7 @@ export function useNewsStoryPolling(storyId: string | undefined) {
         setPollWarning(null);
         setError(null);
         setData(payload);
-        if (shouldPollNewsStoryStatus(payload.story.status)) {
+        if (shouldPollNewsStory(payload.story)) {
           timer = setTimeout(poll, NEWS_STORY_POLL_MS);
         }
       } catch (pollError) {
@@ -80,8 +80,6 @@ export function useNewsStoryPolling(storyId: string | undefined) {
         ) {
           return;
         }
-        const message =
-          pollError instanceof Error ? pollError.message : "Polling failed";
         setPollWarning("Connection issue — still checking your story…");
         timer = setTimeout(poll, NEWS_STORY_POLL_MS);
       }
@@ -105,6 +103,6 @@ export function useNewsStoryPolling(storyId: string | undefined) {
     pollWarning,
     refresh,
     isLoading: Boolean(storyId) && data === null && error === null,
-    isPending: data?.story.status === "PENDING",
+    isPending: Boolean(data?.story.isGenerating),
   };
 }

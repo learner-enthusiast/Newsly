@@ -11,6 +11,7 @@ import {
   getNewsStoryWithSourcesForPage,
   listNewsStoriesByNewsRequestId,
   listPublishedNewsStoriesPaginated,
+  listUserCreatedStoriesForOwner,
 } from "@/repositories/newsStory";
 import { attachVoteFieldsToStory } from "@/services/news/storyVoteService";
 import {
@@ -18,6 +19,11 @@ import {
   getSavedFlagsForStories,
   listSavedNewsStoriesForUser,
 } from "@/services/news/savedStoryService";
+import {
+  isUserStoryGenerationFailed,
+  isUserStoryGenerating,
+} from "@/services/news/newsStoryAccess";
+import type { PublishStatus } from "@/services/news/newsRequestTypes";
 import {
   type NewsGenerationConfig,
   newsGenerationConfigFromNewsRequest,
@@ -29,11 +35,6 @@ import {
   getNewsRequestsByUserId,
 } from "@/repositories/user";
 import { z } from "zod";
-import type {
-  NewsStoryCreator,
-  NewsStoryProvenance,
-  NewsStoryStatus,
-} from "@/services/news/newsRequestTypes";
 
 export const requestNewsBodySchema = newsGenerationRequestSchema;
 
@@ -49,22 +50,45 @@ type ListedStory = Awaited<
 >[number];
 
 type PageStoryRow = ListedStory & {
-  status?: NewsStoryStatus;
-  creator?: NewsStoryCreator;
-  provenance?: NewsStoryProvenance;
+  isUserCreated?: boolean;
+  publishStatus?: PublishStatus;
   ownerId?: string | null;
+  chatSessionId?: string | null;
+  generationError?: string | null;
+  slug?: string;
 };
 
-function serializeStoryBase(story: PageStoryRow) {
+function serializeStoryBase(
+  story: PageStoryRow,
+  viewerUserId: string | null = null,
+) {
+  const isUserCreated = story.isUserCreated ?? false;
+  const publishStatus = story.publishStatus ?? "published";
+  const ownerId = story.ownerId ?? null;
+  const generationError = story.generationError ?? null;
+  const slug = story.slug ?? "";
+  const isGenerating =
+    isUserCreated &&
+    isUserStoryGenerating({
+      slug,
+      title: story.title,
+      generationError,
+    });
+  const generationFailed =
+    isUserCreated && isUserStoryGenerationFailed({ generationError });
+
   return {
     id: story.id,
     newsRequestId: story.newsRequestId,
-    status: story.status ?? "READY",
-    creator: story.creator ?? "SYSTEM",
-    provenance: story.provenance ?? "SYSTEM",
+    isUserCreated,
+    publishStatus,
+    ownerId,
+    isGenerating,
+    generationFailed,
+    generationError,
     title: story.title,
     description: story.description,
-    slug: story.slug,
+    slug,
     summary: story.summary,
     content: story.content,
     category: story.category,
@@ -78,6 +102,13 @@ function serializeStoryBase(story: PageStoryRow) {
     sourceUrls: story.sourceUrls,
     createdAt: story.createdAt.toISOString(),
     updatedAt: story.updatedAt.toISOString(),
+    canEdit:
+      isUserCreated &&
+      !isGenerating &&
+      !generationFailed &&
+      viewerUserId != null &&
+      ownerId === viewerUserId,
+    originChatSessionId: story.chatSessionId ?? null,
   };
 }
 
@@ -85,9 +116,13 @@ function serializeStory(
   story: PageStoryRow,
   userVote: "UP" | "DOWN" | null = null,
   userSaved = false,
+  viewerUserId: string | null = null,
 ) {
   return attachSavedFieldToStory(
-    attachVoteFieldsToStory(serializeStoryBase(story), userVote),
+    attachVoteFieldsToStory(
+      serializeStoryBase(story, viewerUserId),
+      userVote,
+    ),
     userSaved,
   );
 }
@@ -138,6 +173,7 @@ async function loadStoriesIfReady(
       story,
       userVotes.get(story.id) ?? null,
       savedFlags.get(story.id) ?? false,
+      userId,
     ),
   );
 }
@@ -299,6 +335,7 @@ export async function listPublicNewsStories(input: {
       story as ListedStory,
       userVotes.get(story.id) ?? null,
       savedFlags.get(story.id) ?? false,
+      input.viewerUserId,
     ),
   );
 
@@ -335,12 +372,10 @@ export async function getNewsStoryPageResult(
     bundle.story as PageStoryRow,
     userVotes.get(bundle.story.id) ?? null,
     userSaved,
+    viewerUserId,
   );
 
-  const ownerId =
-    "ownerId" in bundle.story && typeof bundle.story.ownerId === "string"
-      ? bundle.story.ownerId
-      : null;
+  const ownerId = bundle.story.ownerId ?? null;
 
   return {
     newsRequest: bundle.newsRequest
@@ -353,8 +388,8 @@ export async function getNewsStoryPageResult(
   };
 }
 
-/** Paginated saved stories for the signed-in viewer (newest saved first). */
-export async function listViewerSavedNewsStories(input: {
+/** Paginated bookmarked community stories for the signed-in viewer. */
+export async function listViewerBookmarkedNewsStories(input: {
   userId: string;
   page: number;
   limit: number;
@@ -381,6 +416,7 @@ export async function listViewerSavedNewsStories(input: {
       story as ListedStory,
       userVotes.get(story.id) ?? null,
       true,
+      input.userId,
     ),
   );
 
@@ -392,6 +428,50 @@ export async function listViewerSavedNewsStories(input: {
     totalPages,
   };
 }
+
+/** User-created stories owned by the signed-in viewer (Saved Stories page). */
+export async function listViewerUserCreatedNewsStories(input: {
+  userId: string;
+  page: number;
+  limit: number;
+}) {
+  const limit = Math.min(
+    Math.max(1, input.limit),
+    PUBLIC_NEWS_STORIES_MAX_LIMIT,
+  );
+  const page = Math.max(1, input.page);
+
+  const { stories, total } = await listUserCreatedStoriesForOwner({
+    ownerId: input.userId,
+    page,
+    limit,
+  });
+
+  const userVotes = await getUserVotesForStories(
+    input.userId,
+    stories.map((story) => story.id),
+  );
+
+  const serialized = stories.map((story) =>
+    serializeStory(
+      story as ListedStory,
+      userVotes.get(story.id) ?? null,
+      false,
+      input.userId,
+    ),
+  );
+
+  return {
+    stories: serialized,
+    page,
+    limit,
+    total,
+    totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+  };
+}
+
+/** @deprecated Use listViewerBookmarkedNewsStories */
+export const listViewerSavedNewsStories = listViewerBookmarkedNewsStories;
 
 /** Poll news request status and stories for the owning user. */
 export async function getNewsRequestResult(userId: string, newsRequestId: string) {

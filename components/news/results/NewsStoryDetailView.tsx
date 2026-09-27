@@ -36,6 +36,10 @@ type NewsStoryDetailViewProps = {
   onDeepDive: (storyId: string) => void;
   onVote: (storyId: string, vote: "UP" | "DOWN") => Promise<void>;
   onSaveToggle?: (storyId: string, nextSaved: boolean) => Promise<void>;
+  onPublish?: () => void;
+  onUnpublish?: () => void;
+  publishBusy?: boolean;
+  onStoryUpdated?: (payload: NewsStoryPagePayload) => void;
 };
 
 export function NewsStoryDetailView({
@@ -49,10 +53,18 @@ export function NewsStoryDetailView({
   onDeepDive,
   onVote,
   onSaveToggle,
+  onPublish,
+  onUnpublish,
+  publishBusy = false,
+  onStoryUpdated,
 }: NewsStoryDetailViewProps) {
   const { story, newsRequest, canViewFullBriefing } = data;
   const showFullBody = shouldRenderFullStoryBody(story);
   const showEngagement = shouldShowStoryEngagement(story);
+  const showStoryActions =
+    showFullBody &&
+    (showEngagement || story.canEdit) &&
+    (isSignedIn || !story.canEdit);
   const { recentRequests, recentLoading } = useRecentNewsRequests(isSignedIn);
   const headerRef = useRef<HTMLElement>(null);
   const leftRef = useRef<HTMLElement>(null);
@@ -142,14 +154,19 @@ export function NewsStoryDetailView({
             <NewsStoryCard
               story={story}
               rank={1}
-              showActions={showActions && showEngagement}
+              showActions={Boolean(isSignedIn) && showStoryActions}
               guestActionsVisible={!isSignedIn && showEngagement}
+              ownerDetailMode={story.canEdit}
               deepDiveStoryId={deepDiveStoryId}
               votingStoryId={votingStoryId}
               savingStoryId={savingStoryId}
               onDeepDive={onDeepDive}
               onVote={onVote}
               onSaveToggle={onSaveToggle}
+              onPublish={onPublish}
+              onUnpublish={onUnpublish}
+              publishBusy={publishBusy}
+              onStoryUpdated={onStoryUpdated}
             />
           ) : null}
         </div>

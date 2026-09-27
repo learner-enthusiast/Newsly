@@ -29,11 +29,10 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/news", label: "News", icon: Newspaper, exact: false },
   { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
   {
-    href: "/news",
+    href: "/newsStory/saved",
     label: "Saved",
     icon: Bookmark,
     exact: false,
-    disabled: true,
   },
   {
     href: "/news",

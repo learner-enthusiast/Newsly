@@ -65,6 +65,10 @@ import {
   getChatNewsStoryForPipeline,
   markChatNewsStoryFailed,
 } from "@/repositories/newsStory";
+import {
+  isUserStoryGenerationFailed,
+  isUserStoryGenerating,
+} from "@/services/news/newsStoryAccess";
 import { createNewsSource } from "@/repositories/newsSource";
 import { fetchAndNormalizeChatSerpResearch } from "@/services/chat/chatSerpWithAiOverview";
 import { mergePreparedResearchArticles } from "@/services/chat/chatStoryResearchArticles";
@@ -118,7 +122,7 @@ export const chatStoryPipelineFunction = inngest.createFunction(
       const message = error instanceof Error ? error.message : String(error);
       pipelineLog("onFailure", message, { storyId: parsed.data.storyId });
       await step.run("mark-story-failed", async () => {
-        await markChatNewsStoryFailed(parsed.data.storyId);
+        await markChatNewsStoryFailed(parsed.data.storyId, message);
       });
       await step.run("create-failure-notification", async () => {
         await tryCreatePipelineNotification(
@@ -144,18 +148,26 @@ export const chatStoryPipelineFunction = inngest.createFunction(
       if (!row) {
         throw new NonRetriableError("Chat story not found for pipeline");
       }
-      if (row.status === "READY" || row.status === "PUBLISHED" || row.status === "ARCHIVED") {
-        pipelineLog("validate-story", "already complete", { status: row.status });
-        return toJsonSafeStepOutput({ skip: true as const, status: row.status });
+      if (isUserStoryGenerationFailed(row)) {
+        throw new NonRetriableError("Story generation failed; retry not configured");
       }
-      if (row.status === "FAILED") {
-        throw new NonRetriableError("Story is FAILED; retry not configured");
+      if (!isUserStoryGenerating(row)) {
+        pipelineLog("validate-story", "already complete", {
+          publishStatus: row.publishStatus,
+        });
+        return toJsonSafeStepOutput({
+          skip: true as const,
+          publishStatus: row.publishStatus,
+        });
       }
-      return toJsonSafeStepOutput({ skip: false as const, status: row.status });
+      return toJsonSafeStepOutput({ skip: false as const, publishStatus: row.publishStatus });
     });
 
     if (story.skip) {
-      return toJsonSafeStepOutput({ storyId: input.storyId, status: story.status });
+      return toJsonSafeStepOutput({
+        storyId: input.storyId,
+        publishStatus: story.publishStatus,
+      });
     }
 
     const gap = await step.run("story-research-gap", async () => {
@@ -325,6 +337,6 @@ export const chatStoryPipelineFunction = inngest.createFunction(
     });
 
     pipelineLog("run", "finished", { storyId: input.storyId });
-    return toJsonSafeStepOutput({ storyId: input.storyId, status: "READY" });
+    return toJsonSafeStepOutput({ storyId: input.storyId, publishStatus: "draft" });
   },
 );

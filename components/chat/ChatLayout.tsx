@@ -90,7 +90,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
   const shouldPoll =
     state === null ||
     state.status === "initializing" ||
-    state?.storyCreation?.status === "PENDING";
+    state?.storyCreation?.isGenerating;
 
   useEffect(() => {
     let cancelled = false;
@@ -104,7 +104,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         }
         setError(null);
         void loadSessions();
-        if (payload.status === "initializing" || payload.storyCreation?.status === "PENDING") {
+        if (payload.status === "initializing" || payload.storyCreation?.isGenerating) {
           timer = setTimeout(poll, POLL_MS);
         }
       } catch (pollError) {

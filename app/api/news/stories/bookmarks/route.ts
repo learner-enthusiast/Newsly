@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuthenticatedUser } from "@/lib/auth";
 import {
-  listViewerUserCreatedNewsStories,
+  listViewerBookmarkedNewsStories,
   PUBLIC_NEWS_STORIES_DEFAULT_LIMIT,
   PUBLIC_NEWS_STORIES_MAX_LIMIT,
 } from "@/services/news/apiService";
@@ -37,14 +37,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await listViewerUserCreatedNewsStories({
+    const result = await listViewerBookmarkedNewsStories({
       userId: user.id,
       ...parsed.data,
     });
     return NextResponse.json(result);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to load saved stories";
+      error instanceof Error ? error.message : "Failed to load bookmarks";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -15,10 +15,9 @@ export function ChatStoryCreationCard({
   storyCreation,
 }: ChatStoryCreationCardProps) {
   const href = `/newsStory/${storyCreation.storyId}`;
-  const isPending = storyCreation.status === "PENDING";
-  const isFailed = storyCreation.status === "FAILED";
-  const isReady =
-    storyCreation.status === "READY" || storyCreation.status === "DRAFT";
+  const isPending = storyCreation.isGenerating;
+  const isFailed = storyCreation.generationFailed;
+  const isReady = !isPending && !isFailed;
 
   return (
     <Card className="border-primary/20 bg-primary/5">
@@ -48,11 +47,9 @@ export function ChatStoryCreationCard({
                   ? "Something went wrong while building this story. Open the story page for details."
                   : "Research and synthesis finished. Review the draft before publishing."}
             </p>
-            {storyCreation.creator === "USER" ? (
-              <Badge variant="outline" className="text-[10px]">
-                From your research
-              </Badge>
-            ) : null}
+            <Badge variant="outline" className="text-[10px]">
+              From your research
+            </Badge>
           </div>
         </div>
         <Button

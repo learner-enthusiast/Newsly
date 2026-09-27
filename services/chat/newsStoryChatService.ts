@@ -17,6 +17,10 @@ import {
   getNewsStoryByIdForUser,
 } from "@/repositories/newsStory";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
+import {
+  isUserStoryGenerationFailed,
+  isUserStoryGenerating,
+} from "@/services/news/newsStoryAccess";
 import { z } from "zod";
 
 export const newsStoryChatBodySchema = z.object({
@@ -81,6 +85,28 @@ function deriveChatSessionStatus(
   return "ready";
 }
 
+function toStoryCreationPayload(
+  latestStory: NonNullable<
+    Awaited<ReturnType<typeof getLatestChatOriginStoryForSession>>
+  >,
+): ChatStoryCreationPayload {
+  const isGenerating = isUserStoryGenerating({
+    slug: latestStory.slug,
+    title: latestStory.title,
+    generationError: latestStory.generationError,
+  });
+  const generationFailed = isUserStoryGenerationFailed({
+    generationError: latestStory.generationError,
+  });
+  return {
+    storyId: latestStory.id,
+    isUserCreated: true,
+    publishStatus: latestStory.publishStatus,
+    isGenerating,
+    generationFailed,
+  };
+}
+
 function deriveStoryCreationForChatState(
   messages: { role: string; createdAt: Date }[],
   latestStory: Awaited<
@@ -91,13 +117,10 @@ function deriveStoryCreationForChatState(
     return null;
   }
 
-  if (latestStory.status === "PENDING" || latestStory.status === "FAILED") {
-    return {
-      storyId: latestStory.id,
-      status: latestStory.status,
-      creator: latestStory.creator,
-      provenance: latestStory.provenance,
-    };
+  const payload = toStoryCreationPayload(latestStory);
+
+  if (payload.isGenerating || payload.generationFailed) {
+    return payload;
   }
 
   let lastUserCreatedAt: Date | null = null;
@@ -112,16 +135,8 @@ function deriveStoryCreationForChatState(
     return null;
   }
 
-  if (
-    (latestStory.status === "READY" || latestStory.status === "DRAFT") &&
-    latestStory.updatedAt >= lastUserCreatedAt
-  ) {
-    return {
-      storyId: latestStory.id,
-      status: latestStory.status,
-      creator: latestStory.creator,
-      provenance: latestStory.provenance,
-    };
+  if (latestStory.updatedAt >= lastUserCreatedAt) {
+    return payload;
   }
 
   return null;

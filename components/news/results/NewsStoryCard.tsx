@@ -17,11 +17,12 @@ import {
   formatStoryPublishedMeta,
   primaryStoryDomain,
 } from "@/services/news/newsRequestDisplay";
-import type { SerializedNewsStory } from "@/services/news/newsRequestTypes";
+import type { NewsStoryPagePayload, SerializedNewsStory } from "@/services/news/newsRequestTypes";
+import { NewsStoryOwnerEditSheet } from "@/components/news/results/NewsStoryOwnerEditSheet";
 import { StorySaveButton } from "@/components/news/StorySaveButton";
 import { cn } from "@/lib/utils";
 import { SignInButton } from "@clerk/nextjs";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
@@ -38,6 +39,14 @@ type NewsStoryCardProps = {
   onDeepDive: (storyId: string) => void;
   onVote: (storyId: string, vote: "UP" | "DOWN") => Promise<void>;
   onSaveToggle?: (storyId: string, nextSaved: boolean) => Promise<void>;
+  /** Whole card links to the story page (for My Stories list). */
+  linkBehavior?: "title" | "card";
+  /** Story detail page: owner publish/edit/back-to-chat controls on the card. */
+  ownerDetailMode?: boolean;
+  onPublish?: () => void;
+  onUnpublish?: () => void;
+  publishBusy?: boolean;
+  onStoryUpdated?: (payload: NewsStoryPagePayload) => void;
   className?: string;
 };
 
@@ -73,6 +82,12 @@ export function NewsStoryCard({
   onDeepDive,
   onVote,
   onSaveToggle,
+  linkBehavior = "title",
+  ownerDetailMode = false,
+  onPublish,
+  onUnpublish,
+  publishBusy = false,
+  onStoryUpdated,
   className,
 }: NewsStoryCardProps) {
   const domain = primaryStoryDomain(story.sourceUrls);
@@ -87,6 +102,21 @@ export function NewsStoryCard({
   const showStoryImage =
     Boolean(storyImageUrl) && failedImageUrl !== storyImageUrl;
   const categoryLabel = story.category?.trim() || "";
+  const isOwnerDraft =
+    ownerDetailMode &&
+    story.canEdit &&
+    story.isUserCreated &&
+    story.publishStatus === "draft";
+  const isOwnerPublished =
+    ownerDetailMode &&
+    story.canEdit &&
+    story.isUserCreated &&
+    story.publishStatus === "published";
+  const showCommunityVotes = !isOwnerDraft;
+  const backToChatHref = story.originChatSessionId
+    ? `/chat/${story.originChatSessionId}`
+    : null;
+  const useBackToChat = isOwnerDraft && Boolean(backToChatHref);
 
   let categoryMarker: ReactNode = null;
 
@@ -137,14 +167,19 @@ export function NewsStoryCard({
     }
   }
 
-  return (
-    <article
-      data-story-card
-      className={cn(
-        "group rounded-2xl border border-border/70 bg-card/90 p-4 shadow-paper transition-shadow hover:shadow-editorial sm:p-5",
-        className,
-      )}
-    >
+  const storyHref = `/newsStory/${story.id}`;
+  const titleNode =
+    linkBehavior === "card" ? (
+      <span className="transition-colors group-hover:text-primary">
+        {story.title}
+      </span>
+    ) : (
+      <Link href={storyHref} className="transition-colors hover:text-primary">
+        {story.title}
+      </Link>
+    );
+
+  const cardInner = (
       <div className="flex gap-4">
         <div
           className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background"
@@ -191,15 +226,16 @@ export function NewsStoryCard({
                 {story.location?.trim() ? (
                   <Badge variant="outline">{story.location}</Badge>
                 ) : null}
+                {isOwnerDraft ? (
+                  <Badge variant="secondary">Draft</Badge>
+                ) : null}
+                {isOwnerPublished ? (
+                  <Badge variant="outline">Published</Badge>
+                ) : null}
               </div>
 
               <h2 className="font-display mt-2 text-xl leading-snug font-semibold text-balance">
-                <Link
-                  href={`/newsStory/${story.id}`}
-                  className="transition-colors hover:text-primary"
-                >
-                  {story.title}
-                </Link>
+                {titleNode}
               </h2>
 
               {description ? (
@@ -236,9 +272,20 @@ export function NewsStoryCard({
                 {guestGated ? (
                   <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
                     <Button type="button" variant="ghost" size="sm">
-                      Deep Dive
+                      {useBackToChat ? "Back to chat" : "Deep Dive"}
                     </Button>
                   </SignInButton>
+                ) : useBackToChat && backToChatHref ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    nativeButton={false}
+                    render={<Link href={backToChatHref} />}
+                  >
+                    <MessageSquare data-icon="inline-start" className="size-3.5" />
+                    Back to chat
+                  </Button>
                 ) : (
                   <Button
                     type="button"
@@ -253,21 +300,54 @@ export function NewsStoryCard({
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <NewsStoryVotes
-                  storyId={story.id}
-                  vote={{
-                    upvotes: story.upvotes ?? 0,
-                    downvotes: story.downvotes ?? 0,
-                    netVotes: story.netVotes ?? 0,
-                    userVote: story.userVote ?? null,
-                  }}
-                  onVote={onVote}
-                  voting={votingStoryId === story.id}
-                  signInRedirectUrl={guestGated ? redirectUrl : undefined}
-                />
+                {showCommunityVotes ? (
+                  <NewsStoryVotes
+                    storyId={story.id}
+                    vote={{
+                      upvotes: story.upvotes ?? 0,
+                      downvotes: story.downvotes ?? 0,
+                      netVotes: story.netVotes ?? 0,
+                      userVote: story.userVote ?? null,
+                    }}
+                    onVote={onVote}
+                    voting={votingStoryId === story.id}
+                    signInRedirectUrl={guestGated ? redirectUrl : undefined}
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Publish to share with the community and collect votes.
+                  </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {onSaveToggle ? (
+                  {ownerDetailMode && story.canEdit && onStoryUpdated ? (
+                    <NewsStoryOwnerEditSheet
+                      story={story}
+                      onUpdated={onStoryUpdated}
+                    />
+                  ) : null}
+                  {isOwnerDraft && onPublish ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={publishBusy}
+                      onClick={onPublish}
+                    >
+                      Publish story
+                    </Button>
+                  ) : null}
+                  {isOwnerPublished && onUnpublish ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={publishBusy}
+                      onClick={onUnpublish}
+                    >
+                      Move to draft
+                    </Button>
+                  ) : null}
+                  {showCommunityVotes && onSaveToggle ? (
                     <StorySaveButton
                       storyId={story.id}
                       saved={story.userSaved ?? false}
@@ -284,6 +364,29 @@ export function NewsStoryCard({
           ) : null}
         </div>
       </div>
+  );
+
+  const cardClassName = cn(
+    "group rounded-2xl border border-border/70 bg-card/90 p-4 shadow-paper transition-shadow hover:shadow-editorial sm:p-5",
+    linkBehavior === "card" && "cursor-pointer hover:border-primary/30",
+    className,
+  );
+
+  if (linkBehavior === "card") {
+    return (
+      <Link
+        href={storyHref}
+        data-story-card
+        className={cn("block no-underline text-inherit", cardClassName)}
+      >
+        {cardInner}
+      </Link>
+    );
+  }
+
+  return (
+    <article data-story-card className={cardClassName}>
+      {cardInner}
     </article>
   );
 }

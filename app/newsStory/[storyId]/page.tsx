@@ -45,6 +45,61 @@ export default function NewsStoryPage() {
   const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
   const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
   const [savingStoryId, setSavingStoryId] = useState<string | null>(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+
+  const onPublish = useCallback(async () => {
+    if (!storyId || !isSignedIn) {
+      return;
+    }
+    setPublishBusy(true);
+    try {
+      const response = await fetch(`/api/news/stories/${storyId}/publish`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as NewsStoryPagePayload & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to publish");
+      }
+      setData(payload);
+      toast.success("Story published");
+    } catch (publishErr) {
+      toast.error(
+        publishErr instanceof Error ? publishErr.message : "Publish failed",
+      );
+    } finally {
+      setPublishBusy(false);
+    }
+  }, [isSignedIn, storyId, setData]);
+
+  const onUnpublish = useCallback(async () => {
+    if (!storyId || !isSignedIn) {
+      return;
+    }
+    setPublishBusy(true);
+    try {
+      const response = await fetch(`/api/news/stories/${storyId}/publish`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as NewsStoryPagePayload & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to move to draft");
+      }
+      setData(payload);
+      toast.success("Story moved to draft");
+    } catch (unpublishErr) {
+      toast.error(
+        unpublishErr instanceof Error
+          ? unpublishErr.message
+          : "Could not move to draft",
+      );
+    } finally {
+      setPublishBusy(false);
+    }
+  }, [isSignedIn, storyId, setData]);
 
   async function onDeepDive(targetStoryId: string) {
     if (!isSignedIn) {
@@ -253,6 +308,10 @@ export default function NewsStoryPage() {
       onDeepDive={onDeepDive}
       onVote={onStoryVote}
       onSaveToggle={onSaveToggle}
+      onPublish={onPublish}
+      onUnpublish={onUnpublish}
+      publishBusy={publishBusy}
+      onStoryUpdated={(payload) => setData(payload)}
     />
   );
 }

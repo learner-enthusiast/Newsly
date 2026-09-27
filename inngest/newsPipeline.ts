@@ -796,9 +796,6 @@ export const newsPipelineFunction = inngest.createFunction(
 
           const savedStory = await createNewsStory({
             newsRequestId: newsRequest.id,
-            status: "READY",
-            creator: "SYSTEM",
-            provenance: "SYSTEM",
             title: story.title,
             description: story.description,
             slug: story.slug,

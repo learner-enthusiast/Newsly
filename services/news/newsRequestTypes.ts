@@ -1,23 +1,14 @@
 /** DB enum `NewsRequestStatus`: pending → in progress, success → completed, failed → failed. */
 export type NewsRequestStatus = "pending" | "failed" | "success";
 
-export type NewsStoryStatus =
-  | "PENDING"
-  | "READY"
-  | "FAILED"
-  | "DRAFT"
-  | "PUBLISHED"
-  | "ARCHIVED";
-
-export type NewsStoryCreator = "SYSTEM" | "USER";
-
-export type NewsStoryProvenance = "SYSTEM" | "USER_RESEARCHED" | "USER_EDITED";
+export type PublishStatus = "draft" | "published";
 
 export type ChatStoryCreationPayload = {
   storyId: string;
-  status: NewsStoryStatus;
-  creator: NewsStoryCreator;
-  provenance: NewsStoryProvenance;
+  isUserCreated: true;
+  publishStatus: PublishStatus;
+  isGenerating: boolean;
+  generationFailed: boolean;
 };
 
 export type SerializedStorySourceLink = {
@@ -64,9 +55,12 @@ export type SerializedTrendingNewsStory = {
 export type SerializedNewsStory = {
   id: string;
   newsRequestId: string | null;
-  status: NewsStoryStatus;
-  creator: NewsStoryCreator;
-  provenance: NewsStoryProvenance;
+  isUserCreated: boolean;
+  publishStatus: PublishStatus;
+  ownerId: string | null;
+  isGenerating: boolean;
+  generationFailed: boolean;
+  generationError: string | null;
   title: string;
   summary: string;
   description: string | null;
@@ -82,6 +76,10 @@ export type SerializedNewsStory = {
   netVotes: number;
   userVote: "UP" | "DOWN" | null;
   userSaved: boolean;
+  createdAt: string;
+  updatedAt: string;
+  canEdit: boolean;
+  originChatSessionId: string | null;
 };
 
 export type NewsRequestResultPayload = {

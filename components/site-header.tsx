@@ -70,10 +70,10 @@ export function SiteHeader() {
                   match: (p: string) => p === "/chat" || p.startsWith("/chat/"),
                 },
                 {
-                  href: "/news",
+                  href: "/newsStory/saved",
                   label: "Saved",
-                  match: () => false,
-                  disabled: true,
+                  match: (p: string) =>
+                    p === "/newsStory/saved" || p.startsWith("/newsStory/saved/"),
                 },
               ] as const
             ).map((link) =>

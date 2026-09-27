@@ -25,7 +25,7 @@ export function NotificationPopover({
   onSelect,
 }: NotificationPopoverProps) {
   return (
-    <div className="flex w-[min(100vw-2rem,22rem)] flex-col gap-0 p-0">
+    <div className="flex w-[min(100vw-2rem,22rem)] flex-col gap-0 p-0 overflow-y-auto">
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <p className="text-sm font-medium">Notifications</p>
         {unreadCount > 0 ? (

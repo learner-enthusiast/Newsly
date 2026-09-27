@@ -26,7 +26,7 @@ import { toast } from "sonner";
 
 const DEFAULT_LIMIT = 20;
 
-type NewsStoriesFeed = "community" | "saved";
+type NewsStoriesFeed = "community" | "saved" | "bookmarks";
 
 type NewsStoriesListViewProps = {
   initialPage?: number;
@@ -50,11 +50,14 @@ export function NewsStoriesListView({
   const saveLockRef = useRef<Set<string>>(new Set());
 
   const isSavedFeed = feed === "saved";
-  const requiresSignIn = isLoaded && isSavedFeed && !isSignedIn;
+  const isBookmarksFeed = feed === "bookmarks";
+  const requiresSignIn = isLoaded && (isSavedFeed || isBookmarksFeed) && !isSignedIn;
   const canFetchStories = isLoaded && !requiresSignIn;
   const listApiPath = isSavedFeed
     ? `/api/news/stories/saved?page=${page}&limit=${DEFAULT_LIMIT}`
-    : `/api/news/stories?page=${page}&limit=${DEFAULT_LIMIT}`;
+    : isBookmarksFeed
+      ? `/api/news/stories/bookmarks?page=${page}&limit=${DEFAULT_LIMIT}`
+      : `/api/news/stories?page=${page}&limit=${DEFAULT_LIMIT}`;
 
   useEffect(() => {
     if (!canFetchStories) {
@@ -260,7 +263,7 @@ export function NewsStoriesListView({
         if (!current) {
           return current;
         }
-        if (isSavedFeed && !nextSaved) {
+        if (isBookmarksFeed && !nextSaved) {
           const nextStories = current.stories.filter(
             (story) => story.id !== targetStoryId,
           );
@@ -311,7 +314,7 @@ export function NewsStoriesListView({
         setSavingStoryId(null);
       }
     },
-    [isSignedIn, isSavedFeed],
+    [isSignedIn, isSavedFeed, isBookmarksFeed],
   );
 
   if (!isLoaded) {
@@ -329,10 +332,10 @@ export function NewsStoriesListView({
         <div className="mx-auto w-full max-w-4xl px-4 py-6 md:px-6 md:py-8">
           <header className="mb-6 space-y-2">
             <h1 className="font-display text-3xl font-semibold tracking-tight">
-              Saved stories
+              My stories
             </h1>
             <p className="text-sm text-muted-foreground">
-              Sign in to view stories you&apos;ve bookmarked.
+              Sign in to view stories you created from chat.
             </p>
           </header>
           <NewsStorySignInBanner redirectPath="/newsStory/saved" />
@@ -369,20 +372,36 @@ export function NewsStoriesListView({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h1 className="font-display text-3xl font-semibold tracking-tight">
-                {isSavedFeed ? "Saved stories" : "Community stories"}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {isSavedFeed
-                  ? "Stories you've saved for later, newest saved first."
+              {isSavedFeed
+                ? "My stories"
+                : isBookmarksFeed
+                  ? "Bookmarked stories"
+                  : "Community stories"}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {isSavedFeed
+                ? "Stories you created from chat—drafts and published."
+                : isBookmarksFeed
+                  ? "Community stories you saved for later."
                   : "Top-voted briefings from Newsly, newest and most upvoted first."}
-              </p>
+            </p>
             </div>
             {isSignedIn ? (
               <Link
-                href={isSavedFeed ? "/newsStory" : "/newsStory/saved"}
+                href={
+                  isSavedFeed
+                    ? "/newsStory"
+                    : isBookmarksFeed
+                      ? "/newsStory/saved"
+                      : "/newsStory/saved"
+                }
                 className="text-sm font-medium text-primary hover:underline"
               >
-                {isSavedFeed ? "Browse community stories" : "View saved stories"}
+                {isSavedFeed
+                  ? "Browse community stories"
+                  : isBookmarksFeed
+                    ? "View my stories"
+                    : "View my stories"}
               </Link>
             ) : null}
           </div>
@@ -401,8 +420,10 @@ export function NewsStoriesListView({
         {data.stories.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {isSavedFeed
-              ? "You haven't saved any stories yet. Browse community stories and tap Save."
-              : "No stories yet."}
+              ? "You haven't created any stories from chat yet."
+              : isBookmarksFeed
+                ? "You haven't bookmarked any stories yet. Browse community stories and tap Save."
+                : "No stories yet."}
           </p>
         ) : (
           <div className="space-y-4">
@@ -411,7 +432,7 @@ export function NewsStoriesListView({
                 key={story.id}
                 story={story}
                 rank={rankOffset + index + 1}
-                showActions={Boolean(isSignedIn)}
+                showActions={Boolean(isSignedIn) && !isSavedFeed}
                 guestActionsVisible={!isSignedIn}
                 signInRedirectUrl={`/newsStory/${story.id}`}
                 deepDiveStoryId={deepDiveStoryId}
@@ -420,6 +441,7 @@ export function NewsStoriesListView({
                 onDeepDive={onDeepDive}
                 onVote={onStoryVote}
                 onSaveToggle={onSaveToggle}
+                linkBehavior={isSavedFeed ? "card" : "title"}
               />
             ))}
           </div>

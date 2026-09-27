@@ -1,22 +1,28 @@
-import type { NewsStoryStatus } from "@/services/news/newsRequestTypes";
+import type { SerializedNewsStory } from "@/services/news/newsRequestTypes";
 
 export const NEWS_STORY_POLL_MS = 5000;
 
-const TERMINAL_STORY_STATUSES = new Set<NewsStoryStatus>([
-  "READY",
-  "FAILED",
-  "DRAFT",
-  "PUBLISHED",
-  "ARCHIVED",
-]);
-
-export function shouldPollNewsStoryStatus(status: NewsStoryStatus | undefined): boolean {
-  if (!status) {
+export function shouldPollNewsStory(story: Pick<
+  SerializedNewsStory,
+  "isGenerating" | "generationFailed"
+> | undefined): boolean {
+  if (!story) {
     return false;
   }
-  return status === "PENDING";
+  return story.isGenerating && !story.generationFailed;
 }
 
-export function isTerminalNewsStoryStatus(status: NewsStoryStatus): boolean {
-  return TERMINAL_STORY_STATUSES.has(status);
+export function shouldRenderFullStoryBody(
+  story: Pick<SerializedNewsStory, "isGenerating" | "generationFailed">,
+): boolean {
+  return !story.isGenerating && !story.generationFailed;
+}
+
+export function shouldShowStoryEngagement(
+  story: Pick<
+    SerializedNewsStory,
+    "isGenerating" | "generationFailed"
+  >,
+): boolean {
+  return !story.isGenerating && !story.generationFailed;
 }
