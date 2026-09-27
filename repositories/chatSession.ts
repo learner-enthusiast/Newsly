@@ -13,6 +13,7 @@ const chatSessionWriteSchema = z.object({
   title: z.string().min(1).nullable().optional(),
   topic: z.string().min(1).nullable().optional(),
   isFromNewsStory: z.boolean().optional(),
+  isBookmarked: z.boolean().optional(),
 });
 
 const chatSessionPutSchema = chatSessionWriteSchema.omit({ userId: true });
@@ -46,7 +47,7 @@ export async function getChatSessionByIdForUser(id: string, userId: string) {
 export async function listChatSessionsByUserId(userId: string) {
   return prisma.chatSession.findMany({
     where: { userId: userIdSchema.parse(userId) },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ isBookmarked: "desc" }, { updatedAt: "desc" }],
   });
 }
 

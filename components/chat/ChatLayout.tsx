@@ -67,7 +67,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
   ]);
 
   const loadSessions = useCallback(async () => {
-    const response = await fetch("/api/newsStoryChat");
+    const response = await fetch("/api/chat");
     if (!response.ok) {
       return;
     }
@@ -248,12 +248,89 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     }
   }
 
+  async function handleBookmarkChat(id: string, isBookmarked: boolean) {
+    try {
+      const response = await fetch(`/api/chat/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isBookmarked }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to update bookmark");
+      }
+      await loadSessions();
+    } catch (bookmarkError) {
+      toast.error(
+        bookmarkError instanceof Error
+          ? bookmarkError.message
+          : "Bookmark update failed",
+      );
+    }
+  }
+
+  async function handleRenameChat(id: string, title: string) {
+    try {
+      const response = await fetch(`/api/chat/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to rename chat");
+      }
+      await loadSessions();
+      if (id === chatSessionId) {
+        await loadState();
+      }
+    } catch (renameError) {
+      toast.error(
+        renameError instanceof Error ? renameError.message : "Rename failed",
+      );
+    }
+  }
+
+  async function handleDeleteChat(id: string) {
+    try {
+      const response = await fetch(`/api/chat/${id}`, { method: "DELETE" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to delete chat");
+      }
+      await loadSessions();
+      if (id === chatSessionId) {
+        const listResponse = await fetch("/api/chat");
+        const listPayload = (await listResponse.json()) as {
+          sessions: ChatSessionSummary[];
+        };
+        const remaining = listResponse.ok
+          ? listPayload.sessions
+          : sessions.filter((session) => session.id !== id);
+        if (remaining.length > 0) {
+          navigateToSession(remaining[0]!.id);
+        } else {
+          void handleNewChat();
+        }
+      }
+    } catch (deleteError) {
+      toast.error(
+        deleteError instanceof Error ? deleteError.message : "Delete failed",
+      );
+    }
+  }
+
   const sidebar = (
     <ChatSidebar
       sessions={sessions}
       activeId={chatSessionId}
       onSelect={navigateToSession}
       onNewChat={() => void handleNewChat()}
+      onRenameChat={(id, title) => void handleRenameChat(id, title)}
+      onDeleteChat={(id) => void handleDeleteChat(id)}
+      onBookmarkChat={(id, isBookmarked) =>
+        void handleBookmarkChat(id, isBookmarked)
+      }
       creatingChat={creatingChat}
     />
   );
@@ -318,11 +395,15 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
             >
               <PanelRight className="size-4" />
             </SheetTrigger>
-            <SheetContent side="right" className="w-[min(100%,360px)] overflow-y-auto p-0">
-              <SheetHeader className="border-b p-4">
+            <SheetContent
+              side="right"
+              className="flex w-[min(100%,360px)] flex-col overflow-hidden p-0"
+            >
+              <SheetHeader className="shrink-0 border-b p-4">
                 <SheetTitle>Quick actions</SheetTitle>
               </SheetHeader>
-              <ChatRightSidebar
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <ChatRightSidebar
                 actions={uiSuggestions.actions}
                 questions={uiSuggestions.questions}
                 isRefreshing={uiSuggestions.isRefreshing}
@@ -333,6 +414,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
                 }}
                 disabled={composerDisabled}
               />
+              </div>
             </SheetContent>
           </Sheet>
         </header>
@@ -382,13 +464,13 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
           />
         ) : null}
 
-        <div className="hidden max-h-96 shrink-0 overflow-y-auto border-t border-border/40 bg-card/20 md:block xl:hidden">
-          {rightSidebar}
+        <div className="hidden min-h-0 max-h-96 shrink-0 overflow-hidden border-t border-border/40 bg-card/20 md:block xl:hidden">
+          <div className="h-full max-h-96 overflow-y-auto">{rightSidebar}</div>
         </div>
       </div>
 
-      <aside className="hidden w-[330px] shrink-0 border-l border-border/40 bg-card/20 xl:flex xl:flex-col">
-        {rightSidebar}
+      <aside className="hidden h-full min-h-0 w-[330px] shrink-0 flex-col overflow-hidden border-l border-border/40 bg-card/20 xl:flex">
+        <div className="min-h-0 flex-1 overflow-y-auto">{rightSidebar}</div>
       </aside>
     </div>
   );

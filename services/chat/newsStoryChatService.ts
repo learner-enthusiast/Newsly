@@ -8,19 +8,18 @@ import {
 import {
   createChatSession,
   getChatSessionByIdForUser,
-  listChatSessionsByUserId,
 } from "@/repositories/chatSession";
 import { listNewsSourcesByNewsStoryId } from "@/repositories/newsSource";
 import {
   getLatestChatOriginStoryForSession,
   getNewsStoryById,
-  getNewsStoryByIdForUser,
 } from "@/repositories/newsStory";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import {
   isUserStoryGenerationFailed,
   isUserStoryGenerating,
 } from "@/services/news/newsStoryAccess";
+import { listChatSessionsForUser } from "@/services/chat/chatSessionCrud";
 import { z } from "zod";
 
 export const newsStoryChatBodySchema = z.object({
@@ -173,8 +172,12 @@ export async function startNewsStoryChat(input: {
     researchRequest: input.researchRequest,
   });
 
-  const story = await getNewsStoryByIdForUser(parsed.newsStoryId, input.userId);
+  const story = await getNewsStoryById(parsed.newsStoryId);
   if (!story) {
+    return null;
+  }
+
+  if (story.isUserCreated && story.publishStatus !== "published") {
     return null;
   }
 
@@ -246,12 +249,5 @@ export async function getNewsStoryChatState(
 }
 
 export async function listUserChatSessionsForUi(userId: string) {
-  const sessions = await listChatSessionsByUserId(userId);
-  return sessions.map((session) => ({
-    id: session.id,
-    title: session.title ?? "Untitled chat",
-    newsStoryId: session.newsStoryId,
-    isFromNewsStory: session.isFromNewsStory,
-    updatedAt: session.updatedAt.toISOString(),
-  }));
+  return listChatSessionsForUser(userId);
 }

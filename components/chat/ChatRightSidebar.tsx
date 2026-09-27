@@ -37,7 +37,7 @@ export function ChatRightSidebar({
   }, [animationGeneration, actions, questions]);
 
   return (
-    <div ref={rootRef} className="flex flex-col gap-4 p-4">
+    <div ref={rootRef} className="flex flex-col gap-4 p-4 pb-6">
       <Card
         size="sm"
         className={cn(

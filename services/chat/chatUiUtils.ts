@@ -3,11 +3,12 @@ export type ChatSessionSummary = {
   title: string;
   newsStoryId: string | null;
   isFromNewsStory: boolean;
+  isBookmarked: boolean;
   updatedAt: string;
 };
 
 export type ChatSessionGroup = {
-  label: "Today" | "Yesterday" | "Last 7 Days" | "Older";
+  label: "Bookmarked" | "Today" | "Yesterday" | "Last 7 Days" | "Older";
   sessions: ChatSessionSummary[];
 };
 
@@ -15,6 +16,13 @@ function startOfLocalDay(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+function sortByUpdatedAtDesc(sessions: ChatSessionSummary[]): ChatSessionSummary[] {
+  return [...sessions].sort(
+    (a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
 }
 
 export function groupChatSessionsByDate(
@@ -25,14 +33,22 @@ export function groupChatSessionsByDate(
   const yesterdayStart = todayStart - 86_400_000;
   const weekStart = todayStart - 6 * 86_400_000;
 
-  const buckets: Record<ChatSessionGroup["label"], ChatSessionSummary[]> = {
+  const bookmarked = sortByUpdatedAtDesc(
+    sessions.filter((session) => session.isBookmarked),
+  );
+  const rest = sessions.filter((session) => !session.isBookmarked);
+
+  const buckets: Record<
+    Exclude<ChatSessionGroup["label"], "Bookmarked">,
+    ChatSessionSummary[]
+  > = {
     Today: [],
     Yesterday: [],
     "Last 7 Days": [],
     Older: [],
   };
 
-  for (const session of sessions) {
+  for (const session of rest) {
     const updated = new Date(session.updatedAt).getTime();
     if (updated >= todayStart) {
       buckets.Today.push(session);
@@ -45,9 +61,20 @@ export function groupChatSessionsByDate(
     }
   }
 
-  return (["Today", "Yesterday", "Last 7 Days", "Older"] as const)
-    .map((label) => ({ label, sessions: buckets[label] }))
+  const dateGroups = (
+    ["Today", "Yesterday", "Last 7 Days", "Older"] as const
+  )
+    .map((label) => ({
+      label,
+      sessions: sortByUpdatedAtDesc(buckets[label]),
+    }))
     .filter((group) => group.sessions.length > 0);
+
+  if (bookmarked.length === 0) {
+    return dateGroups;
+  }
+
+  return [{ label: "Bookmarked", sessions: bookmarked }, ...dateGroups];
 }
 
 export function formatMessageTimestamp(iso: string): string {

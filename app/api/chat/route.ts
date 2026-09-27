@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth";
-import { createGeneralChatSession } from "@/services/chat/createGeneralChatSession";
+import {
+  createChatSessionForUser,
+  listChatSessionsForUser,
+} from "@/services/chat/chatSessionCrud";
+
+export async function GET() {
+  const user = await requireAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const sessions = await listChatSessionsForUser(user.id);
+  return NextResponse.json({ sessions });
+}
 
 export async function POST() {
   const user = await requireAuthenticatedUser();
@@ -9,7 +22,7 @@ export async function POST() {
   }
 
   try {
-    const result = await createGeneralChatSession(user.id);
+    const result = await createChatSessionForUser(user.id);
     return NextResponse.json(result);
   } catch (error) {
     const message =

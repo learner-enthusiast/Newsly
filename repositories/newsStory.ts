@@ -356,6 +356,42 @@ export async function getPublishedNewsStoryWithSources(storyId: string) {
   };
 }
 
+/** All user-created stories originating from a chat session (newest first). */
+export async function listUserCreatedStoriesByChatSessionId(input: {
+  chatSessionId: string;
+  ownerId: string;
+}) {
+  const chatSessionId = z.uuid().parse(input.chatSessionId);
+  const ownerId = userIdSchema.parse(input.ownerId);
+
+  return prisma.newsStory.findMany({
+    where: {
+      chatSessionId,
+      ownerId,
+      isUserCreated: true,
+    },
+    orderBy: [{ createdAt: "desc" }],
+    select: {
+      id: true,
+      chatSessionId: true,
+      ownerId: true,
+      isUserCreated: true,
+      publishStatus: true,
+      generationError: true,
+      title: true,
+      description: true,
+      slug: true,
+      summary: true,
+      category: true,
+      location: true,
+      imageUrl: true,
+      publishedAt: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+}
+
 /** Latest chat-origin story for a session (owner-only lookup). */
 export async function getLatestChatOriginStoryForSession(input: {
   chatSessionId: string;

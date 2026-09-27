@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import {
   Bookmark,
+  Files,
   Home,
   MessageSquare,
   Newspaper,
@@ -31,6 +32,12 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: "/newsStory/saved",
     label: "Saved",
+    icon: Files,
+    exact: false,
+  },
+  {
+    href: "/newsStory/bookmarks",
+    label: "Bookmarks",
     icon: Bookmark,
     exact: false,
   },

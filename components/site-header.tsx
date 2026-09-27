@@ -75,6 +75,13 @@ export function SiteHeader() {
                   match: (p: string) =>
                     p === "/newsStory/saved" || p.startsWith("/newsStory/saved/"),
                 },
+                {
+                  href: "/newsStory/bookmarks",
+                  label: "Bookmarks",
+                  match: (p: string) =>
+                    p === "/newsStory/bookmarks" ||
+                    p.startsWith("/newsStory/bookmarks/"),
+                },
               ] as const
             ).map((link) =>
               "disabled" in link && link.disabled ? (

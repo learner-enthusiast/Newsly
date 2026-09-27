@@ -24,6 +24,7 @@
  * Steps (normal path):
  * 1. check-existing-assistant-reply — Idempotent skip.
  * 2. fetch-chat-context + count-research-embeddings (parallel).
+ * 2b. auto-rename-user-chat — First general-chat message → title agent.
  * 3. run-determiner — Guardrails, query enhance, tools/vector/Serp/story intent.
  * 4. save-guardrail-message — If blocked, refusal and stop.
  * 5. vector + serp + youtube branches (parallel).
@@ -59,6 +60,8 @@ import {
 } from "@/repositories/chatMessage";
 import { CHAT_PIPELINE_RECENT_MESSAGE_LIMIT } from "@/services/chat/recentChatMessagesForPipeline";
 import { getChatSessionById } from "@/repositories/chatSession";
+import { autoRenameUserChatFromFirstMessage } from "@/services/chat/chatSessionCrud";
+import { shouldAutoRenameUserChatTitle } from "@/services/chat/chatSessionTitle";
 import {
   countChatResourceEmbeddings,
   searchSimilarChatResourceIds,
@@ -279,6 +282,10 @@ export const messageChatPipelineFunction = inngest.createFunction(
           const historyWithoutCurrent = historyRows.filter(
             (row) => row.id !== message.id,
           );
+          const isFirstUserMessage = !historyWithoutCurrent.some((row) =>
+            isUserRole(row.role),
+          );
+
           const recentMessages = historyWithoutCurrent
             .slice(-CHAT_PIPELINE_RECENT_MESSAGE_LIMIT)
             .map((row) => ({
@@ -301,7 +308,9 @@ export const messageChatPipelineFunction = inngest.createFunction(
               id: session.id,
               userId: session.userId,
               isFromNewsStory: session.isFromNewsStory,
+              title: session.title,
             },
+            isFirstUserMessage,
             userMessage: {
               id: message.id,
               content: message.content,
@@ -323,6 +332,27 @@ export const messageChatPipelineFunction = inngest.createFunction(
           return toJsonSafeStepOutput({ researchSourceCount });
         }),
       ]);
+
+      if (
+        !chatContext.session.isFromNewsStory &&
+        chatContext.isFirstUserMessage &&
+        shouldAutoRenameUserChatTitle(chatContext.session.title)
+      ) {
+        await step.run("auto-rename-user-chat", async () => {
+          const elapsed = createStepTimer();
+          pipelineLog("auto-rename-user-chat", "start");
+          const title = await autoRenameUserChatFromFirstMessage({
+            chatSessionId: chatContext.session.id,
+            messageContent: chatContext.userMessage.content,
+            abortSignal: AbortSignal.timeout(30_000),
+          });
+          pipelineLog("auto-rename-user-chat", "done", {
+            durationMs: elapsed(),
+            title,
+          });
+          return toJsonSafeStepOutput({ title });
+        });
+      }
 
       const determinerResult = await step.run("run-determiner", async () => {
         const elapsed = createStepTimer();

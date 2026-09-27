@@ -13,6 +13,9 @@ type ChatSidebarProps = {
   activeId: string;
   onSelect: (id: string) => void;
   onNewChat: () => void;
+  onRenameChat?: (id: string, title: string) => void;
+  onDeleteChat?: (id: string) => void;
+  onBookmarkChat?: (id: string, isBookmarked: boolean) => void;
   creatingChat?: boolean;
 };
 
@@ -21,6 +24,9 @@ export function ChatSidebar({
   activeId,
   onSelect,
   onNewChat,
+  onRenameChat,
+  onDeleteChat,
+  onBookmarkChat,
   creatingChat = false,
 }: ChatSidebarProps) {
   const groups = groupChatSessionsByDate(sessions);
@@ -63,6 +69,9 @@ export function ChatSidebar({
                       session={session}
                       active={session.id === activeId}
                       onSelect={onSelect}
+                      onRename={onRenameChat}
+                      onDelete={onDeleteChat}
+                      onBookmark={onBookmarkChat}
                     />
                   </li>
                 ))}

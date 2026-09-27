@@ -186,6 +186,7 @@ model ChatSession {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
   isFromNewsStory Boolean  @default(false) @map("is_from_news_story")
+  isBookmarked    Boolean  @default(false) @map("is_bookmarked")
 
   user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   newsStory             NewsStory?                 @relation("ChatSessionLinkedStory", fields: [newsStoryId], references: [id], onDelete: SetNull)
@@ -197,6 +198,7 @@ model ChatSession {
   messageEmbeddings ChatMessageEmbedding[]
 
   @@index([userId])
+  @@index([userId, isBookmarked])
   @@index([newsStoryId])
   @@map("chat_sessions")
 }
