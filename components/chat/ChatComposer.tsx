@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowUp, Loader2, Paperclip } from "lucide-react";
+import { ChatSessionStoriesLauncher } from "@/components/chat/ChatSessionStoriesLauncher";
 
 type ChatComposerProps = {
   value: string;
@@ -11,6 +12,8 @@ type ChatComposerProps = {
   disabled?: boolean;
   sending?: boolean;
   placeholder?: string;
+  chatSessionId?: string;
+  storiesRefreshKey?: string | number;
 };
 
 export function ChatComposer({
@@ -20,6 +23,8 @@ export function ChatComposer({
   disabled = false,
   sending = false,
   placeholder = "Ask anything about the news…",
+  chatSessionId,
+  storiesRefreshKey,
 }: ChatComposerProps) {
   const canSend = !disabled && !sending && value.trim().length > 0;
 
@@ -63,6 +68,12 @@ export function ChatComposer({
         >
           <span aria-hidden>🎤</span>
         </Button>
+        {chatSessionId ? (
+          <ChatSessionStoriesLauncher
+            chatSessionId={chatSessionId}
+            refreshKey={storiesRefreshKey}
+          />
+        ) : null}
         <Button
           type="button"
           size="icon"

@@ -392,6 +392,23 @@ export async function listUserCreatedStoriesByChatSessionId(input: {
   });
 }
 
+/** Count user-created stories for a chat session (owner-scoped). */
+export async function countUserCreatedStoriesByChatSessionId(input: {
+  chatSessionId: string;
+  ownerId: string;
+}) {
+  const chatSessionId = z.uuid().parse(input.chatSessionId);
+  const ownerId = userIdSchema.parse(input.ownerId);
+
+  return prisma.newsStory.count({
+    where: {
+      chatSessionId,
+      ownerId,
+      isUserCreated: true,
+    },
+  });
+}
+
 /** Latest chat-origin story for a session (owner-only lookup). */
 export async function getLatestChatOriginStoryForSession(input: {
   chatSessionId: string;

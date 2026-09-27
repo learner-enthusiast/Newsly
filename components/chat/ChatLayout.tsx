@@ -160,6 +160,17 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     visibleMessages.length === 0 &&
     !state.chatSession.isFromNewsStory;
 
+  const storiesRefreshKey = useMemo(
+    () =>
+      [
+        state?.storyCreation?.storyId ?? "",
+        state?.storyCreation?.isGenerating ?? false,
+        state?.storyCreation?.generationFailed ?? false,
+        state?.messages.length ?? 0,
+      ].join(":"),
+    [state?.storyCreation, state?.messages.length],
+  );
+
   const composerDisabled =
     state == null || pipelineInProgress || sending;
 
@@ -461,6 +472,8 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
             disabled={pipelineInProgress}
             sending={sending}
             placeholder={composerPlaceholder}
+            chatSessionId={chatSessionId}
+            storiesRefreshKey={storiesRefreshKey}
           />
         ) : null}
 
