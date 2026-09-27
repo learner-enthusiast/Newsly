@@ -13,7 +13,7 @@
  * 1. load-research-source — Load row and verify chatSessionId matches.
  * 2. summarize-source — LLM produces ~10–15 line plain-text description.
  * 3. persist-description-and-embedding — Update ResearchSource.description and
- *    upsert chat_description_embeddings for similarity search.
+ *    upsert chat_resource_embeddings (vector of the description) for search.
  */
 
 import { runResearchSourceDescriptionAgent } from "@/Agents/chat/researchSourceDescriptionAgent";
@@ -22,7 +22,7 @@ import {
   getResearchSourceById,
   updateResearchSourceDescription,
 } from "@/repositories/researchSource";
-import { saveChatDescriptionEmbedding } from "@/repositories/pgVectorFunctions";
+import { saveChatResourceEmbedding } from "@/repositories/pgVectorFunctions";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import { z } from "zod";
 
@@ -114,8 +114,8 @@ export const researchSourceDescriptionFunction = inngest.createFunction(
     await step.run("persist-description-and-embedding", async () => {
       indexLog("persist-description-and-embedding", "start", { id: source.id });
       await updateResearchSourceDescription(source.id, description);
-      await saveChatDescriptionEmbedding({
-        id: source.id,
+      await saveChatResourceEmbedding({
+        chatResourceId: source.id,
         chatSessionId: input.chatSessionId,
         description,
       });

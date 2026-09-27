@@ -12,8 +12,8 @@
  * Output: { guardrail, determiner } — guardrail is allow/block with category and
  * reason; determiner includes useExistingResearch, existingResearchQuery (a
  * semantic query for ResearchSource.description, or null), useTools, reasoning,
- * and optional validated Serp calls. Throws GuardrailBlockedError when the
- * prompt is not allowed.
+ * shouldCreateStory, optional storyCreationReason, and optional validated Serp
+ * calls. Throws GuardrailBlockedError when the prompt is not allowed.
  */
 
 import {
@@ -87,6 +87,10 @@ export const smallDeterminerModelOutputSchema = z.object({
   firecrawlUrls: z.array(z.string()).max(5).nullable(),
   /** Optional supporting-evidence toggles (default off). */
   evidence: determinerEvidenceModelSchema.nullable(),
+  /** True when the user intent is to create a publishable news story (independent of useTools). */
+  shouldCreateStory: z.boolean(),
+  /** Short observability reason; not chain-of-thought. */
+  storyCreationReason: z.string().nullable(),
 });
 
 export type DeterminerEvidenceFlags = {
@@ -103,6 +107,30 @@ export function normalizeDeterminerEvidence(
   };
 }
 
+export function normalizeStoryCreationFields(
+  raw: Pick<
+    SmallDeterminerModelOutput,
+    "shouldCreateStory" | "storyCreationReason"
+  >,
+): { shouldCreateStory: boolean; storyCreationReason?: string } {
+  const reason = raw.storyCreationReason?.trim();
+  return {
+    shouldCreateStory: raw.shouldCreateStory === true,
+    ...(reason ? { storyCreationReason: reason.slice(0, 500) } : {}),
+  };
+}
+
+/** Story creation intent is evaluated only when `fromOriginalChat` is true. */
+export function applyStoryCreationIntentGate(
+  fromOriginalChat: boolean,
+  story: ReturnType<typeof normalizeStoryCreationFields>,
+): { shouldCreateStory: boolean; storyCreationReason?: string } {
+  if (!fromOriginalChat) {
+    return { shouldCreateStory: false };
+  }
+  return story;
+}
+
 export type SmallDeterminerModelOutput = z.infer<
   typeof smallDeterminerModelOutputSchema
 >;
@@ -114,6 +142,8 @@ export type SmallDeterminerRawOutput =
       existingResearchQuery: string | null;
       reasoning: string | null;
       firecrawlUrls: string[];
+      shouldCreateStory: boolean;
+      storyCreationReason?: string;
     }
   | {
       useTools: "yes";
@@ -121,6 +151,8 @@ export type SmallDeterminerRawOutput =
       existingResearchQuery: string | null;
       reasoning: string | null;
       firecrawlUrls: string[];
+      shouldCreateStory: boolean;
+      storyCreationReason?: string;
       calls: Array<{ tool: SerpToolName; input: Record<string, unknown> }>;
     };
 
@@ -198,7 +230,13 @@ function normalizeDeterminerModelOutput(
     existingResearchQuery: string | null;
   },
   firecrawlUrls: string[],
+  fromOriginalChat: boolean,
 ): SmallDeterminerRawOutput {
+  const storyCreation = applyStoryCreationIntentGate(
+    fromOriginalChat,
+    normalizeStoryCreationFields(raw),
+  );
+
   if (raw.useTools === "no") {
     return {
       useTools: "no",
@@ -206,6 +244,7 @@ function normalizeDeterminerModelOutput(
       existingResearchQuery: research.existingResearchQuery,
       reasoning: raw.reasoning,
       firecrawlUrls,
+      ...storyCreation,
     };
   }
 
@@ -222,6 +261,7 @@ function normalizeDeterminerModelOutput(
     existingResearchQuery: research.existingResearchQuery,
     reasoning: raw.reasoning,
     firecrawlUrls,
+    ...storyCreation,
     calls: calls.map((call) => ({
       tool: call.tool,
       input: stripNullInputFields(call.input),
@@ -243,6 +283,8 @@ export type SmallDeterminerResult =
       existingResearchQuery: string | null;
       firecrawlUrls: string[];
       evidence: DeterminerEvidenceFlags;
+      shouldCreateStory: boolean;
+      storyCreationReason?: string;
       reasoning?: string;
       calls?: undefined;
       model: string;
@@ -253,6 +295,8 @@ export type SmallDeterminerResult =
       existingResearchQuery: string | null;
       firecrawlUrls: string[];
       evidence: DeterminerEvidenceFlags;
+      shouldCreateStory: boolean;
+      storyCreationReason?: string;
       reasoning?: string;
       calls: ValidatedSerpToolCall[];
       model: string;
@@ -281,6 +325,11 @@ export type SmallDeterminerAgentParams = {
    * ("this", "they", "the second point"). Not a research-source payload.
    */
   recentMessages?: Array<{ role: string; content: string }>;
+  /**
+   * When true, evaluate shouldCreateStory / storyCreationReason for Story
+   * Creation pipeline handoff. When false (default), story fields are forced off.
+   */
+  fromOriginalChat?: boolean;
 };
 
 export type SmallDeterminerRunResult = {
@@ -309,6 +358,7 @@ function buildDeterminerSystemPrompt(
   tools: SerpEnginesCatalog,
   isNewsStory: boolean,
   researchSourceCount: number,
+  fromOriginalChat: boolean,
 ): string {
   const existingResearchSection = isNewsStory
     ? [
@@ -331,6 +381,25 @@ function buildDeterminerSystemPrompt(
           "You do not search the vector database. The caller embeds existingResearchQuery and runs pgvector similarity search on ResearchSource.description for this chat session.",
         ];
 
+  const storyCreationSection = fromOriginalChat
+    ? [
+        "## Story Creation Intent",
+        "Also decide whether the user is asking to CREATE A NEWS STORY (shouldCreateStory).",
+        "Set shouldCreateStory=true only when intent is to: create a news story; turn research or the current discussion into a story/article; prepare the topic as a publishable story; publish/create a story from current context.",
+        "Do NOT set shouldCreateStory=true for: researching a topic; questions; explanations; summaries; latest updates; sources; deep dives; normal chat.",
+        '"Research this" != story creation. "Summarize this" != story creation. "Create a story about this" = story creation.',
+        "Resolve references such as \"this\", \"that\", and \"it\" using recentMessages when the topic is clear (e.g. prior turn discusses Microsoft Hyderabad data centers and user says \"create a story about it\").",
+        "If the user clearly requests story creation but the topic cannot be resolved from recentMessages, set shouldCreateStory=true when the request itself is clearly story creation; do not invent the topic in storyCreationReason.",
+        "If \"create a story about it\" lacks resolvable context, set shouldCreateStory=false and storyCreationReason noting insufficient context.",
+        "shouldCreateStory is independent of useTools and useExistingResearch. Story creation may pair with fresh Serp, existing research only, or neither.",
+        "The determiner never creates a story; only return the intent flag.",
+        "Set storyCreationReason to a concise non-chain-of-thought label (e.g. \"User explicitly requested a news story.\", \"User requested research, not story creation.\", \"Insufficient context to resolve the story-creation request.\").",
+      ]
+    : [
+        "## Story Creation Intent",
+        "fromOriginalChat is false for this turn. Always set shouldCreateStory to false and storyCreationReason to null.",
+      ];
+
   return [
     "You are a small determiner agent for a stock-market search product.",
     "Decide whether SerpAPI tools are needed to satisfy the user prompt.",
@@ -347,7 +416,7 @@ function buildDeterminerSystemPrompt(
     "## Firecrawl direct URL tool",
     `When the user supplies one or more full http(s) article URLs to read, summarize, or analyze, list them in firecrawlUrls (max ${MAX_DETERMINER_FIRECRAWL_URLS}).`,
     "The pipeline scrapes those URLs with Firecrawl and adds them as research sources.",
-    "Use firecrawlUrls when the user pastes a link, says \"read this URL\", or clearly points at specific pages—not for bare keywords or search queries.",
+    'Use firecrawlUrls when the user pastes a link, says "read this URL", or clearly points at specific pages—not for bare keywords or search queries.',
     "Only include valid absolute URLs (https://...). Do not include Serp query strings or domain-only strings without a path unless the user clearly meant that homepage.",
     "When the question can be answered by scraping the given link(s) alone, set useTools to no, firecrawlUrls to those URLs, and calls to null.",
     "You may combine firecrawlUrls with Serp calls when the user links one article and also asks for broader market news.",
@@ -358,6 +427,8 @@ function buildDeterminerSystemPrompt(
     "evidence.useYoutube — true only when interviews, speeches, earnings commentary, expert explainers, or long-form video may help answer the question. False for simple lookups.",
     "evidence.useAiOverviewFollowUp — true only when a Google web search (searchGoogle) is planned AND AI Overview may surface entities/claims worth verifying with 2–3 tight follow-up searches. Requires searchGoogle in calls when true. False when searchGoogle is not used or the question is trivial.",
     "Do not enable both flags unless each independently helps. Never enable for greetings or meta questions.",
+    "",
+    ...storyCreationSection,
     "",
     "## Serp tool catalog",
     buildToolCatalog(tools),
@@ -397,6 +468,62 @@ function validatePlannedCalls(
   }) as ValidatedSerpToolCall[];
 }
 
+/** Builds validated determiner output from structured model JSON (used in tests). */
+export function buildSmallDeterminerResultFromModelOutput(
+  raw: SmallDeterminerModelOutput,
+  options: {
+    tools?: SerpEnginesCatalog;
+    isNewsStory?: boolean;
+    researchSourceCount?: number;
+    model?: string;
+    fromOriginalChat?: boolean;
+  } = {},
+): SmallDeterminerResult {
+  const tools = options.tools ?? serpEngines;
+  const isNewsStory = options.isNewsStory === true;
+  const researchSourceCount = Math.max(0, options.researchSourceCount ?? 0);
+  const fromOriginalChat = options.fromOriginalChat === true;
+  const model = options.model ?? "test-model";
+
+  const parsed = normalizeDeterminerModelOutput(
+    raw,
+    normalizeExistingResearch(isNewsStory, researchSourceCount, raw),
+    validateDeterminerFirecrawlUrls(raw.firecrawlUrls),
+    fromOriginalChat,
+  );
+  const evidence = normalizeDeterminerEvidence(raw.evidence);
+
+  if (parsed.useTools === "no") {
+    return {
+      useTools: "no",
+      useExistingResearch: parsed.useExistingResearch,
+      existingResearchQuery: parsed.existingResearchQuery,
+      firecrawlUrls: parsed.firecrawlUrls,
+      evidence,
+      shouldCreateStory: parsed.shouldCreateStory,
+      storyCreationReason: parsed.storyCreationReason,
+      reasoning: parsed.reasoning ?? undefined,
+      model,
+    };
+  }
+
+  const serpCalls =
+    parsed.calls.length > 0 ? validatePlannedCalls(parsed.calls, tools) : [];
+
+  return {
+    useTools: "yes",
+    useExistingResearch: parsed.useExistingResearch,
+    existingResearchQuery: parsed.existingResearchQuery,
+    firecrawlUrls: parsed.firecrawlUrls,
+    evidence,
+    shouldCreateStory: parsed.shouldCreateStory,
+    storyCreationReason: parsed.storyCreationReason,
+    reasoning: parsed.reasoning ?? undefined,
+    calls: serpCalls,
+    model,
+  };
+}
+
 type DeterminerCoreResult = {
   determiner: SmallDeterminerResult;
   researchPrompt: string;
@@ -409,6 +536,7 @@ async function runDeterminerCore(
   const tools = params.tools ?? serpEngines;
   const model = resolveDeterminerModel(params.model);
   const isNewsStory = params.isNewsStory === true;
+  const fromOriginalChat = params.fromOriginalChat === true;
   const recentMessages = recentMessagesForPrompt(params.recentMessages);
   if (!isNewsStory) {
     params.userPrompt = await runQueryEnhancerAgent({
@@ -420,6 +548,7 @@ async function runDeterminerCore(
   const researchSourceCount = Math.max(0, params.researchSourceCount ?? 0);
   const extraContext: Record<string, unknown> = {
     researchSourceCount,
+    fromOriginalChat,
   };
   if (recentMessages) {
     extraContext.recentMessages = recentMessages;
@@ -428,56 +557,31 @@ async function runDeterminerCore(
     model,
     system:
       params.system ??
-      buildDeterminerSystemPrompt(tools, isNewsStory, researchSourceCount),
+      buildDeterminerSystemPrompt(
+        tools,
+        isNewsStory,
+        researchSourceCount,
+        fromOriginalChat,
+      ),
     prompt: params.userPrompt,
     extraContext,
     schemaName: "SmallDeterminerOutput",
     schemaDescription:
-      'useTools ("yes" | "no"), useExistingResearch, existingResearchQuery, firecrawlUrls or null, evidence { useYoutube, useAiOverviewFollowUp } or null, reasoning, and planned Serp calls when useTools is yes.',
+      'useTools ("yes" | "no"), shouldCreateStory, storyCreationReason or null, useExistingResearch, existingResearchQuery, firecrawlUrls or null, evidence { useYoutube, useAiOverviewFollowUp } or null, reasoning, and planned Serp calls when useTools is yes.',
     output: smallDeterminerModelOutputSchema,
     temperature: 0,
     maxOutputTokens: 2048,
     abortSignal: params.abortSignal,
   });
 
-  const parsed = normalizeDeterminerModelOutput(
-    raw,
-    normalizeExistingResearch(isNewsStory, researchSourceCount, raw),
-    validateDeterminerFirecrawlUrls(raw.firecrawlUrls),
-  );
-  const evidence = normalizeDeterminerEvidence(raw.evidence);
-
-  if (parsed.useTools === "no") {
-    return {
-      determiner: {
-        useTools: "no",
-        useExistingResearch: parsed.useExistingResearch,
-        existingResearchQuery: parsed.existingResearchQuery,
-        firecrawlUrls: parsed.firecrawlUrls,
-        evidence,
-        reasoning: parsed.reasoning ?? undefined,
-        model,
-      },
-      researchPrompt: params.userPrompt,
-    };
-  }
-
-  const serpCalls =
-    parsed.calls.length > 0
-      ? validatePlannedCalls(parsed.calls, tools)
-      : [];
-
   return {
-    determiner: {
-      useTools: "yes",
-      useExistingResearch: parsed.useExistingResearch,
-      existingResearchQuery: parsed.existingResearchQuery,
-      firecrawlUrls: parsed.firecrawlUrls,
-      evidence,
-      reasoning: parsed.reasoning ?? undefined,
-      calls: serpCalls,
+    determiner: buildSmallDeterminerResultFromModelOutput(raw, {
+      tools,
+      isNewsStory,
+      researchSourceCount,
       model,
-    },
+      fromOriginalChat,
+    }),
     researchPrompt: params.userPrompt,
   };
 }
@@ -513,7 +617,11 @@ export function createSmallDeterminerAgent(options: AIClientOptions = {}) {
   ): Promise<SmallDeterminerRunResult> {
     const guardrail = await applyGuardrails(params);
     const core = await runDeterminerCore(params, client.generate.bind(client));
-    return { guardrail, determiner: core.determiner, researchPrompt: core.researchPrompt };
+    return {
+      guardrail,
+      determiner: core.determiner,
+      researchPrompt: core.researchPrompt,
+    };
   };
 }
 
@@ -522,6 +630,13 @@ export async function runSmallDeterminerAgent(
   params: SmallDeterminerAgentParams,
 ): Promise<SmallDeterminerRunResult> {
   const guardrail = await applyGuardrails(params);
-  const core = await runDeterminerCore(params, aiClient.generate.bind(aiClient));
-  return { guardrail, determiner: core.determiner, researchPrompt: core.researchPrompt };
+  const core = await runDeterminerCore(
+    params,
+    aiClient.generate.bind(aiClient),
+  );
+  return {
+    guardrail,
+    determiner: core.determiner,
+    researchPrompt: core.researchPrompt,
+  };
 }

@@ -172,7 +172,8 @@ model ChatSession {
   messages              ChatMessage[]
   researchSources       ResearchSource[]
   scripts               Script[]
-  descriptionEmbeddings ChatDescriptionEmbedding[]
+  resourceEmbeddings  ChatResourceEmbedding[]
+  messageEmbeddings ChatMessageEmbedding[]
 
   @@index([userId])
   @@index([newsStoryId])
@@ -187,7 +188,8 @@ model ChatMessage {
   createdAt     DateTime @default(now()) @map("created_at")
   scriptId      String?  @map("script_id") @db.Uuid
 
-  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  chatSession ChatSession            @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  embedding   ChatMessageEmbedding?
 
   @@index([chatSessionId])
   @@map("chat_messages")
@@ -204,22 +206,24 @@ model ResearchSource {
   sourceType    String   @map("source_type")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  chatSession       ChatSession            @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  resourceEmbedding ChatResourceEmbedding?
 
   @@index([chatSessionId])
   @@map("research_sources")
 }
 
-model ChatDescriptionEmbedding {
-  id            String                      @id @db.Uuid
-  chatSessionId String                      @map("chat_session_id") @db.Uuid
-  description   String                      @db.Text
-  embedding     Unsupported("vector(1536)")
+model ChatResourceEmbedding {
+  id             String                      @id @db.Uuid
+  chatSessionId  String                      @map("chat_session_id") @db.Uuid
+  chatResourceId String                      @unique @map("chat_resource_id") @db.Uuid
+  embedding      Unsupported("vector(1536)")
 
-  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  chatSession    ChatSession    @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  researchSource ResearchSource @relation(fields: [chatResourceId], references: [id], onDelete: Cascade)
 
   @@index([chatSessionId])
-  @@map("chat_description_embeddings")
+  @@map("chat_resource_embeddings")
 }
 
 model Script {
@@ -260,4 +264,18 @@ model Notification {
   @@index([userId, createdAt])
   @@index([userId, read])
   @@map("notifications")
+}
+
+model ChatMessageEmbedding {
+  id            String   @id @default(uuid()) @db.Uuid
+  messageId     String   @unique @map("message_id") @db.Uuid
+  chatSessionId String   @map("chat_session_id") @db.Uuid
+  embedding     Unsupported("vector(1536)")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@index([chatSessionId])
+  @@map("chat_message_embeddings")
 }

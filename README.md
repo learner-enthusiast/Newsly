@@ -93,7 +93,7 @@ Inngest (durable workflows)  ←── HTTP cannot hold 30–45m research
       ↓
 External services: SerpAPI, Firecrawl, OpenAI (via clients/AIClient.ts), YouTube/transcript fetchers
       ↓
-PostgreSQL + pgvector (ChatDescriptionEmbedding)
+PostgreSQL + pgvector (ChatResourceEmbedding)
       ↓
 Frontend polls / refetches (news request polling, chat session state)
 ```
@@ -136,7 +136,7 @@ flowchart TB
 | **TypeScript** | Entire application |
 | **Prisma 7** | ORM; schema in `db/schema/`; client output `db/generated/`; config `prisma.config.ts` |
 | **PostgreSQL** | Primary datastore |
-| **pgvector** | `chat_description_embeddings.embedding vector(1536)`; Docker image `pgvector/pgvector:pg16` |
+| **pgvector** | `chat_resource_embeddings.embedding vector(1536)`; Docker image `pgvector/pgvector:pg16` |
 | **Inngest** | Durable pipeline execution; served at `app/api/inngest/route.ts` |
 | **SerpAPI** | Google News, Google Search, YouTube; wrapper `SERP/index.ts`, client `clients/serpCleint.ts` |
 | **Firecrawl** | URL → markdown scrape; `clients/FireCrawlClient.ts`, `services/firecrawl/scrapeUrls.ts` |
@@ -205,7 +205,7 @@ Schema: `db/schema/schema.prisma`.
 | **ResearchSource** | Chat-session evidence (scraped content; optional `description` for vectors) |
 | **ChatSession** | Thread; optional link to `NewsStory` (`isFromNewsStory`) |
 | **ChatMessage** | User/agent turns |
-| **ChatDescriptionEmbedding** | pgvector row keyed by `ResearchSource.id` |
+| **ChatResourceEmbedding** | pgvector row keyed by `ResearchSource.id` (`chat_resource_id`) |
 | **NewsStoryVote** | Per-user up/down on published stories |
 | **Script** | Schema only (podcast/script artifact)—not wired in app code found |
 | **Notification** | Schema + repository—no API/pipeline integration found |
@@ -228,7 +228,7 @@ erDiagram
   NewsStory ||--o{ ChatSession : deep_dive
   ChatSession ||--o{ ChatMessage : contains
   ChatSession ||--o{ ResearchSource : accumulates
-  ResearchSource ||--o| ChatDescriptionEmbedding : indexed_as
+  ResearchSource ||--o| ChatResourceEmbedding : indexed_as
   User ||--o{ Notification : receives
 ```
 
@@ -309,7 +309,7 @@ Synthesizer targets up to **`storyCount`** stories.
 |-----------|---------------|------------------------|
 | Goal | Discover & cluster many stories | Answer one question quickly |
 | Search breadth | Multi-tier, multi-engine, large budgets | Determiner-chosen Serp calls only |
-| Vector reuse | No | Yes (`searchSimilarChatDescriptionIds`, limit 8, min similarity **0.72**) |
+| Vector reuse | No | Yes (`searchSimilarChatResourceIds`, limit 8, min similarity **0.72**) |
 | Query enhancer | N/A | Yes (skipped when `isNewsStory` on deep-dive sessions for follow-ups—see determiner) |
 | Article pick | `ResearchArticleSelectorAgent` + news prompts | `ArticleSynthesizerAgent` (`topPercent: 40`, `maxArticles: 6`) |
 | Output | `NewsStory` | `ChatMessage` + `ResearchSource` |
@@ -419,12 +419,12 @@ Multiple mechanisms exist because **news discovery** needs breadth, while **chat
 
 | Item | Value |
 |------|--------|
-| **Stored in** | `chat_description_embeddings` |
+| **Stored in** | `chat_resource_embeddings` (vector only; text on `research_sources.description`) |
 | **Vector** | `vector(1536)` |
 | **Embedding model** | `text-embedding-3-small` (via `AIClient.embedText`) |
 | **Text embedded** | LLM-generated **description** of each `ResearchSource` (not full raw HTML) |
 | **When** | Async after `createResearchSource` → `research/source.index.requested` |
-| **Query** | `searchSimilarChatDescriptionIds` with session scope |
+| **Query** | `searchSimilarChatResourceIds` with session scope |
 | **Limits** | Top **8**, min similarity **0.72** (message chat pipeline constants) |
 | **Combined with fresh Serp** | Determiner sets `useExistingResearch`; branches run in parallel; ChatModel merges vector rows + new scrapes |
 
@@ -492,7 +492,7 @@ Invalid articles are dropped from news scrape results; chat pipeline skips or fa
 | Chat user send | `ChatMessage` (user) + Inngest event |
 | Chat pipeline success | `ResearchSource`(s), `ChatMessage` (agent) |
 | `createResearchSource` | Row insert + enqueue index event |
-| Index pipeline | `ResearchSource.description`, `ChatDescriptionEmbedding` |
+| Index pipeline | `ResearchSource.description`, `ChatResourceEmbedding` |
 | Vote API | `NewsStoryVote` + counter updates (via service) |
 | Save story API | `users.saved_stories` array update |
 

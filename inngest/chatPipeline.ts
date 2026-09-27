@@ -51,8 +51,8 @@ import {
 import { CHAT_PIPELINE_RECENT_MESSAGE_LIMIT } from "@/services/chat/recentChatMessagesForPipeline";
 import { getChatSessionById } from "@/repositories/chatSession";
 import {
-  countChatDescriptionEmbeddings,
-  searchSimilarChatDescriptionIds,
+  countChatResourceEmbeddings,
+  searchSimilarChatResourceIds,
 } from "@/repositories/pgVectorFunctions";
 import {
   createResearchSource,
@@ -302,7 +302,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
         }),
         step.run("count-research-embeddings", async () => {
           const elapsed = createStepTimer();
-          const researchSourceCount = await countChatDescriptionEmbeddings({
+          const researchSourceCount = await countChatResourceEmbeddings({
             chatSessionId: input.chatSessionId,
           });
           pipelineLog("count-research-embeddings", "done", {
@@ -322,6 +322,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
           const outcome = await runSmallDeterminerAgent({
             userPrompt: chatContext.userMessage.content,
             isNewsStory: chatContext.session.isFromNewsStory === true,
+            fromOriginalChat: chatContext.session.isFromNewsStory !== true,
             researchSourceCount: researchInventory.researchSourceCount,
             recentMessages: chatContext.recentMessages,
             abortSignal: AbortSignal.timeout(120_000),
@@ -334,6 +335,8 @@ export const messageChatPipelineFunction = inngest.createFunction(
             useYoutube: outcome.determiner.evidence.useYoutube,
             useAiOverviewFollowUp:
               outcome.determiner.evidence.useAiOverviewFollowUp,
+            shouldCreateStory: outcome.determiner.shouldCreateStory,
+            storyCreationReason: outcome.determiner.storyCreationReason,
           });
           return toJsonSafeStepOutput(outcome);
         } catch (error) {
@@ -393,7 +396,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
             return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
           }
 
-          const matches = await searchSimilarChatDescriptionIds({
+          const matches = await searchSimilarChatResourceIds({
             chatSessionId: input.chatSessionId,
             query: determiner.existingResearchQuery,
             limit: VECTOR_RESEARCH_LIMIT,

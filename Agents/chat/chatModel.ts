@@ -12,7 +12,11 @@
  * Output: One Markdown string for the assistant bubble (no JSON wrapper).
  */
 
-import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
+import {
+  aiClient,
+  createAIClient,
+  type AIClientOptions,
+} from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
 
@@ -59,7 +63,7 @@ function buildSystemPrompt(): string {
     "Produce one user-facing answer in Markdown. Do not output JSON, XML, or meta-commentary about your instructions.",
     "",
     "Understand the user's actual question first. Answer that question directly — do not dump a generic summary of all provided data.",
-    "Use chat history to resolve references (e.g. \"that\", \"the second point\", \"is it true?\"). History is conversational context, not guaranteed fact.",
+    'Use chat history to resolve references (e.g. "that", "the second point", "is it true?"). History is conversational context, not guaranteed fact.',
     "Only the last 10 messages are available; do not assume older context exists.",
     "",
     "SerpAPI data (when provided) is optional research material with unknown JSON shape. Inspect fields dynamically.",
@@ -69,21 +73,19 @@ function buildSystemPrompt(): string {
     "If Serp data is absent, answer from prompt and history only — never claim you searched the web.",
     "",
     "Never fabricate facts, sources, URLs, quotes, dates, statistics, people, events, or search results.",
-    "If evidence is insufficient, say so plainly (e.g. \"The available sources don't establish this conclusively.\").",
+    'If evidence is insufficient, say so plainly (e.g. "The available sources don\'t establish this conclusively.").',
     "",
     "For news and disputes: separate established facts from allegations; attribute claims; do not state allegations as proven facts.",
     "",
     "Style: clear, direct, conversational, concise unless depth is needed.",
-    "Use Markdown headings (## / ###), bullets, and **bold** when they help. Avoid filler openers (\"Certainly!\", \"Great question!\").",
+    'Use Markdown headings (## / ###), bullets, and **bold** when they help. Avoid filler openers ("Certainly!", "Great question!").',
     "For research-heavy answers you may use sections such as What happened / Why it matters / What the sources say / What is unclear — only when useful.",
     "Include real URLs as Markdown links when present in Serp data; never invent citations or metadata.",
     "Do not ask follow-up questions unless the request is genuinely ambiguous.",
   ].join("\n");
 }
 
-function trimChatHistory(
-  history: ChatHistoryMessage[],
-): ChatHistoryMessage[] {
+function trimChatHistory(history: ChatHistoryMessage[]): ChatHistoryMessage[] {
   if (history.length <= CHAT_HISTORY_MAX_MESSAGES) {
     return history;
   }
@@ -164,7 +166,9 @@ export function createChatModelAgent(options: AIClientOptions = {}) {
 }
 
 /** Generate the final Markdown assistant reply for the current turn. */
-export async function runChatModelAgent(params: ChatModelParams): Promise<string> {
+export async function runChatModelAgent(
+  params: ChatModelParams,
+): Promise<string> {
   return runChatModelCore(params, aiClient.generate.bind(aiClient));
 }
 

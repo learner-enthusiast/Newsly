@@ -3,14 +3,15 @@ import { aiClient } from "@/clients/AIClient";
 import { prisma } from "@/db";
 
 /** Matches OpenAI `text-embedding-3-small` default dimensions. */
-export const CHAT_DESCRIPTION_EMBEDDING_DIMENSIONS = 1536;
+export const CHAT_RESOURCE_EMBEDDING_DIMENSIONS = 1536;
 
-const idSchema = z.uuid("id must be a uuid");
+const chatResourceIdSchema = z.uuid("chatResourceId must be a uuid");
 const chatSessionIdSchema = z.uuid("chatSessionId must be a uuid");
 
 const saveInputSchema = z.object({
-  id: idSchema,
+  chatResourceId: chatResourceIdSchema,
   chatSessionId: chatSessionIdSchema,
+  /** Plain-text description embedded into `chat_resource_embeddings.embedding`. */
   description: z.string().min(1, "description is required"),
 });
 
@@ -21,22 +22,22 @@ const searchInputSchema = z.object({
   minSimilarity: z.number().min(0).max(1).optional(),
 });
 
-export type SaveChatDescriptionEmbeddingInput = z.input<typeof saveInputSchema>;
-export type SearchSimilarChatDescriptionIdsInput = z.input<
-  typeof searchInputSchema
->;
+export type SaveChatResourceEmbeddingInput = z.input<typeof saveInputSchema>;
+export type SearchSimilarChatResourceIdsInput = z.input<typeof searchInputSchema>;
 
-export type SimilarChatDescriptionMatch = {
+export type SimilarChatResourceMatch = {
   id: string;
   similarity: number;
 };
 
-export async function embedDescriptionText(text: string): Promise<number[]> {
+export async function embedResourceDescriptionText(
+  text: string,
+): Promise<number[]> {
   const embedding = await aiClient.embedText(text);
 
-  if (embedding.length !== CHAT_DESCRIPTION_EMBEDDING_DIMENSIONS) {
+  if (embedding.length !== CHAT_RESOURCE_EMBEDDING_DIMENSIONS) {
     throw new Error(
-      `Expected ${CHAT_DESCRIPTION_EMBEDDING_DIMENSIONS} dimensions, got ${embedding.length}`,
+      `Expected ${CHAT_RESOURCE_EMBEDDING_DIMENSIONS} dimensions, got ${embedding.length}`,
     );
   }
 
@@ -48,46 +49,46 @@ function toPgVectorLiteral(embedding: number[]): string {
 }
 
 /**
- * Stores (or updates) a description embedding for a chat session.
- * `id` is your external reference (e.g. research source id); it is returned on similarity hits.
+ * Embeds `description` and stores the vector on `chat_resource_embeddings`
+ * for the given research source (`chatResourceId`).
  */
-export async function saveChatDescriptionEmbedding(
-  input: SaveChatDescriptionEmbeddingInput,
-): Promise<{ id: string; chatSessionId: string }> {
-  const { id, chatSessionId, description } = saveInputSchema.parse(input);
-  const embedding = await embedDescriptionText(description);
+export async function saveChatResourceEmbedding(
+  input: SaveChatResourceEmbeddingInput,
+): Promise<{ id: string; chatSessionId: string; chatResourceId: string }> {
+  const { chatResourceId, chatSessionId, description } =
+    saveInputSchema.parse(input);
+  const embedding = await embedResourceDescriptionText(description);
   const vector = toPgVectorLiteral(embedding);
 
   await prisma.$executeRaw`
-    INSERT INTO chat_description_embeddings (id, chat_session_id, description, embedding)
-    VALUES (${id}::uuid, ${chatSessionId}::uuid, ${description}, ${vector}::vector)
-    ON CONFLICT (id) DO UPDATE SET
+    INSERT INTO chat_resource_embeddings (id, chat_session_id, chat_resource_id, embedding)
+    VALUES (${chatResourceId}::uuid, ${chatSessionId}::uuid, ${chatResourceId}::uuid, ${vector}::vector)
+    ON CONFLICT (chat_resource_id) DO UPDATE SET
       chat_session_id = EXCLUDED.chat_session_id,
-      description = EXCLUDED.description,
       embedding = EXCLUDED.embedding
   `;
 
-  return { id, chatSessionId };
+  return { id: chatResourceId, chatSessionId, chatResourceId };
 }
 
 /**
- * Embeds `query`, compares only rows for `chatSessionId`, and returns matching ids
- * ordered by cosine similarity (highest first).
+ * Embeds `query`, compares rows for `chatSessionId`, returns research source ids
+ * (`chat_resource_id`) ordered by cosine similarity (highest first).
  */
-export async function searchSimilarChatDescriptionIds(
-  input: SearchSimilarChatDescriptionIdsInput,
-): Promise<SimilarChatDescriptionMatch[]> {
+export async function searchSimilarChatResourceIds(
+  input: SearchSimilarChatResourceIdsInput,
+): Promise<SimilarChatResourceMatch[]> {
   const parsed = searchInputSchema.parse(input);
   const limit = parsed.limit ?? 10;
-  const queryEmbedding = await embedDescriptionText(parsed.query);
+  const queryEmbedding = await embedResourceDescriptionText(parsed.query);
   const vector = toPgVectorLiteral(queryEmbedding);
 
   if (parsed.minSimilarity != null) {
-    const rows = await prisma.$queryRaw<SimilarChatDescriptionMatch[]>`
+    const rows = await prisma.$queryRaw<SimilarChatResourceMatch[]>`
       SELECT
-        id,
+        chat_resource_id AS id,
         (1 - (embedding <=> ${vector}::vector))::float8 AS similarity
-      FROM chat_description_embeddings
+      FROM chat_resource_embeddings
       WHERE chat_session_id = ${parsed.chatSessionId}::uuid
         AND (1 - (embedding <=> ${vector}::vector)) >= ${parsed.minSimilarity}
       ORDER BY embedding <=> ${vector}::vector
@@ -96,11 +97,11 @@ export async function searchSimilarChatDescriptionIds(
     return rows;
   }
 
-  const rows = await prisma.$queryRaw<SimilarChatDescriptionMatch[]>`
+  const rows = await prisma.$queryRaw<SimilarChatResourceMatch[]>`
     SELECT
-      id,
+      chat_resource_id AS id,
       (1 - (embedding <=> ${vector}::vector))::float8 AS similarity
-    FROM chat_description_embeddings
+    FROM chat_resource_embeddings
     WHERE chat_session_id = ${parsed.chatSessionId}::uuid
     ORDER BY embedding <=> ${vector}::vector
     LIMIT ${limit}
@@ -109,11 +110,11 @@ export async function searchSimilarChatDescriptionIds(
   return rows;
 }
 
-/** Convenience: returns only ids from {@link searchSimilarChatDescriptionIds}. */
-export async function searchSimilarChatDescriptionIdList(
-  input: SearchSimilarChatDescriptionIdsInput,
+/** Convenience: returns only ids from {@link searchSimilarChatResourceIds}. */
+export async function searchSimilarChatResourceIdList(
+  input: SearchSimilarChatResourceIdsInput,
 ): Promise<string[]> {
-  const matches = await searchSimilarChatDescriptionIds(input);
+  const matches = await searchSimilarChatResourceIds(input);
   return matches.map((row) => row.id);
 }
 
@@ -121,23 +122,17 @@ const countInputSchema = z.object({
   chatSessionId: chatSessionIdSchema,
 });
 
-export type CountChatDescriptionEmbeddingsInput = z.input<
-  typeof countInputSchema
->;
+export type CountChatResourceEmbeddingsInput = z.input<typeof countInputSchema>;
 
-/**
- * Returns the number of vector embeddings available for a chat session.
- *
- * This counts rows in chat_description_embeddings, not all ResearchSource rows.
- */
-export async function countChatDescriptionEmbeddings(
-  input: CountChatDescriptionEmbeddingsInput,
+/** Counts vector rows in `chat_resource_embeddings` for a session. */
+export async function countChatResourceEmbeddings(
+  input: CountChatResourceEmbeddingsInput,
 ): Promise<number> {
   const { chatSessionId } = countInputSchema.parse(input);
 
   const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*)::bigint AS count
-      FROM chat_description_embeddings
+      FROM chat_resource_embeddings
       WHERE chat_session_id = ${chatSessionId}::uuid
     `;
 
