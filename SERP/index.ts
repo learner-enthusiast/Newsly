@@ -341,6 +341,107 @@ async function searchYoutubeVideoTranscript<T = unknown>(
   );
 }
 
+type GoogleMapsAutocompleteSearchParams = SerpEngineSearchParams & {
+  ll: string;
+  cp?: number;
+};
+
+function withGoogleMapsAutocompleteParams(
+  params: GoogleMapsAutocompleteSearchParams,
+): GoogleMapsAutocompleteSearchParams & { q: string; ll: string } {
+  const withQuery = withRequiredQuery(params);
+  const ll = typeof params.ll === "string" ? params.ll.trim() : "";
+  if (!ll) {
+    throw new Error(
+      "google_maps_autocomplete requires ll (@latitude,longitude,zoom e.g. @40.7455096,-74.0083012,14z)",
+    );
+  }
+  return { ...withQuery, ll };
+}
+
+async function searchGoogleMapsAutocomplete<T = unknown>(
+  params: GoogleMapsAutocompleteSearchParams,
+  responseSchema?: z.ZodType<T>,
+  client = serpClient,
+): Promise<T> {
+  return client.search(
+    {
+      ...withGoogleMapsAutocompleteParams(params),
+      engine: "google_maps_autocomplete",
+    },
+    responseSchema,
+  );
+}
+
+type GoogleMapsSearchParams = SerpEngineSearchParams & {
+  type?: "search" | "place";
+  ll?: string;
+  lat?: number;
+  lon?: number;
+  z?: number;
+  m?: number;
+  nearby?: boolean;
+  place_id?: string;
+  data_cid?: string;
+  data?: string;
+  start?: number;
+  min_price?: number;
+  max_price?: number;
+  min_rating?: "2.0" | "2.5" | "3.0" | "3.5" | "4.0" | "4.5";
+  open_state?: "now" | "24h";
+  open_on_day?: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+  open_at_hour?: number;
+};
+
+function withGoogleMapsParams(
+  params: GoogleMapsSearchParams,
+): GoogleMapsSearchParams {
+  const placeId =
+    typeof params.place_id === "string" ? params.place_id.trim() : "";
+  const dataCid =
+    typeof params.data_cid === "string" ? params.data_cid.trim() : "";
+
+  if (placeId && dataCid) {
+    throw new Error("google_maps: place_id and data_cid cannot be used together");
+  }
+
+  if (placeId || dataCid) {
+    return {
+      ...params,
+      ...(placeId ? { place_id: placeId } : {}),
+      ...(dataCid ? { data_cid: dataCid } : {}),
+    };
+  }
+
+  const type = params.type;
+  if (type !== "search" && type !== "place") {
+    throw new Error(
+      "google_maps requires type=search|place, or place_id, or data_cid",
+    );
+  }
+
+  if (type === "search") {
+    return { ...withRequiredQuery(params), type };
+  }
+
+  const data = typeof params.data === "string" ? params.data.trim() : "";
+  if (!data) {
+    throw new Error("google_maps type=place requires data parameter");
+  }
+  return { ...params, type, data };
+}
+
+async function searchGoogleMaps<T = unknown>(
+  params: GoogleMapsSearchParams,
+  responseSchema?: z.ZodType<T>,
+  client = serpClient,
+): Promise<T> {
+  return client.search(
+    { ...withGoogleMapsParams(params), engine: "google_maps" },
+    responseSchema,
+  );
+}
+
 const googleInputSchema = z.looseObject({
   q: z.string().min(1),
   start: z.number().int().min(0).optional(),
@@ -594,6 +695,132 @@ const youtubeVideoTranscriptOutputSchema = serpCommonOutputSchema.extend({
   transcript: z.array(z.record(z.string(), z.unknown())).optional(),
 });
 
+const googleMapsAutocompleteInputSchema = z.looseObject({
+  q: z.string().min(1),
+  ll: z.string().min(1),
+  cp: z.number().int().min(0).optional(),
+  gl: serpSharedInputShape.gl,
+  hl: serpSharedInputShape.hl,
+  no_cache: serpSharedInputShape.no_cache,
+  async: serpSharedInputShape.async,
+  output: serpSharedInputShape.output,
+  timeout: serpSharedInputShape.timeout,
+});
+
+const googleMapsAutocompleteOutputSchema = serpCommonOutputSchema.extend({
+  search_information: z
+    .looseObject({
+      query_displayed: z.string().optional(),
+    })
+    .optional(),
+  suggestions: z
+    .array(
+      z.looseObject({
+        value: z.string().optional(),
+        serpapi_link: z.string().optional(),
+        maps_serpapi_link: z.string().optional(),
+        type: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+const googleMapsInputSchema = z
+  .looseObject({
+    type: z.enum(["search", "place"]).optional(),
+    q: z.string().min(1).optional(),
+    ll: z.string().min(1).optional(),
+    location: serpSharedInputShape.location,
+    lat: z.number().optional(),
+    lon: z.number().optional(),
+    z: z.number().int().min(3).max(30).optional(),
+    m: z.number().int().min(1).optional(),
+    nearby: z.boolean().optional(),
+    place_id: z.string().min(1).optional(),
+    data_cid: z.string().min(1).optional(),
+    data: z.string().min(1).optional(),
+    start: z.number().int().min(0).optional(),
+    min_price: z.number().optional(),
+    max_price: z.number().optional(),
+    min_rating: z
+      .enum(["2.0", "2.5", "3.0", "3.5", "4.0", "4.5"])
+      .optional(),
+    open_state: z.enum(["now", "24h"]).optional(),
+    open_on_day: z
+      .enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
+      .optional(),
+    open_at_hour: z.number().int().min(0).max(23).optional(),
+    google_domain: serpSharedInputShape.google_domain,
+    hl: serpSharedInputShape.hl,
+    gl: serpSharedInputShape.gl,
+    no_cache: serpSharedInputShape.no_cache,
+    async: serpSharedInputShape.async,
+    output: serpSharedInputShape.output,
+    timeout: serpSharedInputShape.timeout,
+  })
+  .superRefine((data, ctx) => {
+    const placeId = data.place_id?.trim();
+    const dataCid = data.data_cid?.trim();
+    if (placeId && dataCid) {
+      ctx.addIssue({
+        code: "custom",
+        message: "place_id and data_cid cannot be used together",
+      });
+      return;
+    }
+    if (placeId || dataCid) {
+      return;
+    }
+    if (data.type !== "search" && data.type !== "place") {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide type=search|place, or place_id, or data_cid",
+      });
+      return;
+    }
+    if (data.type === "search" && !data.q?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "type=search requires q",
+      });
+    }
+    if (data.type === "place" && !data.data?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "type=place requires data",
+      });
+    }
+  });
+
+const googleMapsLocalResultSchema = z.looseObject({
+  position: z.number().optional(),
+  title: z.string().optional(),
+  place_id: z.string().optional(),
+  data_id: z.string().optional(),
+  data_cid: z.string().optional(),
+  rating: z.number().optional(),
+  reviews: z.number().optional(),
+  price: z.string().optional(),
+  type: z.string().optional(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  gps_coordinates: z
+    .looseObject({
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+    })
+    .optional(),
+  thumbnail: z.string().optional(),
+  serpapi_thumbnail: z.string().optional(),
+});
+
+const googleMapsOutputSchema = serpCommonOutputSchema.extend({
+  search_information: z.record(z.string(), z.unknown()).optional(),
+  local_results: z.array(googleMapsLocalResultSchema).optional(),
+  place_results: z.record(z.string(), z.unknown()).optional(),
+  serpapi_pagination: z.record(z.string(), z.unknown()).optional(),
+});
+
 export const serpEngines = {
   searchGoogle: {
     description: [
@@ -672,5 +899,28 @@ export const serpEngines = {
     fn: searchYoutubeVideoTranscript,
     inputSchema: youtubeVideoTranscriptInputSchema,
     outputSchema: youtubeVideoTranscriptOutputSchema,
+  },
+  searchGoogleMapsAutocomplete: {
+    description: [
+      "Google Maps Autocomplete (engine=google_maps_autocomplete). Location-aware query completions.",
+      "Input: q (required), ll (required, e.g. @40.7455096,-74.0083012,14z); optional cp (cursor index), gl, hl.",
+      "Output: suggestions (value, type, serpapi_link, maps_serpapi_link), search_information, search_metadata.",
+      "Docs: https://serpapi.com/google-maps-autocomplete-api",
+    ].join(" "),
+    fn: searchGoogleMapsAutocomplete,
+    inputSchema: googleMapsAutocompleteInputSchema,
+    outputSchema: googleMapsAutocompleteOutputSchema,
+  },
+  searchGoogleMaps: {
+    description: [
+      "Google Maps (engine=google_maps). Local place search or place details.",
+      "Input: type=search requires q; type=place requires data; or use place_id / data_cid alone.",
+      "Optional: ll, location, lat/lon with z or m, nearby, start (pagination), price/rating/hours filters, hl, gl.",
+      "Output: local_results (title, address, gps_coordinates, place_id), place_results, serpapi_pagination, search_metadata.",
+      "Docs: https://serpapi.com/google-maps-api",
+    ].join(" "),
+    fn: searchGoogleMaps,
+    inputSchema: googleMapsInputSchema,
+    outputSchema: googleMapsOutputSchema,
   },
 } as const;

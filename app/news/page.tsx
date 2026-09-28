@@ -1,6 +1,8 @@
 "use client";
 
-import { CountryAutocomplete } from "@/components/news/CountryAutocomplete";
+import { LocationAutocomplete } from "@/components/news/LocationAutocomplete";
+import { useLocationHook } from "@/hooks/useLocationHook";
+import type { LocationAutocompleteSuggestion } from "@/services/location/userLocationTypes";
 import { NewsAdvancedOptionsCollapsible } from "@/components/news/NewsAdvancedOptionsCollapsible";
 import { NewsGenerateSidebar } from "@/components/news/NewsGenerateSidebar";
 import {
@@ -31,7 +33,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_STORY_COUNT } from "@/services/news/newsGenerationRequest";
 import type { SerializedNewsRequest } from "@/services/news/newsRequestTypes";
-import { ArrowRight, Calendar, MapPin, RefreshCw, Search } from "lucide-react";
+import {
+  ArrowRight,
+  Calendar,
+  Loader2,
+  MapPin,
+  Navigation,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -64,6 +74,15 @@ export default function NewsRequestPage() {
   const [date, setDate] = useState(todayIsoDate);
   const [scope, setScope] = useState<NewsScopeValue>("local");
   const [location, setLocation] = useState("Hyderabad, Telangana, India");
+  const [locationAnchor, setLocationAnchor] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const {
+    isLoading: detectingLocation,
+    error: detectLocationError,
+    requestLocation,
+  } = useLocationHook();
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [allTopics, setAllTopics] = useState(true);
   const [customQuery, setCustomQuery] = useState("");
@@ -102,9 +121,22 @@ export default function NewsRequestPage() {
     };
   }, []);
 
+  async function onUseMyLocation() {
+    const resolved = await requestLocation();
+    if (!resolved) {
+      return;
+    }
+    setLocation(resolved.label);
+    setLocationAnchor({
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
+    });
+  }
+
   function applyPreset(preset: NewsPreset) {
     setScope(preset.scope);
     setLocation(preset.location ?? "India");
+    setLocationAnchor(null);
     setSelectedTopics(preset.categories);
     setAllTopics(preset.categories.length === 0);
     if (preset.storyCount) {
@@ -133,6 +165,7 @@ export default function NewsRequestPage() {
     setDate(todayIsoDate());
     setScope("local");
     setLocation("Hyderabad, Telangana, India");
+    setLocationAnchor(null);
     setSelectedTopics([]);
     setAllTopics(true);
     setCustomQuery("");
@@ -295,25 +328,66 @@ export default function NewsRequestPage() {
               </div>
 
               {needsLocation ? (
-                <div className="flex flex-row gap-2 items-center">
-                  <label
-                    className="text-sm font-medium"
-                    htmlFor="news-location"
-                  >
-                    Location <span className="text-destructive">*</span>
-                  </label>
-                  <div className="relative min-w-0 max-w-full">
-                    <MapPin className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-muted-foreground" />
-                    <CountryAutocomplete
-                      required
-                      value={location}
-                      onChange={setLocation}
-                      placeholder="City, state, country"
-                      inputClassName="flex h-10 w-full rounded-md border border-input bg-background py-2 pr-3 pl-10 text-sm"
-                    />
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-0 flex-1 basis-[16rem]">
+                      <label
+                        className="text-sm font-medium"
+                        htmlFor="news-location"
+                      >
+                        Location <span className="text-destructive">*</span>
+                      </label>
+                      <div className="relative mt-2 min-w-0 max-w-full">
+                        <MapPin className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-muted-foreground" />
+                        <LocationAutocomplete
+                          required
+                          value={location}
+                          geoAnchor={locationAnchor}
+                          onChange={setLocation}
+                          onSelectSuggestion={(
+                            suggestion: LocationAutocompleteSuggestion,
+                          ) => {
+                            if (
+                              typeof suggestion.latitude === "number" &&
+                              typeof suggestion.longitude === "number"
+                            ) {
+                              setLocationAnchor({
+                                latitude: suggestion.latitude,
+                                longitude: suggestion.longitude,
+                              });
+                            }
+                          }}
+                          placeholder="City, state, country"
+                          inputClassName="flex h-10 w-full rounded-md border border-input bg-background py-2 pr-3 pl-10 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={detectingLocation}
+                      onClick={() => void onUseMyLocation()}
+                    >
+                      {detectingLocation ? (
+                        <Loader2
+                          data-icon="inline-start"
+                          className="size-3.5 animate-spin"
+                        />
+                      ) : (
+                        <Navigation data-icon="inline-start" className="size-3.5" />
+                      )}
+                      Use my location
+                    </Button>
                   </div>
-                  <div className="flex min-w-0 max-w-full flex-col items-center gap-2">
-                    <span className="w-full text-xs text-muted-foreground sm:w-auto">
+                  {detectLocationError ? (
+                    <p className="text-xs text-destructive" role="alert">
+                      {detectLocationError}
+                    </p>
+                  ) : null}
+                  <div className="flex min-w-0 max-w-full flex-col gap-2">
+                    <span className="text-xs text-muted-foreground">
                       Quick select
                     </span>
                     <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
@@ -323,7 +397,10 @@ export default function NewsRequestPage() {
                           type="button"
                           size="xs"
                           variant={location === place ? "secondary" : "outline"}
-                          onClick={() => setLocation(place)}
+                          onClick={() => {
+                            setLocation(place);
+                            setLocationAnchor(null);
+                          }}
                         >
                           <MapPin data-icon="inline-start" />
                           {place.split(",")[0]}

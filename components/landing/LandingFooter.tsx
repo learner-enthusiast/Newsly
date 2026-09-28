@@ -3,11 +3,11 @@
  * Rendered through `SiteFooter` on `/`.
  */
 export const LANDING_FOOTER_LINKS = [
-  { href: "#", label: "About" },
-  { href: "#", label: "Blog" },
-  { href: "#", label: "Privacy" },
-  { href: "#", label: "Terms" },
-  { href: "#", label: "Contact" },
+  { href: "/about", label: "About" },
+  { href: "/blog", label: "Blog" },
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
+  { href: "/contact", label: "Contact" },
 ] as const;
 
 /** Social labels only — wire real URLs when accounts exist. */
