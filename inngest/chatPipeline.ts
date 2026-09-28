@@ -76,7 +76,8 @@
  *
  * ── Story handoff branch (`shouldCreateStory === true`) ─────────────────────
  *
- * 10a. create-chat-story-shell — `createPendingChatNewsStory` (PENDING row).
+ * 10a. create-chat-story-shell — skipped when `storyId` was pre-created on send;
+ *      otherwise `createPendingChatNewsStory` (draft row).
  * 10b. trigger-chat-story-pipeline — `step.sendEvent` → `chat/story.research.requested`
  *      with prepared research payload (no guardrails rerun in story worker).
  * 10c. save-story-status-message — short agent status; return (skips ChatModel reply
@@ -184,6 +185,8 @@ export const messageChatPipelineEventDataSchema = z.object({
     .optional()
     .transform((value) => value === true || value === "true")
     .default(false),
+  /** Pre-created draft story from `sendChatMessage` when `shouldCreateStory` is true. */
+  storyId: z.uuid().optional(),
 });
 
 export type MessageChatPipelineEventData = z.infer<
@@ -836,15 +839,19 @@ export const messageChatPipelineFunction = inngest.createFunction(
       );
 
       if (shouldCreateStory) {
-        const storyShell = await step.run("create-chat-story-shell", async () => {
-          pipelineLog("create-chat-story-shell", "start");
-          const story = await createPendingChatNewsStory({
-            chatSessionId: input.chatSessionId,
-            ownerId: chatContext.session.userId,
-          });
-          pipelineLog("create-chat-story-shell", "done", { storyId: story.id });
-          return toJsonSafeStepOutput({ storyId: story.id });
-        });
+        const storyShell = input.storyId
+          ? { storyId: input.storyId }
+          : await step.run("create-chat-story-shell", async () => {
+              pipelineLog("create-chat-story-shell", "start");
+              const story = await createPendingChatNewsStory({
+                chatSessionId: input.chatSessionId,
+                ownerId: chatContext.session.userId,
+              });
+              pipelineLog("create-chat-story-shell", "done", {
+                storyId: story.id,
+              });
+              return toJsonSafeStepOutput({ storyId: story.id });
+            });
 
         await step.sendEvent("trigger-chat-story-pipeline", {
           name: CHAT_STORY_PIPELINE_EVENT,

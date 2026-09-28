@@ -43,9 +43,10 @@ export function usePotentialStoryTopics(
         }
         const payload = (await response.json()) as { topics?: string[] };
         if (Array.isArray(payload.topics) && !cancelled) {
+          const topics = payload.topics;
           setTopicsBySession((current) => ({
             ...current,
-            [chatSessionId]: payload.topics,
+            [chatSessionId]: topics,
           }));
         }
       } catch {

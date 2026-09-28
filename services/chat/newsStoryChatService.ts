@@ -15,8 +15,8 @@ import {
   getNewsStoryById,
 } from "@/repositories/newsStory";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
+import { toChatStoryCreationPayload } from "@/services/chat/chatStoryCreationPayload";
 import {
-  isUserStoryGenerationFailed,
   isUserStoryGenerating,
 } from "@/services/news/newsStoryAccess";
 import { listChatSessionsForUser } from "@/services/chat/chatSessionCrud";
@@ -50,7 +50,10 @@ function isAgentRole(role: string) {
 }
 
 function deriveChatSessionStatus(
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: string; createdAt: Date }[],
+  latestStory: Awaited<
+    ReturnType<typeof getLatestChatOriginStoryForSession>
+  >,
 ): ChatSessionStatus {
   if (messages.length === 0) {
     return "ready";
@@ -68,11 +71,20 @@ function deriveChatSessionStatus(
     return "initializing";
   }
 
+  const lastUserMessage = messages[lastUserIndex]!;
+
   const repliesAfterLastUser = messages
     .slice(lastUserIndex + 1)
     .filter((row) => isAgentRole(row.role));
 
   if (repliesAfterLastUser.length === 0) {
+    if (
+      latestStory &&
+      isUserStoryGenerating(latestStory) &&
+      latestStory.createdAt >= lastUserMessage.createdAt
+    ) {
+      return "ready";
+    }
     return "initializing";
   }
 
@@ -82,28 +94,6 @@ function deriveChatSessionStatus(
   }
 
   return "ready";
-}
-
-function toStoryCreationPayload(
-  latestStory: NonNullable<
-    Awaited<ReturnType<typeof getLatestChatOriginStoryForSession>>
-  >,
-): ChatStoryCreationPayload {
-  const isGenerating = isUserStoryGenerating({
-    slug: latestStory.slug,
-    title: latestStory.title,
-    generationError: latestStory.generationError,
-  });
-  const generationFailed = isUserStoryGenerationFailed({
-    generationError: latestStory.generationError,
-  });
-  return {
-    storyId: latestStory.id,
-    isUserCreated: true,
-    publishStatus: latestStory.publishStatus,
-    isGenerating,
-    generationFailed,
-  };
 }
 
 function deriveStoryCreationForChatState(
@@ -116,7 +106,7 @@ function deriveStoryCreationForChatState(
     return null;
   }
 
-  const payload = toStoryCreationPayload(latestStory);
+  const payload = toChatStoryCreationPayload(latestStory);
 
   if (payload.isGenerating || payload.generationFailed) {
     return payload;
@@ -225,11 +215,11 @@ export async function getNewsStoryChatState(
   }
 
   const messages = await listChatMessagesByChatSessionId(chatSessionId);
-  const status = deriveChatSessionStatus(messages);
   const latestStory = await getLatestChatOriginStoryForSession({
     chatSessionId: session.id,
     ownerId: userId,
   });
+  const status = deriveChatSessionStatus(messages, latestStory);
   const storyCreation = deriveStoryCreationForChatState(messages, latestStory);
 
   return {

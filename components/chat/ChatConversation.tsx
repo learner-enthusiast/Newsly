@@ -6,6 +6,7 @@ import { ChatDeepDiveBanner } from "@/components/chat/ChatDeepDiveBanner";
 import { ChatLoading } from "@/components/chat/ChatLoading";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { UserMessage } from "@/components/chat/UserMessage";
+import { isOptimisticMessageId } from "@/services/chat/chatOptimisticUi";
 import {
   hasAssistantReplyAfterLastUser,
   isAssistantRole,
@@ -68,6 +69,7 @@ export function ChatConversation({
             key={message.id}
             content={message.content}
             createdAt={message.createdAt}
+            pending={isOptimisticMessageId(message.id)}
           />
         ),
       )}
