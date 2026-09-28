@@ -216,6 +216,7 @@ model ChatMessage {
   embedding   ChatMessageEmbedding?
 
   @@index([chatSessionId])
+  @@index([chatSessionId, createdAt, id])
   @@map("chat_messages")
 }
 

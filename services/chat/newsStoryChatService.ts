@@ -3,8 +3,9 @@ import { CHAT_PIPELINE_EVENT } from "@/inngest/newsNewchatPipeline";
 import { DEFAULT_NEWS_RESEARCH_REQUEST } from "@/Agents/chat/newsNewChatAgent";
 import {
   createChatMessage,
-  listChatMessagesByChatSessionId,
+  listRecentChatMessagesByChatSessionId,
 } from "@/repositories/chatMessage";
+import { CHAT_MESSAGES_PAGE_SIZE } from "@/services/chat/chatMessagePagination";
 import {
   createChatSession,
   getChatSessionByIdForUser,
@@ -214,19 +215,24 @@ export async function getNewsStoryChatState(
     return null;
   }
 
-  const messages = await listChatMessagesByChatSessionId(chatSessionId);
+  const recentMessages = await listRecentChatMessagesByChatSessionId(
+    chatSessionId,
+    CHAT_MESSAGES_PAGE_SIZE,
+  );
   const latestStory = await getLatestChatOriginStoryForSession({
     chatSessionId: session.id,
     ownerId: userId,
   });
-  const status = deriveChatSessionStatus(messages, latestStory);
-  const storyCreation = deriveStoryCreationForChatState(messages, latestStory);
+  const status = deriveChatSessionStatus(recentMessages, latestStory);
+  const storyCreation = deriveStoryCreationForChatState(
+    recentMessages,
+    latestStory,
+  );
 
   return {
     chatSessionId: session.id,
     status,
     storyCreation,
-    messages: messages.map(serializeMessage),
     chatSession: {
       id: session.id,
       title: session.title,

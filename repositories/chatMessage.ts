@@ -89,10 +89,67 @@ export async function listRecentChatMessagesByChatSessionId(
 ) {
   const rows = await prisma.chatMessage.findMany({
     where: { chatSessionId: chatSessionIdSchema.parse(chatSessionId) },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit,
   });
   return rows.reverse();
+}
+
+export type ChatMessageCursorInput = {
+  createdAt: Date;
+  id: string;
+};
+
+export async function listChatMessagesCursorPage(input: {
+  chatSessionId: string;
+  limit: number;
+  before?: ChatMessageCursorInput;
+}) {
+  const sessionId = chatSessionIdSchema.parse(input.chatSessionId);
+  const take = Math.min(Math.max(input.limit, 1), 100);
+
+  const rows = await prisma.chatMessage.findMany({
+    where: {
+      chatSessionId: sessionId,
+      ...(input.before
+        ? { createdAt: { lte: input.before.createdAt } }
+        : {}),
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: take + 2,
+    select: {
+      id: true,
+      role: true,
+      content: true,
+      createdAt: true,
+    },
+  });
+
+  const before = input.before;
+  const olderThanCursor = before
+    ? rows.filter((row) => {
+        const timeDiff =
+          row.createdAt.getTime() - before.createdAt.getTime();
+        if (timeDiff !== 0) {
+          return timeDiff < 0;
+        }
+        return row.id < before.id;
+      })
+    : rows;
+
+  const hasMore = olderThanCursor.length > take;
+  const pageDesc = hasMore ? olderThanCursor.slice(0, take) : olderThanCursor;
+  const messages = [...pageDesc].reverse();
+  const oldest = messages[0];
+
+  return {
+    messages,
+    hasMore,
+    nextCursor:
+      hasMore && oldest
+        ? { createdAt: oldest.createdAt, id: oldest.id }
+        : null,
+  };
 }
 
 export async function putChatMessage(id: string, input: ChatMessagePutInput) {

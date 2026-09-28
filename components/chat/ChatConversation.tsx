@@ -1,29 +1,33 @@
 "use client";
 
-import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import { ChatStoryCreationCard } from "@/components/chat/ChatStoryCreationCard";
 import { ChatDeepDiveBanner } from "@/components/chat/ChatDeepDiveBanner";
 import { ChatLoading } from "@/components/chat/ChatLoading";
+import { ChatVirtualizedMessageList } from "@/components/chat/ChatVirtualizedMessageList";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
-import { UserMessage } from "@/components/chat/UserMessage";
-import { isOptimisticMessageId } from "@/services/chat/chatOptimisticUi";
 import {
   hasAssistantReplyAfterLastUser,
-  isAssistantRole,
 } from "@/services/chat/chatUiUtils";
+import type { SerializedChatMessageListItem } from "@/services/chat/chatMessagePagination";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import type { RefObject } from "react";
 
-export type ConversationMessage = {
-  id: string;
-  role: string;
-  content: string;
-  createdAt: string;
-};
+export type ConversationMessage = SerializedChatMessageListItem;
 
 type ChatConversationProps = {
   messages: ConversationMessage[];
+  scrollRef: RefObject<HTMLElement | null>;
+  loadingInitial: boolean;
+  loadingOlder: boolean;
+  hasMoreOlder: boolean;
+  olderError: string | null;
+  onLoadOlder: () => void;
+  onRetryOlder: () => void;
+  sessionScrollKey: string;
+  onAtBottomChange?: (atBottom: boolean) => void;
+  bindScrollToBottom?: (scrollToBottom: () => void) => void;
   status: "initializing" | "ready" | "failed";
   showWelcome: boolean;
   storyTitle?: string | null;
@@ -35,6 +39,16 @@ type ChatConversationProps = {
 
 export function ChatConversation({
   messages,
+  scrollRef,
+  loadingInitial,
+  loadingOlder,
+  hasMoreOlder,
+  olderError,
+  onLoadOlder,
+  onRetryOlder,
+  sessionScrollKey,
+  onAtBottomChange,
+  bindScrollToBottom,
   status,
   showWelcome,
   storyTitle,
@@ -49,31 +63,19 @@ export function ChatConversation({
 
   const showResearching = awaitingAssistantReply;
 
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
-      {storyTitle ? <ChatDeepDiveBanner title={storyTitle} /> : null}
-
-      {showWelcome ? (
+  if (showWelcome && messages.length === 0 && !loadingInitial) {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
+        {storyTitle ? <ChatDeepDiveBanner title={storyTitle} /> : null}
         <ChatWelcome onPrompt={onPrompt} disabled={composerDisabled} />
-      ) : null}
+      </div>
+    );
+  }
 
-      {messages.map((message) =>
-        isAssistantRole(message.role) ? (
-          <AssistantMessage
-            key={message.id}
-            content={message.content}
-            createdAt={message.createdAt}
-          />
-        ) : (
-          <UserMessage
-            key={message.id}
-            content={message.content}
-            createdAt={message.createdAt}
-            pending={isOptimisticMessageId(message.id)}
-          />
-        ),
-      )}
+  const header = storyTitle ? <ChatDeepDiveBanner title={storyTitle} /> : null;
 
+  const footer = (
+    <>
       {storyCreation ? (
         <ChatStoryCreationCard storyCreation={storyCreation} />
       ) : null}
@@ -96,6 +98,24 @@ export function ChatConversation({
           ) : null}
         </Card>
       ) : null}
-    </div>
+    </>
+  );
+
+  return (
+    <ChatVirtualizedMessageList
+      messages={messages}
+      scrollRef={scrollRef}
+      loadingInitial={loadingInitial}
+      loadingOlder={loadingOlder}
+      hasMoreOlder={hasMoreOlder}
+      olderError={olderError}
+      onLoadOlder={onLoadOlder}
+      onRetryOlder={onRetryOlder}
+      header={header}
+      footer={footer}
+      sessionScrollKey={sessionScrollKey}
+      onAtBottomChange={onAtBottomChange}
+      bindScrollToBottom={bindScrollToBottom}
+    />
   );
 }

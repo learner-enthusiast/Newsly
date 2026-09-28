@@ -33,6 +33,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "@tanstack/react-virtual": "^3.14.13",
     "ai": "^7.0.107",
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.11.0",

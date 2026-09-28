@@ -1,12 +1,14 @@
 "use client";
 
 import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ChatScrollToBottomFab } from "@/components/chat/ChatScrollToBottomFab";
 import { ChatConversation } from "@/components/chat/ChatConversation";
 import { ChatLoading } from "@/components/chat/ChatLoading";
 import { ChatRightSidebar } from "@/components/chat/ChatRightSidebar";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { animateNewMessage, useChatEntrance } from "@/components/chat/useChatMotion";
 import { useChatUiSuggestions } from "@/hooks/useChatUiSuggestions";
+import { useChatMessagePages } from "@/hooks/useChatMessagePages";
 import { usePotentialStoryTopics } from "@/hooks/usePotentialStoryTopics";
 import {
   createOptimisticUserMessage,
@@ -39,18 +41,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-type ChatMessage = {
-  id: string;
-  role: string;
-  content: string;
-  createdAt: string;
-};
-
 type ChatState = {
   chatSessionId: string;
   status: "initializing" | "ready" | "failed";
   storyCreation: ChatStoryCreationPayload | null;
-  messages: ChatMessage[];
   chatSession: {
     id: string;
     title: string | null;
@@ -63,6 +57,7 @@ const POLL_MS = 2000;
 
 export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
   const router = useRouter();
+  const messagePages = useChatMessagePages(chatSessionId);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -75,11 +70,24 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     OptimisticChatMessage[]
   >([]);
   const conversationRef = useRef<HTMLDivElement>(null);
+  const scrollToBottomRef = useRef<(() => void) | null>(null);
+  const [showScrollToBottomFab, setShowScrollToBottomFab] = useState(false);
   const lastMessageCountRef = useRef(0);
+
+  const handleAtBottomChange = useCallback((atBottom: boolean) => {
+    setShowScrollToBottomFab((current) => {
+      const next = !atBottom;
+      return current === next ? current : next;
+    });
+  }, []);
+
+  const bindScrollToBottom = useCallback((scrollToBottom: () => void) => {
+    scrollToBottomRef.current = scrollToBottom;
+  }, []);
 
   useChatEntrance(conversationRef, "[data-chat-welcome], [data-chat-message]", [
     chatSessionId,
-    state?.messages.length,
+    messagePages.messages.length,
   ]);
 
   const loadSessions = useCallback(async () => {
@@ -99,15 +107,19 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to load chat");
     }
-    setOptimisticMessages((pending) =>
-      pruneConfirmedOptimisticMessages(pending, payload.messages),
-    );
     setState(payload);
     return payload;
   }, [chatSessionId]);
 
   useEffect(() => {
+    setOptimisticMessages((pending) =>
+      pruneConfirmedOptimisticMessages(pending, messagePages.messages),
+    );
+  }, [messagePages.messages]);
+
+  useEffect(() => {
     setOptimisticMessages([]);
+    setShowScrollToBottomFab(false);
   }, [chatSessionId]);
 
   const shouldPoll =
@@ -127,6 +139,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         }
         setError(null);
         void loadSessions();
+        await messagePages.refreshLatestPage();
         if (payload.status === "initializing" || payload.storyCreation?.isGenerating) {
           timer = setTimeout(poll, POLL_MS);
         }
@@ -149,23 +162,23 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         clearTimeout(timer);
       }
     };
-  }, [loadState, loadSessions, chatSessionId, shouldPoll]);
+  }, [loadState, loadSessions, chatSessionId, shouldPoll, messagePages.refreshLatestPage]);
 
   useEffect(() => {
-    const count = state?.messages.length ?? 0;
+    const count = messagePages.messages.length;
     if (count > lastMessageCountRef.current && conversationRef.current) {
       const nodes = conversationRef.current.querySelectorAll("[data-chat-message]");
       const last = nodes[nodes.length - 1] as HTMLElement | undefined;
       animateNewMessage(last ?? null);
     }
     lastMessageCountRef.current = count;
-  }, [state?.messages.length]);
+  }, [messagePages.messages.length]);
 
   const title = state?.chatSession.title ?? "Chat";
   const visibleMessages = useMemo(
     () =>
-      mergeOptimisticChatMessages(state?.messages ?? [], optimisticMessages),
-    [state?.messages, optimisticMessages],
+      mergeOptimisticChatMessages(messagePages.messages, optimisticMessages),
+    [messagePages.messages, optimisticMessages],
   );
 
   const suggestionsRefreshKey = useMemo(
@@ -206,9 +219,9 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         state?.storyCreation?.storyId ?? "",
         state?.storyCreation?.isGenerating ?? false,
         state?.storyCreation?.generationFailed ?? false,
-        state?.messages.length ?? 0,
+        visibleMessages.length,
       ].join(":"),
-    [state?.storyCreation, state?.messages.length],
+    [state?.storyCreation, visibleMessages.length],
   );
 
   const composerDisabled = state == null || pipelineInProgress;
@@ -287,6 +300,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
 
       void loadSessions();
       await loadState();
+      await messagePages.refreshLatestPage();
     } catch (sendError) {
       setOptimisticMessages((current) =>
         current.filter((message) => message.id !== optimisticMessage.id),
@@ -569,39 +583,62 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
           </Sheet>
         </header>
 
-        <main ref={conversationRef} className="min-h-0 flex-1 overflow-y-auto">
-          {error ? (
-            <p className="p-4 text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <main ref={conversationRef} className="min-h-0 flex-1 overflow-y-auto">
+            {error ? (
+              <p className="p-4 text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
 
-          {!state && !error ? <ChatLoading variant="initial" /> : null}
+            {!state && !error ? <ChatLoading variant="initial" /> : null}
 
-          {state ? (
-            <ChatConversation
-              messages={visibleMessages}
-              status={state.status}
-              showWelcome={showWelcome}
-              storyTitle={
-                state.chatSession.isFromNewsStory
-                  ? state.chatSession.title
-                  : null
-              }
-              storyCreation={state.storyCreation}
-              onPrompt={handlePrompt}
-              onRetry={() => {
-                const lastUser = [...visibleMessages]
-                  .reverse()
-                  .find((message) => message.role === "user");
-                if (lastUser) {
-                  void sendMessage(lastUser.content);
+            {state ? (
+              <ChatConversation
+                messages={visibleMessages}
+                scrollRef={conversationRef}
+                loadingInitial={messagePages.loadingInitial}
+                loadingOlder={messagePages.loadingOlder}
+                hasMoreOlder={messagePages.hasMoreOlder}
+                olderError={messagePages.olderError}
+                onLoadOlder={() => void messagePages.loadOlderMessages()}
+                onRetryOlder={() => void messagePages.retryLoadOlder()}
+                sessionScrollKey={chatSessionId}
+                onAtBottomChange={handleAtBottomChange}
+                bindScrollToBottom={bindScrollToBottom}
+                status={state.status}
+                showWelcome={showWelcome}
+                storyTitle={
+                  state.chatSession.isFromNewsStory
+                    ? state.chatSession.title
+                    : null
                 }
-              }}
-              composerDisabled={composerDisabled}
-            />
-          ) : null}
-        </main>
+                storyCreation={state.storyCreation}
+                onPrompt={handlePrompt}
+                onRetry={() => {
+                  const lastUser = [...visibleMessages]
+                    .reverse()
+                    .find((message) => message.role === "user");
+                  if (lastUser) {
+                    void sendMessage(lastUser.content);
+                  }
+                }}
+                composerDisabled={composerDisabled}
+              />
+            ) : null}
+          </main>
+
+          <ChatScrollToBottomFab
+            visible={
+              Boolean(state) &&
+              !showWelcome &&
+              visibleMessages.length > 0 &&
+              showScrollToBottomFab
+            }
+            className="bottom-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+            onClick={() => scrollToBottomRef.current?.()}
+          />
+        </div>
 
         {state ? (
           <ChatComposer

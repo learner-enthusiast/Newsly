@@ -10,6 +10,19 @@ export function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+export type ScrollToBottomMode = "instant" | "smooth";
+
+/** Scroll a overflow container to its bottom (respects reduced motion). */
+export function scrollElementToBottom(
+  element: HTMLElement,
+  mode: ScrollToBottomMode = "instant",
+) {
+  const behavior =
+    mode === "smooth" && !prefersReducedMotion() ? "smooth" : "auto";
+  element.scrollTo({ top: element.scrollHeight, behavior });
+  return behavior;
+}
+
 export function useChatEntrance(
   containerRef: RefObject<HTMLElement | null>,
   selector: string,
