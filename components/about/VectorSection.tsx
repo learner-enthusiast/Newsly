@@ -59,7 +59,7 @@ export function VectorSection() {
       <SectionHeading
         eyebrow="Research memory"
         title="Earlier research can answer the next question."
-        lede="When a chat source is saved, a short description is embedded with text-embedding-3-small and stored in pgvector. Later messages in the same session retrieve the closest rows before spending another search."
+        lede="When a chat source is saved, a short description is embedded with text-embedding-3-small and stored in pgvector. Later messages in the same session retrieve the closest rows (top 8, similarity ≥ 0.72) before spending another search."
         align="center"
       />
       <div className="mx-auto mt-20 max-w-3xl lg:mt-24">
@@ -77,7 +77,7 @@ export function VectorSection() {
         ))}
       </ol>
       <p className="mx-auto mt-10 max-w-lg text-center text-sm leading-relaxed text-muted-foreground">
-        Retrieval is scoped to the current session. Message embeddings are indexed too, but answers are written from research sources, not from them.
+        Retrieval is scoped to the current session. Chat messages are also embedded in the background, but that index is not read by any pipeline yet; answers are written from research sources.
       </p>
     </Section>
   );

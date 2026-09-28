@@ -15,7 +15,7 @@ export function ProblemSection() {
             The problem is finding what matters.
           </>
         }
-        lede="Search returns fragments. Chat forgets what it already read. A briefing is only useful when the sources are still attached to it."
+        lede="Search returns fragments. Chat forgets what it already read. Every extra search and scrape costs money. A briefing is only useful when the sources are still attached to it."
       />
 
       {/* Mobile: the same idea, composed vertically */}

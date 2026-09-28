@@ -22,9 +22,9 @@ export const NEWS_PIPELINE: readonly Stage[] = [
 /** inngest/chatPipeline.ts — `chat/message.research.requested` */
 export const CHAT_PIPELINE: readonly Stage[] = [
   { id: "question", label: "Question", detail: "A message in a research session." },
-  { id: "understand", label: "Understand", detail: "Guardrails, a query enhancer, then a determiner." },
-  { id: "memory", label: "Check memory", detail: "Similar session research, if embeddings exist." },
-  { id: "search", label: "Search if needed", detail: "Serp and YouTube only when the determiner asks." },
+  { id: "understand", label: "Understand", detail: "Guardrails keep it to markets and economics; a query enhancer and a determiner plan the work." },
+  { id: "memory", label: "Check memory", detail: "Similar session research from pgvector, when this session already has some." },
+  { id: "search", label: "Search if needed", detail: "SerpAPI, YouTube, and AI Overview follow-ups only when the determiner asks." },
   { id: "evidence", label: "Collect evidence", detail: "Firecrawl, cleaning, saved ResearchSource rows." },
   { id: "answer", label: "Answer", detail: "A reply grounded in that evidence." },
 ];
@@ -36,7 +36,7 @@ export const STORY_FROM_CHAT: readonly Stage[] = [
   { id: "create", label: "Create story", detail: "The determiner decides a story is wanted." },
   { id: "process", label: "Story pipeline", detail: "Reuses that evidence; searches more only for gaps." },
   { id: "evidence", label: "Evidence", detail: "NewsSource rows saved beside the prose." },
-  { id: "draft", label: "Draft story", detail: "Private until the owner publishes." },
+  { id: "draft", label: "Draft story", detail: "Private until the owner publishes. The owner can edit copy and upload a cover photo." },
 ];
 
 export type ArchNode = { id: string; label: string; sub?: string; x: number; y: number };
@@ -126,7 +126,7 @@ export const VECTOR_POINTS: readonly VectorPoint[] = [
 export const ENGINEERING_LAYERS = [
   { layer: "Application", names: ["Next.js", "TypeScript", "React"] },
   { layer: "Orchestration", names: ["Inngest"] },
-  { layer: "Research", names: ["SerpAPI", "Firecrawl", "OpenAI"] },
+  { layer: "Research", names: ["SerpAPI", "Firecrawl", "YouTube", "OpenAI"] },
   { layer: "Storage", names: ["PostgreSQL", "Prisma", "pgvector"] },
   { layer: "Identity", names: ["Clerk"] },
 ] as const;
@@ -163,6 +163,46 @@ export function noiseCloud(count: number): readonly { x: number; y: number; r: n
   }
   return points;
 }
+
+export type ProductFeature = {
+  name: string;
+  purpose: string;
+  path: string;
+};
+
+/** User-facing capabilities that exist in the app today. */
+export const PRODUCT_FEATURES: readonly ProductFeature[] = [
+  {
+    name: "News briefing",
+    purpose: "A date, place, and set of topics become a multi-story digest with sources still attached.",
+    path: "/news",
+  },
+  {
+    name: "Community stories",
+    purpose: "Published stories sit on a public feed. Readers vote, bookmark, and open a deep dive.",
+    path: "/newsStory",
+  },
+  {
+    name: "Research chat",
+    purpose: "A finance or economics question is researched, answered, and remembered on the session.",
+    path: "/chat",
+  },
+  {
+    name: "Story deep dive",
+    purpose: "A published story opens a chat that starts from its stored sources, not a blank search.",
+    path: "/newsStory",
+  },
+  {
+    name: "Chat to story",
+    purpose: "Asking for a story creates a private draft from research already gathered, then you can publish it.",
+    path: "/chat",
+  },
+  {
+    name: "Location-aware search",
+    purpose: "Autocomplete and reverse geocoding bias local briefings without calling Maps on every keystroke.",
+    path: "/news",
+  },
+];
 
 export const PROBLEM_WORDS = [
   { label: "Headlines", x: 80, y: 70 },

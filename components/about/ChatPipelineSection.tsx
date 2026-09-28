@@ -21,7 +21,10 @@ function ConversationFragment() {
         </ul>
       </div>
       <figcaption className="mt-8 text-sm leading-relaxed text-muted-foreground">
-        Conversation text is context for the model. It is not treated as a cited source.
+        The first turn of a deep dive starts from the story and its stored
+        sources instead of a fresh search plan. Every turn after that runs this
+        same process. Conversation text is context for the model; it is never
+        cited as a source.
       </figcaption>
     </figure>
   );

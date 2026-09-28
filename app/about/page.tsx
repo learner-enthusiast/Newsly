@@ -6,6 +6,7 @@ import { ArchitectureSection } from "@/components/about/ArchitectureSection";
 import { ChatPipelineSection } from "@/components/about/ChatPipelineSection";
 import { EngineeringSection, LifecycleSection } from "@/components/about/EngineeringSection";
 import { EvidenceSection } from "@/components/about/EvidenceSection";
+import { FeaturesSection } from "@/components/about/FeaturesSection";
 import { NewsPipelineSection } from "@/components/about/NewsPipelineSection";
 import { NoiseToSignal } from "@/components/about/NoiseToSignal";
 import { ProblemSection } from "@/components/about/ProblemSection";
@@ -15,7 +16,7 @@ import type { Metadata } from "next";
 
 const title = "How Newsly works — Newsly";
 const description =
-  "How Newsly turns web search, scraped sources, and session research into briefings, chat answers, and stories you can trust.";
+  "How Newsly turns search, scraped sources, and session research into briefings, chat answers, and stories you own — with the sources still attached.";
 
 export const metadata: Metadata = {
   title,
@@ -30,6 +31,7 @@ export default function AboutPage() {
       <AboutHero />
       <ProblemSection />
       <NoiseToSignal />
+      <FeaturesSection />
       <ArchitectureSection />
       <NewsPipelineSection />
       <ChatPipelineSection />

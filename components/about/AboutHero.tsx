@@ -64,9 +64,11 @@ export function AboutHero() {
           to research you can trust.
         </h1>
         <p className="mt-9 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-          Newsly searches the open web, keeps the sources, and writes briefings
-          and answers from that evidence. Discovery, chat, and stories are
-          different paths through the same record.
+          Newsly is a research-oriented news intelligence system for financial,
+          economic, and market topics. It searches the open web, keeps the
+          sources, and writes briefings, chat answers, and stories only from
+          that evidence. Discovery, conversation, and publishing are different
+          paths through the same record.
         </p>
         <HeroIllustration />
         <ol className="mt-14 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground sm:hidden">

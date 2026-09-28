@@ -13,7 +13,7 @@ export function EngineeringSection() {
             not a chatbot wrapper.
           </>
         }
-        lede="Long research does not live inside one HTTP request. Inngest runs the jobs and retries them. Postgres keeps the sources. Models write only after the text is in hand."
+        lede="Long research does not live inside one HTTP request. Inngest runs the jobs and retries them. Postgres keeps the sources. Models write only after the text is in hand. The repository README is the full technical specification."
       />
 
       <ol data-about-reveal className="mt-20 max-w-4xl lg:mt-28">

@@ -104,7 +104,9 @@ export function StoryFlowSection() {
 
       <p className="mt-14 max-w-xl text-sm leading-relaxed text-muted-foreground">
         The result is a NewsStory you own. It stays a private draft until you
-        publish it. After that, other readers can open it, vote on it, and deep-dive it. Only you can edit it.
+        publish it. You can edit the copy and upload a cover photo. After
+        publishing, other readers can open it, vote on it, and deep-dive it.
+        Only you can edit it.
       </p>
     </Section>
   );
