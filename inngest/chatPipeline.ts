@@ -51,6 +51,7 @@ import {
   type SmallDeterminerRunResult,
   type ValidatedSerpToolCall,
 } from "@/Agents/chat/smallDeterminerAgent";
+import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import {
   findAssistantReplyAfterUserMessage,
@@ -117,6 +118,7 @@ export type MessageChatPipelineEventData = z.infer<
 >;
 
 const PIPELINE_LOG_PREFIX = "[message-chat-pipeline]";
+const pipelineLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 const VECTOR_RESEARCH_LIMIT = 8;
 const VECTOR_MIN_SIMILARITY = 0.72;
 const RESEARCH_SOURCE_INSERT_CONCURRENCY = 4;
@@ -151,16 +153,6 @@ async function mapWithConcurrency<T, R>(
   );
   await Promise.all(workers);
   return results;
-}
-
-function pipelineLog(
-  step: string,
-  message: string,
-  extra?: Record<string, unknown>,
-): void {
-  const suffix =
-    extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
-  console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
 }
 
 function isUserRole(role: string): boolean {

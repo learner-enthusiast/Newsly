@@ -19,6 +19,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 
+const storyPageMainClassName =
+  "min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-background";
+
 export default function NewsStoryPage() {
   const params = useParams<{ storyId: string }>();
   const storyId =
@@ -46,6 +49,8 @@ export default function NewsStoryPage() {
   const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
   const [savingStoryId, setSavingStoryId] = useState<string | null>(null);
   const [publishBusy, setPublishBusy] = useState(false);
+  const [photoUploadBusy, setPhotoUploadBusy] = useState(false);
+  const photoUploadLockRef = useRef(false);
 
   const onPublish = useCallback(async () => {
     if (!storyId || !isSignedIn) {
@@ -220,6 +225,78 @@ export default function NewsStoryPage() {
     [isSignedIn],
   );
 
+  const onUploadStoryPhoto = useCallback(
+    async (file: File) => {
+      if (!storyId || !isSignedIn || photoUploadLockRef.current) {
+        return;
+      }
+      photoUploadLockRef.current = true;
+
+      const snapshotRef: { current: NewsStoryPagePayload | null } = {
+        current: null,
+      };
+      const previewUrl = URL.createObjectURL(file);
+
+      setData((current) => {
+        snapshotRef.current = current;
+        if (!current || current.story.id !== storyId) {
+          return current;
+        }
+        return {
+          ...current,
+          story: { ...current.story, imageUrl: previewUrl },
+        };
+      });
+
+      setPhotoUploadBusy(true);
+      try {
+        const formData = new FormData();
+        formData.append("photo", file);
+
+        const response = await fetch(`/api/news/stories/${storyId}/photo`, {
+          method: "POST",
+          body: formData,
+        });
+        const payload = (await response.json()) as {
+          imageUrl?: string | null;
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to upload photo");
+        }
+
+        URL.revokeObjectURL(previewUrl);
+        setData((current) => {
+          if (!current || current.story.id !== storyId) {
+            return current;
+          }
+          const nextUrl =
+            payload.imageUrl?.trim() || current.story.imageUrl?.trim() || null;
+          if (nextUrl === current.story.imageUrl) {
+            return current;
+          }
+          return {
+            ...current,
+            story: { ...current.story, imageUrl: nextUrl },
+          };
+        });
+      } catch (uploadErr) {
+        URL.revokeObjectURL(previewUrl);
+        if (snapshotRef.current) {
+          setData(snapshotRef.current);
+        }
+        toast.error(
+          uploadErr instanceof Error ? uploadErr.message : "Photo upload failed",
+        );
+      } finally {
+        photoUploadLockRef.current = false;
+        setPhotoUploadBusy(false);
+      }
+    },
+    [isSignedIn, storyId, setData],
+  );
+
   const onSaveToggle = useCallback(
     async (targetStoryId: string, nextSaved: boolean) => {
       if (!isSignedIn) {
@@ -274,30 +351,37 @@ export default function NewsStoryPage() {
 
   if (!storyId) {
     return (
-      <p className="px-4 py-8 text-sm text-destructive">Invalid story link.</p>
+      <main className={storyPageMainClassName}>
+        <p className="px-4 py-8 text-sm text-destructive">Invalid story link.</p>
+      </main>
     );
   }
 
   if (isLoading || !isLoaded) {
     return (
-      <ShimmerLoadingStatus
-        messages={NEWS_STORY_LOADING_MESSAGES}
-        statusLabel="Loading story"
-        className="min-h-[40vh]"
-      />
+      <main className={storyPageMainClassName}>
+        <ShimmerLoadingStatus
+          messages={NEWS_STORY_LOADING_MESSAGES}
+          statusLabel="Loading story"
+          className="min-h-[40vh]"
+        />
+      </main>
     );
   }
 
   if (error || !data) {
     return (
-      <p className="px-4 py-8 text-sm text-destructive" role="alert">
-        {error ?? "Story not found."}
-      </p>
+      <main className={storyPageMainClassName}>
+        <p className="px-4 py-8 text-sm text-destructive" role="alert">
+          {error ?? "Story not found."}
+        </p>
+      </main>
     );
   }
 
   return (
-    <NewsStoryDetailView
+    <main className={storyPageMainClassName}>
+      <NewsStoryDetailView
       data={data}
       pollWarning={pollWarning}
       isSignedIn={Boolean(isSignedIn)}
@@ -311,7 +395,10 @@ export default function NewsStoryPage() {
       onPublish={onPublish}
       onUnpublish={onUnpublish}
       publishBusy={publishBusy}
+      photoUploadBusy={photoUploadBusy}
+      onUploadStoryPhoto={onUploadStoryPhoto}
       onStoryUpdated={(payload) => setData(payload)}
-    />
+      />
+    </main>
   );
 }

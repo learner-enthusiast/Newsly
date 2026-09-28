@@ -1,3 +1,4 @@
+import "@/clients/env";
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaPg } from "@prisma/adapter-pg";

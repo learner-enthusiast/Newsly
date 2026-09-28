@@ -55,6 +55,7 @@ import {
   type ValidatedSerpToolCall,
 } from "@/Agents/chat/smallDeterminerAgent";
 import { GuardrailBlockedError } from "@/Agents/chat/guardrails";
+import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import {
   createChatMessage,
@@ -96,6 +97,7 @@ export const chatPipelineEventDataSchema = z.object({
 export type ChatPipelineEventData = z.infer<typeof chatPipelineEventDataSchema>;
 
 const PIPELINE_LOG_PREFIX = "[chat-pipeline]";
+const pipelineLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 const RESEARCH_SOURCE_INSERT_CONCURRENCY = 4;
 
 function createStepTimer(): () => number {
@@ -128,16 +130,6 @@ async function mapWithConcurrency<T, R>(
   );
   await Promise.all(workers);
   return results;
-}
-
-function pipelineLog(
-  step: string,
-  message: string,
-  extra?: Record<string, unknown>,
-): void {
-  const suffix =
-    extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
-  console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
 }
 
 export const chatPipelineFunction = inngest.createFunction(

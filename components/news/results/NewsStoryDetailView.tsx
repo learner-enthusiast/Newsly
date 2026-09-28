@@ -39,6 +39,8 @@ type NewsStoryDetailViewProps = {
   onPublish?: () => void;
   onUnpublish?: () => void;
   publishBusy?: boolean;
+  photoUploadBusy?: boolean;
+  onUploadStoryPhoto?: (file: File) => Promise<void>;
   onStoryUpdated?: (payload: NewsStoryPagePayload) => void;
 };
 
@@ -56,6 +58,8 @@ export function NewsStoryDetailView({
   onPublish,
   onUnpublish,
   publishBusy = false,
+  photoUploadBusy = false,
+  onUploadStoryPhoto,
   onStoryUpdated,
 }: NewsStoryDetailViewProps) {
   const { story, newsRequest, canViewFullBriefing } = data;
@@ -166,6 +170,8 @@ export function NewsStoryDetailView({
               onPublish={onPublish}
               onUnpublish={onUnpublish}
               publishBusy={publishBusy}
+              photoUploadBusy={photoUploadBusy}
+              onUploadStoryPhoto={onUploadStoryPhoto}
               onStoryUpdated={onStoryUpdated}
             />
           ) : null}

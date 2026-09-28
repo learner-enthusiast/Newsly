@@ -17,7 +17,10 @@ import {
   formatStoryPublishedMeta,
   primaryStoryDomain,
 } from "@/services/news/newsRequestDisplay";
-import type { NewsStoryPagePayload, SerializedNewsStory } from "@/services/news/newsRequestTypes";
+import type {
+  NewsStoryPagePayload,
+  SerializedNewsStory,
+} from "@/services/news/newsRequestTypes";
 import { NewsStoryOwnerEditSheet } from "@/components/news/results/NewsStoryOwnerEditSheet";
 import { StorySaveButton } from "@/components/news/StorySaveButton";
 import { cn } from "@/lib/utils";
@@ -46,6 +49,8 @@ type NewsStoryCardProps = {
   onPublish?: () => void;
   onUnpublish?: () => void;
   publishBusy?: boolean;
+  photoUploadBusy?: boolean;
+  onUploadStoryPhoto?: (file: File) => Promise<void>;
   onStoryUpdated?: (payload: NewsStoryPagePayload) => void;
   className?: string;
 };
@@ -87,6 +92,8 @@ export function NewsStoryCard({
   onPublish,
   onUnpublish,
   publishBusy = false,
+  photoUploadBusy = false,
+  onUploadStoryPhoto,
   onStoryUpdated,
   className,
 }: NewsStoryCardProps) {
@@ -117,6 +124,7 @@ export function NewsStoryCard({
     ? `/chat/${story.originChatSessionId}`
     : null;
   const useBackToChat = isOwnerDraft && Boolean(backToChatHref);
+  const isUserCreatedOwner = story.isUserCreated && story.canEdit;
 
   let categoryMarker: ReactNode = null;
 
@@ -146,10 +154,7 @@ export function NewsStoryCard({
       readFullStoryControl = (
         <Sheet>
           <SheetTrigger render={readFullStoryTrigger} />
-          <SheetContent
-            side="right"
-            className="w-full sm:max-w-lg px-3 mx-3"
-          >
+          <SheetContent side="right" className="w-full sm:max-w-lg px-3 mx-3">
             <SheetHeader>
               <SheetTitle className="font-display text-left text-xl leading-snug">
                 {story.title}
@@ -180,190 +185,191 @@ export function NewsStoryCard({
     );
 
   const cardInner = (
-      <div className="flex gap-4">
-        <div
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background"
-          aria-label={`Story rank ${rank}`}
-        >
-          {rank}
-        </div>
+    <div className="flex gap-4">
+      <div
+        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background"
+        aria-label={`Story rank ${rank}`}
+      >
+        {rank}
+      </div>
 
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div
-              className={cn(
-                "relative h-36 w-full shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-40",
-                !showStoryImage &&
-                  "bg-linear-to-br from-muted via-accent/25 to-secondary",
-              )}
-              role={showStoryImage ? undefined : "img"}
-              aria-label={
-                showStoryImage ? undefined : `${story.category} story`
-              }
-            >
-              {showStoryImage && storyImageUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element -- publisher URLs */
-                <img
-                  src={storyImageUrl}
-                  alt=""
-                  className="size-full object-cover"
-                  loading="lazy"
-                  decoding="async"
-                  onError={() => setFailedImageUrl(storyImageUrl)}
-                />
-              ) : (
-                <div className="absolute inset-0 flex items-end p-3">
-                  <span className="text-xs font-medium text-foreground/70">
-                    {story.category}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap gap-1.5">
-                {categoryMarker}
-                {story.location?.trim() ? (
-                  <Badge variant="outline">{story.location}</Badge>
-                ) : null}
-                {isOwnerDraft ? (
-                  <Badge variant="secondary">Draft</Badge>
-                ) : null}
-                {isOwnerPublished ? (
-                  <Badge variant="outline">Published</Badge>
-                ) : null}
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <div
+            className={cn(
+              "relative h-36 w-full shrink-0 overflow-hidden rounded-xl sm:h-28 sm:w-40",
+              !showStoryImage &&
+                "bg-linear-to-br from-muted via-accent/25 to-secondary",
+            )}
+            role={showStoryImage ? undefined : "img"}
+            aria-label={showStoryImage ? undefined : `${story.category} story`}
+          >
+            {showStoryImage && storyImageUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element -- publisher URLs */
+              <img
+                src={storyImageUrl}
+                alt=""
+                className="size-full object-cover"
+                loading="lazy"
+                decoding="async"
+                onError={() => setFailedImageUrl(storyImageUrl)}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-end p-3">
+                <span className="text-xs font-medium text-foreground/70">
+                  {story.category}
+                </span>
               </div>
-
-              <h2 className="font-display mt-2 text-xl leading-snug font-semibold text-balance">
-                {titleNode}
-              </h2>
-
-              {description ? (
-                <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
-                  {description}
-                </p>
-              ) : null}
-
-              {publishedMeta || primarySourceTitle ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {publishedMeta}
-                  {publishedMeta && primarySourceTitle ? " · " : null}
-                  {primarySourceTitle && !publishedMeta
-                    ? primarySourceTitle
-                    : null}
-                </p>
-              ) : null}
-            </div>
+            )}
           </div>
 
-          {actionsVisible ? (
-            <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
-              <div className="flex flex-wrap items-center gap-2">
-                {guestGated ? (
-                  <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
-                    <Button type="button" variant="ghost" size="sm">
-                      Key Takeaways
-                    </Button>
-                  </SignInButton>
-                ) : (
-                  <NewsTakeaways content={story.content} />
-                )}
-                <NewsStorySources sources={story.sourceUrls ?? []} />
-                {guestGated ? (
-                  <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
-                    <Button type="button" variant="ghost" size="sm">
-                      {useBackToChat ? "Back to chat" : "Deep Dive"}
-                    </Button>
-                  </SignInButton>
-                ) : useBackToChat && backToChatHref ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    nativeButton={false}
-                    render={<Link href={backToChatHref} />}
-                  >
-                    <MessageSquare data-icon="inline-start" className="size-3.5" />
-                    Back to chat
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={deepDiveStoryId === story.id}
-                    onClick={() => onDeepDive(story.id)}
-                  >
-                    {deepDiveStoryId === story.id ? "Starting…" : "Deep Dive"}
-                  </Button>
-                )}
-              </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap gap-1.5">
+              {categoryMarker}
+              {story.location?.trim() ? (
+                <Badge variant="outline">{story.location}</Badge>
+              ) : null}
+              {isOwnerDraft ? <Badge variant="secondary">Draft</Badge> : null}
+              {isOwnerPublished ? (
+                <Badge variant="outline">Published</Badge>
+              ) : null}
+            </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                {showCommunityVotes ? (
-                  <NewsStoryVotes
+            <h2 className="font-display mt-2 text-xl leading-snug font-semibold text-balance">
+              {titleNode}
+            </h2>
+
+            {description ? (
+              <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                {description}
+              </p>
+            ) : null}
+
+            {publishedMeta || primarySourceTitle ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {publishedMeta}
+                {publishedMeta && primarySourceTitle ? " · " : null}
+                {primarySourceTitle && !publishedMeta
+                  ? primarySourceTitle
+                  : null}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        {actionsVisible ? (
+          <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {guestGated ? (
+                <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+                  <Button type="button" variant="ghost" size="sm">
+                    Key Takeaways
+                  </Button>
+                </SignInButton>
+              ) : (
+                <NewsTakeaways content={story.content} />
+              )}
+              <NewsStorySources sources={story.sourceUrls ?? []} />
+              {guestGated ? (
+                <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+                  <Button type="button" variant="ghost" size="sm">
+                    {useBackToChat ? "Back to chat" : "Deep Dive"}
+                  </Button>
+                </SignInButton>
+              ) : useBackToChat && backToChatHref ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link href={backToChatHref} />}
+                >
+                  <MessageSquare
+                    data-icon="inline-start"
+                    className="size-3.5"
+                  />
+                  Back to chat
+                </Button>
+              ) : isUserCreatedOwner ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={deepDiveStoryId === story.id}
+                  onClick={() => onDeepDive(story.id)}
+                >
+                  {deepDiveStoryId === story.id ? "Starting…" : "Deep Dive"}
+                </Button>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              {showCommunityVotes ? (
+                <NewsStoryVotes
+                  storyId={story.id}
+                  vote={{
+                    upvotes: story.upvotes ?? 0,
+                    downvotes: story.downvotes ?? 0,
+                    netVotes: story.netVotes ?? 0,
+                    userVote: story.userVote ?? null,
+                  }}
+                  onVote={onVote}
+                  voting={votingStoryId === story.id}
+                  signInRedirectUrl={guestGated ? redirectUrl : undefined}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Publish to share with the community and collect votes.
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                {ownerDetailMode && story.canEdit && onStoryUpdated ? (
+                  <NewsStoryOwnerEditSheet
+                    story={story}
+                    onUpdated={onStoryUpdated}
+                    onUploadPhoto={onUploadStoryPhoto}
+                    photoUploadBusy={photoUploadBusy}
+                  />
+                ) : null}
+                {isOwnerDraft && onPublish ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={publishBusy}
+                    onClick={onPublish}
+                  >
+                    Publish story
+                  </Button>
+                ) : null}
+                {isOwnerPublished && onUnpublish ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={publishBusy}
+                    onClick={onUnpublish}
+                  >
+                    Move to draft
+                  </Button>
+                ) : null}
+                {showCommunityVotes && onSaveToggle ? (
+                  <StorySaveButton
                     storyId={story.id}
-                    vote={{
-                      upvotes: story.upvotes ?? 0,
-                      downvotes: story.downvotes ?? 0,
-                      netVotes: story.netVotes ?? 0,
-                      userVote: story.userVote ?? null,
-                    }}
-                    onVote={onVote}
-                    voting={votingStoryId === story.id}
+                    saved={story.userSaved ?? false}
+                    onToggle={onSaveToggle}
+                    saving={savingStoryId === story.id}
                     signInRedirectUrl={guestGated ? redirectUrl : undefined}
                   />
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Publish to share with the community and collect votes.
-                  </p>
-                )}
+                ) : null}
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {ownerDetailMode && story.canEdit && onStoryUpdated ? (
-                    <NewsStoryOwnerEditSheet
-                      story={story}
-                      onUpdated={onStoryUpdated}
-                    />
-                  ) : null}
-                  {isOwnerDraft && onPublish ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={publishBusy}
-                      onClick={onPublish}
-                    >
-                      Publish story
-                    </Button>
-                  ) : null}
-                  {isOwnerPublished && onUnpublish ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={publishBusy}
-                      onClick={onUnpublish}
-                    >
-                      Move to draft
-                    </Button>
-                  ) : null}
-                  {showCommunityVotes && onSaveToggle ? (
-                    <StorySaveButton
-                      storyId={story.id}
-                      saved={story.userSaved ?? false}
-                      onToggle={onSaveToggle}
-                      saving={savingStoryId === story.id}
-                      signInRedirectUrl={guestGated ? redirectUrl : undefined}
-                    />
-                  ) : null}
-
-                  {readFullStoryControl}
-                </div>
+                {readFullStoryControl}
               </div>
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
+    </div>
   );
 
   const cardClassName = cn(

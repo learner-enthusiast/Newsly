@@ -14,39 +14,77 @@ import type {
   NewsStoryPagePayload,
   SerializedNewsStory,
 } from "@/services/news/newsRequestTypes";
-import { Pencil } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ImagePlus, Loader2, Pencil } from "lucide-react";
+import { useId, useRef, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
+
+const STORY_PHOTO_ACCEPT =
+  "image/jpeg,image/png,image/webp,image/gif,image/avif";
+
+const fieldLabelClassName =
+  "block w-full text-center text-sm font-medium leading-none";
 
 type NewsStoryOwnerEditSheetProps = {
   story: SerializedNewsStory;
   onUpdated: (payload: NewsStoryPagePayload) => void;
+  onUploadPhoto?: (file: File) => Promise<void>;
+  photoUploadBusy?: boolean;
 };
+
+function formStateFromStory(story: SerializedNewsStory) {
+  return {
+    title: story.title,
+    description: story.description ?? "",
+    summary: story.summary,
+    content: story.content,
+    category: story.category,
+    location: story.location ?? "",
+  };
+}
 
 export function NewsStoryOwnerEditSheet({
   story,
   onUpdated,
+  onUploadPhoto,
+  photoUploadBusy = false,
 }: NewsStoryOwnerEditSheetProps) {
+  const photoInputId = useId();
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [title, setTitle] = useState(story.title);
-  const [description, setDescription] = useState(story.description ?? "");
-  const [summary, setSummary] = useState(story.summary);
-  const [content, setContent] = useState(story.content);
-  const [category, setCategory] = useState(story.category);
-  const [location, setLocation] = useState(story.location ?? "");
+  const initialForm = formStateFromStory(story);
+  const [title, setTitle] = useState(initialForm.title);
+  const [description, setDescription] = useState(initialForm.description);
+  const [summary, setSummary] = useState(initialForm.summary);
+  const [content, setContent] = useState(initialForm.content);
+  const [category, setCategory] = useState(initialForm.category);
+  const [location, setLocation] = useState(initialForm.location);
 
-  useEffect(() => {
-    if (!open) {
+  function resetFormFromStory() {
+    const next = formStateFromStory(story);
+    setTitle(next.title);
+    setDescription(next.description);
+    setSummary(next.summary);
+    setContent(next.content);
+    setCategory(next.category);
+    setLocation(next.location);
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen) {
+      resetFormFromStory();
+    }
+    setOpen(nextOpen);
+  }
+
+  async function handlePhotoSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !onUploadPhoto) {
       return;
     }
-    setTitle(story.title);
-    setDescription(story.description ?? "");
-    setSummary(story.summary);
-    setContent(story.content);
-    setCategory(story.category);
-    setLocation(story.location ?? "");
-  }, [open, story]);
+    await onUploadPhoto(file);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -84,7 +122,7 @@ export function NewsStoryOwnerEditSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger
         render={
           <Button type="button" variant="outline" size="sm">
@@ -97,12 +135,45 @@ export function NewsStoryOwnerEditSheet({
         <SheetHeader>
           <SheetTitle>Edit your story</SheetTitle>
         </SheetHeader>
-        <div className="mt-4 flex max-h-[calc(100dvh-6rem)] flex-col gap-4 overflow-y-auto pr-1">
+        <div className="mt-4 flex max-h-[calc(100dvh-6rem)] flex-col gap-4 overflow-y-auto px-1">
+          {onUploadPhoto ? (
+            <div className="space-y-2">
+              <p className={fieldLabelClassName}>Cover photo</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={photoInputRef}
+                  id={photoInputId}
+                  type="file"
+                  accept={STORY_PHOTO_ACCEPT}
+                  className="sr-only"
+                  disabled={photoUploadBusy || saving}
+                  onChange={(event) => void handlePhotoSelected(event)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={photoUploadBusy || saving}
+                  onClick={() => photoInputRef.current?.click()}
+                >
+                  {photoUploadBusy ? (
+                    <Loader2
+                      data-icon="inline-start"
+                      className="size-3.5 animate-spin"
+                    />
+                  ) : (
+                    <ImagePlus data-icon="inline-start" className="size-3.5" />
+                  )}
+                  {photoUploadBusy ? "Uploading…" : "Upload photo"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  JPEG, PNG, WebP, GIF, or AVIF · max 5MB
+                </p>
+              </div>
+            </div>
+          ) : null}
           <div className="space-y-2">
-            <label
-              htmlFor="story-edit-title"
-              className="text-sm font-medium leading-none"
-            >
+            <label htmlFor="story-edit-title" className={fieldLabelClassName}>
               Title
             </label>
             <Input
@@ -114,7 +185,7 @@ export function NewsStoryOwnerEditSheet({
           <div className="space-y-2">
             <label
               htmlFor="story-edit-description"
-              className="text-sm font-medium leading-none"
+              className={fieldLabelClassName}
             >
               Description
             </label>
@@ -128,7 +199,7 @@ export function NewsStoryOwnerEditSheet({
           <div className="space-y-2">
             <label
               htmlFor="story-edit-summary"
-              className="text-sm font-medium leading-none"
+              className={fieldLabelClassName}
             >
               Summary
             </label>
@@ -142,7 +213,7 @@ export function NewsStoryOwnerEditSheet({
           <div className="space-y-2">
             <label
               htmlFor="story-edit-content"
-              className="text-sm font-medium leading-none"
+              className={fieldLabelClassName}
             >
               Article content
             </label>
@@ -158,7 +229,7 @@ export function NewsStoryOwnerEditSheet({
             <div className="space-y-2">
               <label
                 htmlFor="story-edit-category"
-                className="text-sm font-medium leading-none"
+                className={fieldLabelClassName}
               >
                 Category
               </label>
@@ -171,7 +242,7 @@ export function NewsStoryOwnerEditSheet({
             <div className="space-y-2">
               <label
                 htmlFor="story-edit-location"
-                className="text-sm font-medium leading-none"
+                className={fieldLabelClassName}
               >
                 Location
               </label>
@@ -191,7 +262,11 @@ export function NewsStoryOwnerEditSheet({
             >
               Cancel
             </Button>
-            <Button type="button" onClick={() => void handleSave()} disabled={saving}>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+            >
               {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>

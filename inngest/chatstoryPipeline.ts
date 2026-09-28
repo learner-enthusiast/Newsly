@@ -59,6 +59,7 @@ import {
 } from "@/Agents/news/NewsSythesizeragent";
 import { runChatStoryResearchGapAgent } from "@/Agents/chat/chatStoryResearchGapAgent";
 import type { ValidatedSerpToolCall } from "@/Agents/chat/smallDeterminerAgent";
+import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import {
   applyChatStorySynthesis,
@@ -96,16 +97,7 @@ export {
 } from "@/services/chat/chatStoryPipelineTypes";
 
 const PIPELINE_LOG_PREFIX = "[chat-story-pipeline]";
-
-function pipelineLog(
-  step: string,
-  message: string,
-  extra?: Record<string, unknown>,
-): void {
-  const suffix =
-    extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
-  console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
-}
+const pipelineLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 
 export const chatStoryPipelineFunction = inngest.createFunction(
   {

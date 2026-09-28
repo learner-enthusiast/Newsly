@@ -22,6 +22,7 @@ import {
   chatRoleForMemoryDescription,
   runChatMessageSummarizerVectorAgent,
 } from "@/Agents/chat/chatMessageSummarizerVectorAgent";
+import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import { getChatMessageById } from "@/repositories/chatMessage";
 import { saveChatMessageEmbedding } from "@/repositories/chatMessageEmbedding";
@@ -40,16 +41,7 @@ export type ChatMessageIndexEventData = z.infer<
 >;
 
 const PIPELINE_LOG_PREFIX = "[chat-message-index]";
-
-function indexLog(
-  step: string,
-  message: string,
-  extra?: Record<string, unknown>,
-): void {
-  const suffix =
-    extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
-  console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
-}
+const indexLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 
 /** Fire-and-forget: enqueue message summarization + vector indexing. */
 export function enqueueChatMessageVectorIndexing(

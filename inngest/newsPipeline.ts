@@ -112,6 +112,7 @@ import {
   storyHasPrimaryArticleSource,
 } from "@/Agents/news/NewsSythesizeragent";
 import { runResearchArticleSelectorAgent } from "@/Agents/news/ResearchArticleSelectorAgent";
+import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import {
   appendNewsRequestLoadingLog,
@@ -188,6 +189,7 @@ export const newsPipelineEventDataSchema = z
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;
 
 const PIPELINE_LOG_PREFIX = "[news-pipeline]";
+const pipelineLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 
 const DEFAULT_NEWS_SYNTHESIZER_MODEL = "gpt-5.4-mini";
 
@@ -196,16 +198,6 @@ function resolveNewsSynthesizerModel(): string {
     undefined,
     process.env.NEWS_SYNTHESIZER_MODEL ?? DEFAULT_NEWS_SYNTHESIZER_MODEL,
   );
-}
-
-function pipelineLog(
-  step: string,
-  message: string,
-  extra?: Record<string, unknown>,
-): void {
-  const suffix =
-    extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : "";
-  console.log(`${PIPELINE_LOG_PREFIX} ${step}: ${message}${suffix}`);
 }
 
 export const newsPipelineFunction = inngest.createFunction(

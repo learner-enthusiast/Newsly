@@ -32,6 +32,8 @@ export function NewsTakeaways({ content, className }: NewsTakeawaysProps) {
         height: open ? "auto" : 0,
         opacity: open ? 1 : 0,
         display: open ? "block" : "none",
+        overflow: open ? "visible" : "hidden",
+        clearProps: open ? "height" : "",
       });
       return;
     }
@@ -40,7 +42,15 @@ export function NewsTakeaways({ content, className }: NewsTakeawaysProps) {
       gsap.fromTo(
         panel,
         { height: 0, opacity: 0 },
-        { height: "auto", opacity: 1, duration: 0.28, ease: "power2.out" },
+        {
+          height: "auto",
+          opacity: 1,
+          duration: 0.28,
+          ease: "power2.out",
+          onComplete: () => {
+            gsap.set(panel, { overflow: "visible", clearProps: "height" });
+          },
+        },
       );
     } else {
       gsap.to(panel, {
@@ -75,7 +85,7 @@ export function NewsTakeaways({ content, className }: NewsTakeawaysProps) {
           aria-hidden
         />
       </Button>
-      <div ref={panelRef} className="hidden overflow-hidden">
+      <div ref={panelRef} className="hidden">
         <div className="mt-2 rounded-lg border border-border/60 bg-muted/25 p-3">
           <ChatMarkdown content={markdown} className="text-sm text-foreground" />
         </div>
