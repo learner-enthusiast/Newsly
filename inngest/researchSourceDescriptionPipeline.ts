@@ -2,21 +2,35 @@
  * Research source description + vector index (background)
  *
  * Event: `research/source.index.requested`
- * Input: `{ researchSourceId, chatSessionId }`
  *
- * Trigger: `enqueueResearchSourceIndexing` from `createResearchSource` (fire-and-forget).
- * Timeout: 15 minutes.
+ * Event data (`researchSourceIndexEventDataSchema`):
+ * - `researchSourceId` — `ResearchSource` UUID
+ * - `chatSessionId` — must match the source’s session
+ *
+ * Trigger: `enqueueResearchSourceIndexing` from `createResearchSource` (and paths
+ * that persist new session research) via `inngest.send` — fire-and-forget.
+ *
+ * Function id: `research-source-description-index`
+ * Timeout: 15 minutes
  *
  * Purpose:
- * After a chat `ResearchSource` row is saved (Firecrawl / YouTube / etc.), produce
- * a short plain-text description, store it on the row, and embed it in
- * `chat_resource_embeddings` for pgvector similarity search in later chat turns.
- * Does not block message chat or chat story pipelines.
+ * After chat research saves a `ResearchSource` (Firecrawl article, YouTube transcript
+ * row, etc.), generate a compact plain-text description, persist it on the row, and
+ * embed it in `chat_resource_embeddings` for pgvector recall in
+ * `messageChatPipelineFunction` (`vector-research-branch` / determiner
+ * `useExistingResearch`). Does not block the main chat or story pipelines.
  *
- * Steps:
- * 1. load-research-source — Load row; verify `chatSessionId` matches event.
- * 2. summarize-source — `runResearchSourceDescriptionAgent` on scraped content.
- * 3. persist-description-and-embedding — Update description + upsert vector index.
+ * ── Steps ───────────────────────────────────────────────────────────────────
+ *
+ * 1. load-research-source
+ *    `getResearchSourceById`; verify session id matches event.
+ *
+ * 2. summarize-source
+ *    `runResearchSourceDescriptionAgent` on title, URL, domain, scraped `content`.
+ *
+ * 3. persist-description-and-embedding
+ *    `updateResearchSourceDescription` + `saveChatResourceEmbedding` (resource id =
+ *    research source id, scoped to `chatSessionId`).
  */
 
 import { runResearchSourceDescriptionAgent } from "@/Agents/chat/researchSourceDescriptionAgent";

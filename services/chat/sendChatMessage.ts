@@ -6,6 +6,12 @@ import { z } from "zod";
 
 export const sendChatMessageBodySchema = z.object({
   content: z.string().min(1, "Message is required").max(100_000),
+  /** When true, hand off to the chat→story pipeline (e.g. potential story topic click). */
+  shouldCreateStory: z
+    .union([z.boolean(), z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((value) => value === true || value === "true")
+    .default(false),
 });
 
 export type SendChatMessageBody = z.infer<typeof sendChatMessageBodySchema>;
@@ -17,6 +23,7 @@ export async function sendChatMessage(input: {
   userId: string;
   chatSessionId: string;
   content: string;
+  shouldCreateStory?: boolean;
 }) {
   const session = await getChatSessionByIdForUser(
     input.chatSessionId,
@@ -26,8 +33,12 @@ export async function sendChatMessage(input: {
     return null;
   }
 
-  const content = sendChatMessageBodySchema.parse({ content: input.content })
-    .content;
+  const parsed = sendChatMessageBodySchema.parse({
+    content: input.content,
+    shouldCreateStory: input.shouldCreateStory,
+  });
+  const content = parsed.content;
+  const shouldCreateStory = parsed.shouldCreateStory === true;
 
   const userMessage = await createChatMessage({
     chatSessionId: session.id,
@@ -40,6 +51,7 @@ export async function sendChatMessage(input: {
     data: {
       chatSessionId: session.id,
       chatMessageId: userMessage.id,
+      shouldCreateStory,
     },
   });
 

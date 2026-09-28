@@ -1,46 +1,70 @@
 /**
  * Inngest function registry
  *
- * All durable workflows are served from `app/api/inngest` via `inngestFunctions`.
+ * All durable workflows register in `inngestFunctions` and are served from
+ * `app/api/inngest`.
  *
- * ── Pipelines (user-facing research) ────────────────────────────────────────
+ * ═══════════════════════════════════════════════════════════════════════════
+ * User-facing research pipelines
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * newsPipelineFunction
+ * newsPipelineFunction (`newsPipeline.ts`)
  *   Event: `news/pipeline.requested`
- *   Fulfills a `NewsRequest` → multiple `NewsStory` rows (briefing), `NewsSource`
- *   children, `status=READY`, `creator/provenance=SYSTEM`. Notifications on
- *   success/failure (`onFailure` → idempotent `Notification` rows).
+ *   Input: `userId`, `newsRequestId`, generation fields (scope, location, categories,
+ *   storyCount, sources, language, …)
+ *   Outcome: Multiple SYSTEM `NewsStory` + `NewsSource` rows per request; request
+ *   `success` | `failed`; briefing completion notification.
+ *   See file header for Serp / YouTube / Firecrawl / synthesizer step list.
  *
- * chatPipelineFunction (newsNewchatPipeline.ts)
+ * chatPipelineFunction (`newsNewchatPipeline.ts`)
  *   Event: `chat/pipeline.requested`
- *   First turn for a news-story deep dive (`isFromNewsStory=true`) or legacy
- *   story-anchored start: research prompt from story + sources, Serp, Firecrawl,
- *   assistant reply. No pgvector reuse on this path.
+ *   Input: `userId`, `chatSessionId`, `userMessageId`
+ *   Outcome: First turn on story-anchored / deep-dive session — research prompt from
+ *   story + sources, Serp, scrape, ChatModel reply. No pgvector recall.
  *
- * messageChatPipelineFunction (chatPipeline.ts)
+ * messageChatPipelineFunction (`chatPipeline.ts`)
  *   Event: `chat/message.research.requested`
- *   General / follow-up chat: guardrails → query enhancer → determiner → optional
- *   vector + Serp + YouTube + Firecrawl → chat model reply. When determiner sets
- *   `shouldCreateStory` (original chat only), creates PENDING `NewsStory` and
- *   emits `chat/story.research.requested` instead of a long assistant answer.
+ *   Input: `chatSessionId`, `chatMessageId`, optional `shouldCreateStory`
+ *   Outcome: General follow-up chat — determiner, vector/Serp/YouTube, Firecrawl,
+ *   assistant Markdown OR handoff to chat story pipeline. Idempotent per message.
+ *   Enqueues potential story topics after normal replies.
  *
- * chatStoryPipelineFunction (chatstoryPipeline.ts)
+ * chatStoryPipelineFunction (`chatstoryPipeline.ts`)
  *   Event: `chat/story.research.requested`
- *   Completes one chat-origin `NewsStory` using prepared context from the message
- *   chat pipeline (no guardrails/query enhancer rerun). Gap agent → optional extra
- *   Serp/Firecrawl → synthesizer (`targetStoryCount=1`) → same row `READY`.
+ *   Input: `ChatStoryPipelineEventData` (prepared research from message chat)
+ *   Outcome: One PENDING → READY user `NewsStory` + sources; gap agent for extra work.
+ *   Idempotent per `storyId`.
  *
- * ── Background indexers (fire-and-forget) ───────────────────────────────────
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Background workers (fire-and-forget enqueue)
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * researchSourceDescriptionFunction
+ * researchSourceDescriptionFunction (`researchSourceDescriptionPipeline.ts`)
  *   Event: `research/source.index.requested`
- *   After `ResearchSource` insert: LLM description + pgvector embedding for
- *   session similarity search in later chat turns.
+ *   Enqueue: `createResearchSource` → `enqueueResearchSourceIndexing`
+ *   Outcome: Description on `ResearchSource` + pgvector row for session similarity.
  *
- * chatMessageEmbeddingFunction
+ * chatMessageEmbeddingFunction (`chatMessageEmbeddingPipeline.ts`)
  *   Event: `chat/message.index.requested`
- *   After `ChatMessage` insert: memory summary + `chat_message_embeddings` for
- *   conversational retrieval (not used as factual story evidence).
+ *   Enqueue: `createChatMessage` → `enqueueChatMessageVectorIndexing`
+ *   Outcome: Memory summary + `chat_message_embeddings` for conversational recall.
+ *
+ * chatPotentialStoryTopicsFunction (`chatPotentialStoryTopicsPipeline.ts`)
+ *   Event: `chat/potential-story-topics.requested`
+ *   Enqueue: message chat pipeline `step.sendEvent` after assistant reply
+ *   Outcome: Append deduped labels to `ChatSession.potentialStories` (0–5 new).
+ *   Idempotent per `chatMessageId`.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Typical chat flow (general session)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ *   POST /api/chat/[id] → chat/message.research.requested
+ *        → ResearchSource inserts → research/source.index.requested (each)
+ *        → agent message → chat/message.index.requested
+ *        → chat/potential-story-topics.requested (optional)
+ *
+ *   User “Create story…” → shouldCreateStory → chat/story.research.requested
  */
 
 export {
@@ -87,11 +111,19 @@ export {
   type ChatStoryPipelineEventData,
 } from "./chatstoryPipeline";
 
+export {
+  CHAT_POTENTIAL_STORY_TOPICS_EVENT,
+  chatPotentialStoryTopicsEventDataSchema,
+  chatPotentialStoryTopicsFunction,
+  type ChatPotentialStoryTopicsEventData,
+} from "./chatPotentialStoryTopicsPipeline";
+
 import { chatPipelineFunction } from "./newsNewchatPipeline";
 import { chatMessageEmbeddingFunction } from "./chatMessageEmbeddingPipeline";
 import { messageChatPipelineFunction } from "./chatPipeline";
 import { newsPipelineFunction } from "./newsPipeline";
 import { researchSourceDescriptionFunction } from "./researchSourceDescriptionPipeline";
+import { chatPotentialStoryTopicsFunction } from "./chatPotentialStoryTopicsPipeline";
 import { chatStoryPipelineFunction } from "./chatstoryPipeline";
 
 export const inngestFunctions = [
@@ -101,4 +133,5 @@ export const inngestFunctions = [
   chatStoryPipelineFunction,
   researchSourceDescriptionFunction,
   chatMessageEmbeddingFunction,
+  chatPotentialStoryTopicsFunction,
 ];

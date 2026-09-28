@@ -17,7 +17,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
-import { Menu, Search } from "lucide-react";
+import { Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -113,16 +113,6 @@ export function SiteHeader() {
           <Show when="signed-out">
             {isMarketingHome ? (
               <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="hidden sm:inline-flex"
-                  aria-label="Search (coming soon)"
-                  disabled
-                >
-                  <Search />
-                </Button>
                 <SignInButton mode="modal">
                   <button
                     type="button"
@@ -132,7 +122,7 @@ export function SiteHeader() {
                   </button>
                 </SignInButton>
                 <div className="hidden sm:block">
-                  <GetStartedButton size="sm" label="Get Started" />
+                  <GetStartedButton size="sm" label="Start researching" />
                 </div>
 
                 <Sheet>
@@ -174,7 +164,7 @@ export function SiteHeader() {
                       </SignInButton>
                       <SignUpButton mode="modal">
                         <Button type="button" variant="brand-accent" className="w-full">
-                          Get Started
+                          Start researching
                         </Button>
                       </SignUpButton>
                     </div>

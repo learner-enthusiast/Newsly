@@ -4,13 +4,13 @@ import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Newsly — Personalized News That Actually Matters",
+  title: "Newsly — Don't stop at the headline",
   description:
-    "AI-curated local and global news briefings from trusted sources. Choose your topics, get concise summaries, and explore original sources with Newsly.",
+    "Newsly researches markets, economics, and business news past the headline. Browse a briefing, ask a question, and keep the sources.",
   openGraph: {
-    title: "Newsly — Personalized News That Actually Matters",
+    title: "Newsly — Don't stop at the headline",
     description:
-      "Stay informed with personalized, AI-curated news briefings tailored to your location and interests.",
+      "Browse a briefing or investigate a question. Newsly reads the sources and lets you keep going.",
     type: "website",
   },
 };

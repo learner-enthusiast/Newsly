@@ -2,20 +2,36 @@
  * Chat message memory vector index (background)
  *
  * Event: `chat/message.index.requested`
- * Input: `{ chatMessageId, chatSessionId }`
  *
- * Trigger: `enqueueChatMessageVectorIndexing` from `createChatMessage` (fire-and-forget).
- * Timeout: 15 minutes.
+ * Event data (`chatMessageIndexEventDataSchema`):
+ * - `chatMessageId` — `ChatMessage` UUID to index
+ * - `chatSessionId` — must match the message’s session
+ *
+ * Trigger: `enqueueChatMessageVectorIndexing` from `createChatMessage` via
+ * `inngest.send` (fire-and-forget; errors logged, not thrown to caller).
+ *
+ * Function id: `chat-message-embedding-index`
+ * Timeout: 15 minutes
  *
  * Purpose:
- * Summarize a saved chat turn for conversational memory retrieval (pgvector on
- * `chat_message_embeddings`). Used to enrich follow-up chat context — not as
- * factual evidence for news story synthesis.
+ * After any saved chat turn, produce a short memory-oriented summary and store an
+ * embedding in `chat_message_embeddings` (pgvector). Used later for **conversational
+ * retrieval** in follow-up chat (similarity over past turns). Explicitly **not**
+ * used as verified factual evidence for news story synthesis or briefing pipelines.
  *
- * Steps:
- * 1. load-chat-message — Verify row exists and session id matches event.
- * 2. summarize-message — `runChatMessageSummarizerVectorAgent` (skips unsupported roles).
- * 3. persist-message-embedding — Upsert embedding keyed by message id.
+ * ── Steps ───────────────────────────────────────────────────────────────────
+ *
+ * 1. load-chat-message
+ *    `getChatMessageById`; verify `chatSessionId` matches event payload.
+ *
+ * 2. summarize-message (skipped for unsupported roles)
+ *    `runChatMessageSummarizerVectorAgent` on user/agent content;
+ *    `chatRoleForMemoryDescription` filters roles that should not be indexed.
+ *
+ * 3. persist-message-embedding
+ *    `saveChatMessageEmbedding` upsert keyed by `messageId`.
+ *
+ * Early return `{ skipped: true }` when role is not indexable.
  */
 
 import {

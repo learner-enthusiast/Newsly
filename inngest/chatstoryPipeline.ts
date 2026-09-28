@@ -2,54 +2,69 @@
  * Chat story pipeline — complete one chat-origin NewsStory
  *
  * Event: `chat/story.research.requested`
- * Input: `ChatStoryPipelineEventData` (see `services/chat/chatStoryPipelineTypes.ts`)
- *   - `storyId`, `chatSessionId`, `userId`, `chatMessageId`
- *   - `enhancedPrompt`, `recentMessages`, `chatHistory`
- *   - `determiner` snapshot from message chat pipeline
- *   - `existingResearch`, `serpHits`, `youtubeEvidence`, optional `selectedArticles`
  *
- * Trigger: `messageChatPipelineFunction` after `createPendingChatNewsStory` +
- * prepared research payload (does not re-run guardrails or query enhancer).
+ * Event data (`chatStoryPipelineEventDataSchema` in
+ * `services/chat/chatStoryPipelineTypes.ts`):
+ * - `storyId`, `chatSessionId`, `userId`, `chatMessageId`
+ * - `enhancedPrompt` — query-enhanced research prompt from message chat pipeline
+ * - `recentMessages`, `chatHistory` — conversational context (intent only)
+ * - `determiner` — snapshot (Serp/vector/YouTube flags, firecrawl URLs, story reason)
+ * - `existingResearch` — scraped session sources prepared for ChatModel
+ * - `serpHits`, `youtubeEvidence`, optional `selectedArticles`
  *
+ * Trigger: `messageChatPipelineFunction` via `step.sendEvent("trigger-chat-story-pipeline")`
+ * after `create-chat-story-shell`. Does **not** re-run guardrails or query enhancer.
+ *
+ * Function id: `chat-story-pipeline`
  * Idempotency: `event.data.storyId`
- * Timeout: 45 minutes.
+ * Timeout: 45 minutes
  *
  * Purpose:
- * Targeted single-story worker. Reuses evidence gathered by the message chat
- * pipeline; runs a story research gap agent to decide optional extra Serp /
- * Firecrawl / AI Overview work only when needed. Synthesizes exactly one story
- * (`runNewsSynthesizerAgent`, `targetStoryCount=1`, `fixedStoryId=storyId`),
- * persists `NewsSource` rows, updates the same `NewsStory` to `status=READY`
- * (not PUBLISHED). Chat history informs intent only — not cited as evidence.
+ * Finish a **single** user-created story (`NewsStory` already PENDING). Reuses evidence
+ * gathered upstream; optionally adds minimal Serp/Firecrawl when
+ * `runChatStoryResearchGapAgent` finds gaps. Synthesizes with `runNewsSynthesizerAgent`
+ * (`targetStoryCount=1`, `fixedStoryId=storyId`), writes `NewsSource` children, sets
+ * the same row to `status=READY` (user may publish later). Chat history is not treated
+ * as factual evidence in synthesis.
  *
- * ── Steps ───────────────────────────────────────────────────────────────────
+ * System briefing stories (`news/pipeline.requested`) are a separate pipeline.
+ *
+ * ── Happy-path steps ────────────────────────────────────────────────────────
  *
  * 1. validate-story
- *    Load owner-scoped row; skip safely if already READY/PUBLISHED/ARCHIVED;
- *    non-retriable if missing or FAILED without retry policy.
+ *    Owner-scoped load via `getChatNewsStoryForPipeline`. No-op success if already
+ *    READY / PUBLISHED / ARCHIVED. `NonRetriableError` if missing or invalid state.
  *
  * 2. story-research-gap
- *    `runChatStoryResearchGapAgent` — additional Serp / YouTube / Firecrawl needs.
+ *    `runChatStoryResearchGapAgent` on prepared counts (research rows, Serp hits,
+ *    YouTube, selected articles) → optional extra Serp / Firecrawl / YouTube plan.
  *
  * 3. optional-additional-serp
- *    Extra Serp only when gap agent requests it (`fetchAndNormalizeChatSerpResearch`).
+ *    Runs only when gap agent sets `needsAdditionalSerp`; uses chat Serp normalizer
+ *    and determiner-compatible tool calls.
  *
  * 4. optional-firecrawl
- *    Scrape gap URLs, clean content, merge into synthesizer article list (dedupe by URL).
+ *    Scrape gap `firecrawlUrls`; `runNewsContentCleanerAgent`; merge articles by
+ *    canonical URL with prepared + Serp-derived material.
  *
  * 5. synthesize-story
- *    Merge prepared + new articles → news synthesizer; require primary article source.
+ *    `runNewsSynthesizerAgent` with merged article bundle; requires at least one
+ *    primary article-backed source (`storyHasPrimaryArticleSource`).
  *
  * 6. persist-story-and-sources
- *    `createNewsSource` per synthesized source; `applyChatStorySynthesis` on existing row.
+ *    Create `NewsSource` rows; `applyChatStorySynthesis` updates title/summary/
+ *    content/image on the existing `NewsStory`; link `chatSessionId` origin.
  *
  * 7. create-completion-notification
- *    Idempotent notification linking to `/newsStory/[storyId]`.
+ *    Idempotent `CHAT_STORY_COMPLETED` → `/newsStory/[storyId]`.
  *
  * ── Failure path ────────────────────────────────────────────────────────────
  *
- * onFailure → mark-story-failed (PENDING only) + create-failure-notification.
- * Notification failures do not fail the function.
+ * onFailure:
+ * - mark-story-failed — PENDING → failed state with error message on the story row
+ * - create-failure-notification — `CHAT_STORY_FAILED` / research failed variant
+ *
+ * Notification persistence errors are swallowed where wrapped in `tryCreatePipelineNotification`.
  */
 
 import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";

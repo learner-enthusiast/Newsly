@@ -1,3 +1,6 @@
+import {
+  dedupeNewStoryTopics,
+} from "@/Agents/chat/chatStoryIdentifierAgent";
 import { z } from "zod";
 import { prisma } from "@/db";
 
@@ -69,4 +72,47 @@ export async function deleteChatSession(id: string) {
   return prisma.chatSession.delete({
     where: { id: chatSessionIdSchema.parse(id) },
   });
+}
+
+export async function getPotentialStoriesByChatSessionId(
+  chatSessionId: string,
+): Promise<string[]> {
+  const session = await prisma.chatSession.findUnique({
+    where: { id: chatSessionIdSchema.parse(chatSessionId) },
+    select: { potentialStories: true },
+  });
+  return session?.potentialStories ?? [];
+}
+
+export async function appendPotentialStoriesForChatSession(
+  chatSessionId: string,
+  topics: string[],
+): Promise<string[]> {
+  const parsedId = chatSessionIdSchema.parse(chatSessionId);
+  const trimmed = topics.map((topic) => topic.trim()).filter(Boolean);
+  if (trimmed.length === 0) {
+    return getPotentialStoriesByChatSessionId(parsedId);
+  }
+
+  const session = await prisma.chatSession.findUnique({
+    where: { id: parsedId },
+    select: { potentialStories: true },
+  });
+  if (!session) {
+    throw new Error("Chat session not found");
+  }
+
+  const existing = session.potentialStories ?? [];
+  const additions = dedupeNewStoryTopics(trimmed, existing);
+  if (additions.length === 0) {
+    return existing;
+  }
+
+  const updated = await prisma.chatSession.update({
+    where: { id: parsedId },
+    data: { potentialStories: [...existing, ...additions] },
+    select: { potentialStories: true },
+  });
+
+  return updated.potentialStories;
 }

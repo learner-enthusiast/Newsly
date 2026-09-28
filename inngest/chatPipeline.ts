@@ -2,41 +2,102 @@
  * Message chat research pipeline (general / follow-up chat)
  *
  * Event: `chat/message.research.requested`
- * Input: `{ chatSessionId, chatMessageId }` — one user turn to answer.
+ *
+ * Event data (`messageChatPipelineEventDataSchema`):
+ * - `chatSessionId` — session UUID
+ * - `chatMessageId` — triggering user message UUID (idempotency key)
+ * - `shouldCreateStory` — optional client flag (e.g. “Create a story about…”
+ *   from potential story topics). When true, forces story handoff after research.
  *
  * Trigger: `POST /api/chat/[chatSessionId]` → `sendChatMessage` → Inngest send.
- * Idempotency: `event.data.chatMessageId` (skip if assistant reply already exists).
- * Timeout: 30 minutes.
+ * Not used for the first news-story deep-dive turn (`chat/pipeline.requested` in
+ * `newsNewchatPipeline.ts`).
+ *
+ * Function id: `message-chat-research-pipeline`
+ * Idempotency: `event.data.chatMessageId`
+ * Timeout: 30 minutes (`timeouts.finish`)
  *
  * Purpose:
- * Process a single user message in an existing session. Reuse prior session
- * research via pgvector when the determiner allows; otherwise run targeted Serp,
- * optional YouTube evidence, Firecrawl + cleaning, and persist `ResearchSource`
- * rows. Produce either a normal ChatModel Markdown reply OR hand off to the
- * chat story pipeline when the user asked to create a news story.
+ * Answer one user turn in an existing general research chat. Runs guardrails +
+ * query enhancement + small determiner; optionally recalls prior session evidence
+ * via pgvector (`chat_resource_embeddings`); runs Serp / YouTube / Firecrawl;
+ * persists new `ResearchSource` rows (each enqueues background vector indexing).
+ * Returns either a ChatModel Markdown reply or hands off to the chat story
+ * pipeline when `shouldCreateStory` is set.
  *
- * Not used for the first news-story deep-dive turn (`chat/pipeline.requested`).
+ * Side effects (background, non-blocking):
+ * - `chat/potential-story-topics.requested` — after a normal assistant reply
+ *   only (see step 14). Does not run on guardrail block or story handoff early return.
+ * - `chat/story.research.requested` — when creating a user story from chat.
  *
- * Story branch (`shouldCreateStory`, original chat only): after step 8, creates
- * PENDING `NewsStory`, emits `chat/story.research.requested` with prepared context,
- * saves a short agent status message, skips `generate-assistant-reply`.
+ * ── Idempotent short-circuit ────────────────────────────────────────────────
  *
- * Steps (normal path):
- * 1. check-existing-assistant-reply — Idempotent skip.
- * 2. fetch-chat-context + count-research-embeddings (parallel).
- * 2b. auto-rename-user-chat — First general-chat message → title agent.
- * 3. run-determiner — Guardrails, query enhance, tools/vector/Serp/story intent.
- * 4. save-guardrail-message — If blocked, refusal and stop.
- * 5. vector + serp + youtube branches (parallel).
- * 6. run-article-synthesizer + preload-session-research-sources (parallel).
- * 7. dedupe-research-candidates.
- * 8. firecrawl-and-save-research.
- * 9. create-chat-story-and-trigger — Story intent only (see above).
- * 10. generate-assistant-reply — Chat model Markdown.
- * 11. save-assistant-message.
- * 12. create-completion-notification.
+ * check-existing-assistant-reply
+ *   If an agent message already follows this user message, skip the run,
+ *   emit completion notification, return existing assistant row.
  *
- * Failure: save-error-message; onFailure → chat research failed notification.
+ * ── Happy path (research + reply) ───────────────────────────────────────────
+ *
+ * 1. fetch-chat-context + count-research-embeddings (parallel)
+ *    Session metadata, user message validation, last ~10 prior turns (excluding
+ *    current), chat history slice for ChatModel, `isFirstUserMessage` flag.
+ *
+ * 2. auto-rename-user-chat (conditional)
+ *    First message in a non–news-story session → `runChatSessionTitleAgent` →
+ *    patch `ChatSession.title`.
+ *
+ * 3. run-determiner
+ *    `runSmallDeterminerAgent`: guardrails, query enhancer, Serp tool plan,
+ *    vector recall query, YouTube / AI-overview flags. Guardrail block returns
+ *    `{ blocked: true }` without throwing.
+ *
+ * 4. save-guardrail-message (guardrail branch only)
+ *    Persist refusal agent message; stop (no topic enqueue, no story handoff).
+ *
+ * 5. resolve-story-intent
+ *    `resolveShouldCreateStoryFromEvent(input.shouldCreateStory)`. When true,
+ *    `augmentDeterminerForStoryHandoff` widens research for story synthesis.
+ *
+ * 6. vector-research-branch + serp-research-branch + youtube-research-branch
+ *    (parallel) — pgvector similarity on `ResearchSource` ids, Serp execution
+ *    via `fetchAndNormalizeChatSerpResearch`, YouTube evidence via
+ *    `fetchChatYoutubeEvidence`. Branches no-op when determiner skips them.
+ *
+ * 7. run-article-synthesizer + preload-session-research-sources (parallel)
+ *    Select URLs to scrape; load all session sources for reply context.
+ *
+ * 8. dedupe-research-candidates
+ *    Merge synthesizer picks + determiner `firecrawlUrls`; drop URLs already in
+ *    session (canonical URL keys).
+ *
+ * 9. firecrawl-and-save-research
+ *    Firecrawl + `runNewsContentCleanerAgent`; insert `ResearchSource` rows;
+ *    save YouTube transcript rows; bounded concurrency on inserts.
+ *
+ * ── Story handoff branch (`shouldCreateStory === true`) ─────────────────────
+ *
+ * 10a. create-chat-story-shell — `createPendingChatNewsStory` (PENDING row).
+ * 10b. trigger-chat-story-pipeline — `step.sendEvent` → `chat/story.research.requested`
+ *      with prepared research payload (no guardrails rerun in story worker).
+ * 10c. save-story-status-message — short agent status; return (skips ChatModel reply
+ *      and potential-story-topics enqueue).
+ *
+ * ── Normal reply branch ─────────────────────────────────────────────────────
+ *
+ * 11. generate-assistant-reply — `runChatModelAgent` with Serp hits + research context.
+ * 12. save-assistant-message — persist agent Markdown (`role=agent`).
+ * 13. create-completion-notification — idempotent `CHAT_RESEARCH_COMPLETED`.
+ * 14. enqueue-potential-story-topics — `step.sendEvent` →
+ *     `chat/potential-story-topics.requested` with recent messages + current user
+ *     turn (`buildRecentMessagesForPotentialStoryTopicAgent`). Awaits event send
+ *     only, not the topic agent run.
+ *
+ * ── Failure path ────────────────────────────────────────────────────────────
+ *
+ * save-error-message — For retriable errors: agent bubble with failure text if none
+ * exists yet. `NonRetriableError` skips this (e.g. missing session/message).
+ *
+ * onFailure → create-failure-notification — `CHAT_RESEARCH_FAILED` for session owner.
  */
 
 import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";
@@ -83,6 +144,11 @@ import {
   fetchChatYoutubeEvidence,
   type ChatYoutubeEvidenceRow,
 } from "@/services/chat/chatYoutubeEvidence";
+import { buildRecentMessagesForPotentialStoryTopicAgent } from "@/services/chat/potentialStoryTopicsForPipeline";
+import {
+  augmentDeterminerForStoryHandoff,
+  resolveShouldCreateStoryFromEvent,
+} from "@/services/chat/messageStoryCreation";
 import { todayIsoDateUtc } from "@/services/chat/researchPrompt";
 import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
 import {
@@ -95,6 +161,7 @@ import {
   type ChatModelResearchSourceRow,
 } from "@/services/chat/researchContextForChatModel";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
+import { CHAT_POTENTIAL_STORY_TOPICS_EVENT } from "@/inngest/chatPotentialStoryTopicsPipeline";
 import { CHAT_STORY_PIPELINE_EVENT } from "@/inngest/chatstoryPipeline";
 import { createPendingChatNewsStory } from "@/repositories/newsStory";
 import {
@@ -111,6 +178,12 @@ export const MESSAGE_CHAT_PIPELINE_EVENT =
 export const messageChatPipelineEventDataSchema = z.object({
   chatSessionId: z.uuid(),
   chatMessageId: z.uuid(),
+  /** Client intent: start chat→story pipeline (e.g. potential story topic click). */
+  shouldCreateStory: z
+    .union([z.boolean(), z.literal("true"), z.literal("false")])
+    .optional()
+    .transform((value) => value === true || value === "true")
+    .default(false),
 });
 
 export type MessageChatPipelineEventData = z.infer<
@@ -175,7 +248,10 @@ export const messageChatPipelineFunction = inngest.createFunction(
     onFailure: async ({ event, error, step }) => {
       const input = messageChatPipelineEventDataSchema.safeParse(event.data);
       if (!input.success) {
-        pipelineLog("create-failure-notification", "skipped invalid event data");
+        pipelineLog(
+          "create-failure-notification",
+          "skipped invalid event data",
+        );
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
@@ -203,6 +279,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
     pipelineLog("run", "started", {
       chatSessionId: input.chatSessionId,
       chatMessageId: input.chatMessageId,
+      shouldCreateStory: input.shouldCreateStory === true,
     });
 
     const existingAssistant = await step.run(
@@ -355,7 +432,6 @@ export const messageChatPipelineFunction = inngest.createFunction(
           const outcome = await runSmallDeterminerAgent({
             userPrompt: chatContext.userMessage.content,
             isNewsStory: chatContext.session.isFromNewsStory === true,
-            fromOriginalChat: chatContext.session.isFromNewsStory !== true,
             researchSourceCount: researchInventory.researchSourceCount,
             recentMessages: chatContext.recentMessages,
             abortSignal: AbortSignal.timeout(120_000),
@@ -368,8 +444,6 @@ export const messageChatPipelineFunction = inngest.createFunction(
             useYoutube: outcome.determiner.evidence.useYoutube,
             useAiOverviewFollowUp:
               outcome.determiner.evidence.useAiOverviewFollowUp,
-            shouldCreateStory: outcome.determiner.shouldCreateStory,
-            storyCreationReason: outcome.determiner.storyCreationReason,
           });
           return toJsonSafeStepOutput(outcome);
         } catch (error) {
@@ -402,111 +476,133 @@ export const messageChatPipelineFunction = inngest.createFunction(
       }
 
       const determinerOutcome = determinerParsed as SmallDeterminerRunResult;
-      const determiner = determinerOutcome.determiner;
+      let determiner = determinerOutcome.determiner;
       const researchPrompt = determinerOutcome.researchPrompt;
+
+      const storyIntent = await step.run("resolve-story-intent", async () => {
+        const shouldCreateStory = resolveShouldCreateStoryFromEvent(
+          input.shouldCreateStory,
+        );
+        pipelineLog("resolve-story-intent", "done", {
+          shouldCreateStory,
+          isFromNewsStory: chatContext.session.isFromNewsStory === true,
+        });
+        return toJsonSafeStepOutput({ shouldCreateStory });
+      });
+
+      const shouldCreateStory = storyIntent.shouldCreateStory === true;
+      if (shouldCreateStory) {
+        determiner = augmentDeterminerForStoryHandoff(
+          determiner,
+          researchInventory.researchSourceCount,
+          chatContext.userMessage.content,
+        );
+      }
 
       const [vectorResearchBranch, serpResearchBranch, youtubeResearchBranch] =
         await Promise.all([
-        step.run("vector-research-branch", async () => {
-          const elapsed = createStepTimer();
-          pipelineLog("vector-research-branch", "start");
+          step.run("vector-research-branch", async () => {
+            const elapsed = createStepTimer();
+            pipelineLog("vector-research-branch", "start");
 
-          if (researchInventory.researchSourceCount === 0) {
-            pipelineLog("vector-research-branch", "skipped", {
-              durationMs: elapsed(),
-              reason: "no indexed research",
+            if (researchInventory.researchSourceCount === 0) {
+              pipelineLog("vector-research-branch", "skipped", {
+                durationMs: elapsed(),
+                reason: "no indexed research",
+              });
+              return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
+            }
+
+            if (
+              !determiner.useExistingResearch ||
+              !determiner.existingResearchQuery
+            ) {
+              pipelineLog("vector-research-branch", "skipped", {
+                durationMs: elapsed(),
+              });
+              return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
+            }
+
+            const matches = await searchSimilarChatResourceIds({
+              chatSessionId: input.chatSessionId,
+              query: determiner.existingResearchQuery,
+              limit: VECTOR_RESEARCH_LIMIT,
+              minSimilarity: VECTOR_MIN_SIMILARITY,
             });
-            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
-          }
 
-          if (
-            !determiner.useExistingResearch ||
-            !determiner.existingResearchQuery
-          ) {
-            pipelineLog("vector-research-branch", "skipped", {
-              durationMs: elapsed(),
-            });
-            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
-          }
+            const vectorResearchIds = matches.map((row) => row.id);
+            if (vectorResearchIds.length === 0) {
+              pipelineLog("vector-research-branch", "done", {
+                durationMs: elapsed(),
+                matchCount: 0,
+              });
+              return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
+            }
 
-          const matches = await searchSimilarChatResourceIds({
-            chatSessionId: input.chatSessionId,
-            query: determiner.existingResearchQuery,
-            limit: VECTOR_RESEARCH_LIMIT,
-            minSimilarity: VECTOR_MIN_SIMILARITY,
-          });
+            const rows = await listResearchSourcesByIdsForChatSession(
+              input.chatSessionId,
+              vectorResearchIds,
+            );
+            const byId = new Map(rows.map((row) => [row.id, row]));
+            const ordered = vectorResearchIds
+              .map((id) => byId.get(id))
+              .filter((row): row is NonNullable<typeof row> => row != null)
+              .map(mapResearchSourceForChatModel);
 
-          const vectorResearchIds = matches.map((row) => row.id);
-          if (vectorResearchIds.length === 0) {
             pipelineLog("vector-research-branch", "done", {
               durationMs: elapsed(),
-              matchCount: 0,
+              matchCount: ordered.length,
             });
-            return toJsonSafeStepOutput([] as ChatModelResearchSourceRow[]);
-          }
+            return toJsonSafeStepOutput(ordered);
+          }),
+          step.run("serp-research-branch", async () => {
+            const elapsed = createStepTimer();
+            pipelineLog("serp-research-branch", "start");
 
-          const rows = await listResearchSourcesByIdsForChatSession(
-            input.chatSessionId,
-            vectorResearchIds,
-          );
-          const byId = new Map(rows.map((row) => [row.id, row]));
-          const ordered = vectorResearchIds
-            .map((id) => byId.get(id))
-            .filter((row): row is NonNullable<typeof row> => row != null)
-            .map(mapResearchSourceForChatModel);
+            if (
+              determiner.useTools !== "yes" ||
+              determiner.calls.length === 0
+            ) {
+              pipelineLog("serp-research-branch", "skipped", {
+                durationMs: elapsed(),
+              });
+              return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
+            }
 
-          pipelineLog("vector-research-branch", "done", {
-            durationMs: elapsed(),
-            matchCount: ordered.length,
-          });
-          return toJsonSafeStepOutput(ordered);
-        }),
-        step.run("serp-research-branch", async () => {
-          const elapsed = createStepTimer();
-          pipelineLog("serp-research-branch", "start");
+            const hits = await fetchAndNormalizeChatSerpResearch({
+              calls: determiner.calls as ValidatedSerpToolCall[],
+              researchPrompt,
+              useAiOverviewFollowUp: determiner.evidence.useAiOverviewFollowUp,
+              abortSignal: AbortSignal.timeout(120_000),
+            });
 
-          if (determiner.useTools !== "yes" || determiner.calls.length === 0) {
-            pipelineLog("serp-research-branch", "skipped", {
+            pipelineLog("serp-research-branch", "done", {
               durationMs: elapsed(),
+              hitCount: hits.length,
             });
-            return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
-          }
+            return toJsonSafeStepOutput(hits);
+          }),
+          step.run("youtube-research-branch", async () => {
+            const elapsed = createStepTimer();
+            if (!determiner.evidence.useYoutube) {
+              pipelineLog("youtube-research-branch", "skipped", {
+                durationMs: elapsed(),
+              });
+              return toJsonSafeStepOutput([] as ChatYoutubeEvidenceRow[]);
+            }
 
-          const hits = await fetchAndNormalizeChatSerpResearch({
-            calls: determiner.calls as ValidatedSerpToolCall[],
-            researchPrompt,
-            useAiOverviewFollowUp:
-              determiner.evidence.useAiOverviewFollowUp,
-            abortSignal: AbortSignal.timeout(120_000),
-          });
-
-          pipelineLog("serp-research-branch", "done", {
-            durationMs: elapsed(),
-            hitCount: hits.length,
-          });
-          return toJsonSafeStepOutput(hits);
-        }),
-        step.run("youtube-research-branch", async () => {
-          const elapsed = createStepTimer();
-          if (!determiner.evidence.useYoutube) {
-            pipelineLog("youtube-research-branch", "skipped", {
+            pipelineLog("youtube-research-branch", "start");
+            const rows = await fetchChatYoutubeEvidence({
+              researchPrompt,
+              abortSignal: AbortSignal.timeout(120_000),
+            });
+            pipelineLog("youtube-research-branch", "done", {
               durationMs: elapsed(),
+              videoCount: rows.length,
             });
-            return toJsonSafeStepOutput([] as ChatYoutubeEvidenceRow[]);
-          }
-
-          pipelineLog("youtube-research-branch", "start");
-          const rows = await fetchChatYoutubeEvidence({
-            researchPrompt,
-            abortSignal: AbortSignal.timeout(120_000),
-          });
-          pipelineLog("youtube-research-branch", "done", {
-            durationMs: elapsed(),
-            videoCount: rows.length,
-          });
-          return toJsonSafeStepOutput(rows);
-        }),
-      ]);
+            return toJsonSafeStepOutput(rows);
+          }),
+        ]);
 
       const existingResearchRows = vectorResearchBranch;
       const serpHits = serpResearchBranch;
@@ -594,7 +690,9 @@ export const messageChatPipelineFunction = inngest.createFunction(
           );
           const freshKeys = researchUrlKeysFromSources(freshSessionSources);
 
-          async function saveYoutubeRows(): Promise<ChatModelResearchSourceRow[]> {
+          async function saveYoutubeRows(): Promise<
+            ChatModelResearchSourceRow[]
+          > {
             const pending = youtubeEvidence.filter((video) => {
               const key = canonicalResearchUrl(video.url);
               return key ? !freshKeys.has(key) : true;
@@ -737,49 +835,54 @@ export const messageChatPipelineFunction = inngest.createFunction(
         newResearchRows,
       );
 
-      if (determiner.shouldCreateStory) {
+      if (shouldCreateStory) {
+        const storyShell = await step.run("create-chat-story-shell", async () => {
+          pipelineLog("create-chat-story-shell", "start");
+          const story = await createPendingChatNewsStory({
+            chatSessionId: input.chatSessionId,
+            ownerId: chatContext.session.userId,
+          });
+          pipelineLog("create-chat-story-shell", "done", { storyId: story.id });
+          return toJsonSafeStepOutput({ storyId: story.id });
+        });
+
+        await step.sendEvent("trigger-chat-story-pipeline", {
+          name: CHAT_STORY_PIPELINE_EVENT,
+          data: {
+            storyId: storyShell.storyId,
+            chatSessionId: input.chatSessionId,
+            userId: chatContext.session.userId,
+            chatMessageId: input.chatMessageId,
+            enhancedPrompt: researchPrompt,
+            recentMessages: chatContext.recentMessages,
+            chatHistory: chatContext.chatHistoryForModel,
+            determiner: {
+              useTools: determiner.useTools,
+              useExistingResearch: determiner.useExistingResearch,
+              existingResearchQuery: determiner.existingResearchQuery,
+              firecrawlUrls: determiner.firecrawlUrls,
+              evidence: determiner.evidence,
+              shouldCreateStory: true,
+              storyCreationReason:
+                "User selected a potential story topic in chat.",
+            },
+            existingResearch: researchContext,
+            serpHits,
+            youtubeEvidence,
+            selectedArticles,
+          },
+        });
+
         const storyHandoff = await step.run(
-          "create-chat-story-and-trigger",
+          "save-story-status-message",
           async () => {
-            pipelineLog("create-chat-story-and-trigger", "start");
-            const story = await createPendingChatNewsStory({
-              chatSessionId: input.chatSessionId,
-              ownerId: chatContext.session.userId,
-            });
-
-            await inngest.send({
-              name: CHAT_STORY_PIPELINE_EVENT,
-              data: {
-                storyId: story.id,
-                chatSessionId: input.chatSessionId,
-                userId: chatContext.session.userId,
-                chatMessageId: input.chatMessageId,
-                enhancedPrompt: researchPrompt,
-                recentMessages: chatContext.recentMessages,
-                chatHistory: chatContext.chatHistoryForModel,
-                determiner: {
-                  useTools: determiner.useTools,
-                  useExistingResearch: determiner.useExistingResearch,
-                  existingResearchQuery: determiner.existingResearchQuery,
-                  firecrawlUrls: determiner.firecrawlUrls,
-                  evidence: determiner.evidence,
-                  shouldCreateStory: true,
-                  storyCreationReason: determiner.storyCreationReason ?? null,
-                },
-                existingResearch: researchContext,
-                serpHits,
-                youtubeEvidence,
-                selectedArticles,
-              },
-            });
-
             const again = await findAssistantReplyAfterUserMessage(
               input.chatSessionId,
               input.chatMessageId,
             );
             if (again) {
               return toJsonSafeStepOutput({
-                storyId: story.id,
+                storyId: storyShell.storyId,
                 status: "PENDING" as const,
                 assistantMessageId: again.id,
               });
@@ -792,12 +895,8 @@ export const messageChatPipelineFunction = inngest.createFunction(
                 "I'm researching and writing your news story. You'll be notified when it's ready to review.",
             });
 
-            pipelineLog("create-chat-story-and-trigger", "done", {
-              storyId: story.id,
-            });
-
             return toJsonSafeStepOutput({
-              storyId: story.id,
+              storyId: storyShell.storyId,
               status: "PENDING" as const,
               assistantMessageId: message.id,
             });
@@ -880,6 +979,22 @@ export const messageChatPipelineFunction = inngest.createFunction(
       pipelineLog("run", "finished", {
         assistantMessageId: assistantMessage.id,
         totalDurationMs: Date.now() - pipelineStartedAt,
+      });
+
+      pipelineLog("enqueue-potential-story-topics", "sent", {
+        chatSessionId: input.chatSessionId,
+        chatMessageId: input.chatMessageId,
+      });
+      await step.sendEvent("enqueue-potential-story-topics", {
+        name: CHAT_POTENTIAL_STORY_TOPICS_EVENT,
+        data: {
+          chatSessionId: input.chatSessionId,
+          chatMessageId: input.chatMessageId,
+          messages: buildRecentMessagesForPotentialStoryTopicAgent({
+            recentMessages: chatContext.recentMessages,
+            userMessage: chatContext.userMessage,
+          }),
+        },
       });
       return assistantMessage;
     } catch (error) {

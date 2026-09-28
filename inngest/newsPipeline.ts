@@ -1,7 +1,13 @@
 /**
- * News generation pipeline (Inngest)
+ * News generation pipeline (Inngest) — system briefing / NewsRequest fulfillment
  *
  * Event: `news/pipeline.requested`
+ *
+ * Trigger: news request API / Inngest send after user submits briefing options
+ * (`NewsRequest` row). Progress lines append to `NewsRequest.loadingLogs` during run.
+ *
+ * Function id: `news-pipeline`
+ * Timeout: 45 minutes (`timeouts.finish`)
  *
  * Event data (`newsPipelineEventDataSchema`):
  * - `userId` — app user (Clerk-backed row in `users`)
@@ -209,7 +215,10 @@ export const newsPipelineFunction = inngest.createFunction(
     onFailure: async ({ event, error, step }) => {
       const input = newsPipelineEventDataSchema.safeParse(event.data);
       if (!input.success) {
-        pipelineLog("create-failure-notification", "skipped invalid event data");
+        pipelineLog(
+          "create-failure-notification",
+          "skipped invalid event data",
+        );
         return;
       }
       const message = error instanceof Error ? error.message : String(error);

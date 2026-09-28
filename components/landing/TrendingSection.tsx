@@ -86,17 +86,18 @@ export function TrendingSection() {
   }, []);
 
   return (
-    <section id="topics" ref={sectionRef} className="py-14 sm:py-16">
+    <section id="stories" ref={sectionRef} className="border-t border-border/25 py-24 sm:py-28">
       <div className="landing-section flex flex-col gap-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="section-eyebrow">Community engagement</p>
-            <h2 className="font-display mt-2 text-3xl font-semibold">
-              What&apos;s Trending
+            <p className="text-[0.75rem] font-medium tracking-[0.2em] text-[#c85d3f] uppercase">
+              Already on Newsly
+            </p>
+            <h2 className="font-display mt-5 text-4xl font-normal tracking-tight sm:text-5xl">
+              Stories people are opening.
             </h2>
-            <p className="mt-2 max-w-xl text-muted-foreground">
-              Stories ranked by upvotes from the last seven days — the briefing
-              topics readers are engaging with most.
+            <p className="mt-4 max-w-xl text-muted-foreground">
+              Public stories from the last seven days, ordered by upvotes. These are real briefings, not sample cards.
             </p>
           </div>
           <Link

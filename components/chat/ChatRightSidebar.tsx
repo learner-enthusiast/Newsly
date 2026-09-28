@@ -8,16 +8,22 @@ import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 
+type ChatPromptOptions = { shouldCreateStory?: boolean };
+
 type ChatRightSidebarProps = {
+  potentialStoryTopics?: string[];
+  potentialTopicsLoading?: boolean;
   actions: string[];
   questions: string[];
   isRefreshing?: boolean;
   animationGeneration?: number;
-  onPrompt: (prompt: string) => void;
+  onPrompt: (prompt: string, options?: ChatPromptOptions) => void;
   disabled?: boolean;
 };
 
 export function ChatRightSidebar({
+  potentialStoryTopics = [],
+  potentialTopicsLoading = false,
   actions,
   questions,
   isRefreshing = false,
@@ -38,6 +44,56 @@ export function ChatRightSidebar({
 
   return (
     <div ref={rootRef} className="flex flex-col gap-4 p-4 pb-6">
+      <Card size="sm" className="border-border/60 bg-card/90">
+        <CardHeader className="flex flex-row items-center justify-between border-b pb-3">
+          <CardTitle className="text-sm">Potential story topics</CardTitle>
+          {potentialTopicsLoading ? (
+            <Loader2
+              className="size-3.5 animate-spin text-muted-foreground"
+              aria-label="Loading potential story topics"
+            />
+          ) : null}
+        </CardHeader>
+        <CardContent className="pt-3">
+          {potentialStoryTopics.length === 0 ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {potentialTopicsLoading
+                ? "Checking this chat for story ideas…"
+                : "Story ideas appear here shortly after the assistant finishes a reply."}
+            </p>
+          ) : (
+            <div
+              className="max-h-[15rem] overflow-y-auto overscroll-y-contain pr-0.5"
+              aria-label="Potential story topics list"
+            >
+              <ol className="space-y-2 text-sm">
+                {potentialStoryTopics.map((topic, index) => (
+                  <li key={`${index}-${topic}`}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto w-full justify-start gap-2 whitespace-normal py-1.5 text-left font-normal"
+                      disabled={disabled}
+                      onClick={() =>
+                        onPrompt(`Create a story about: ${topic}`, {
+                          shouldCreateStory: true,
+                        })
+                      }
+                    >
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {index + 1}
+                      </span>
+                      <span>{topic}</span>
+                    </Button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card
         size="sm"
         className={cn(

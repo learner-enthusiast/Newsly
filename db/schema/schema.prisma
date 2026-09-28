@@ -187,6 +187,7 @@ model ChatSession {
   updatedAt       DateTime @updatedAt @map("updated_at")
   isFromNewsStory Boolean  @default(false) @map("is_from_news_story")
   isBookmarked    Boolean  @default(false) @map("is_bookmarked")
+  potentialStories String[] @default([]) @map("potential_stories")
 
   user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   newsStory             NewsStory?                 @relation("ChatSessionLinkedStory", fields: [newsStoryId], references: [id], onDelete: SetNull)

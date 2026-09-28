@@ -7,6 +7,7 @@ import { ChatRightSidebar } from "@/components/chat/ChatRightSidebar";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { animateNewMessage, useChatEntrance } from "@/components/chat/useChatMotion";
 import { useChatUiSuggestions } from "@/hooks/useChatUiSuggestions";
+import { usePotentialStoryTopics } from "@/hooks/usePotentialStoryTopics";
 import { buildChatSuggestionsRefreshKey } from "@/services/chat/chatSuggestionRefreshKey";
 import {
   hasAssistantReplyAfterLastUser,
@@ -151,6 +152,19 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     suggestionsRefreshKey,
   );
 
+  const potentialStoryTopicsFetchKey =
+    state?.status === "ready" &&
+    !state.storyCreation?.isGenerating &&
+    hasAssistantReplyAfterLastUser(visibleMessages) &&
+    suggestionsRefreshKey !== "no-assistant-yet"
+      ? suggestionsRefreshKey
+      : null;
+
+  const potentialStoryTopicsState = usePotentialStoryTopics(
+    chatSessionId,
+    potentialStoryTopicsFetchKey,
+  );
+
   const pipelineInProgress =
     state?.status === "initializing" &&
     !hasAssistantReplyAfterLastUser(visibleMessages);
@@ -181,7 +195,10 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         : "Ask a follow-up…"
       : "Waiting for the assistant reply…";
 
-  async function sendMessage(content: string) {
+  async function sendMessage(
+    content: string,
+    options?: { shouldCreateStory?: boolean },
+  ) {
     const trimmed = content.trim();
     if (!trimmed || composerDisabled) {
       return;
@@ -194,7 +211,10 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
       const response = await fetch(`/api/chat/${chatSessionId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: trimmed }),
+        body: JSON.stringify({
+          content: trimmed,
+          shouldCreateStory: options?.shouldCreateStory === true,
+        }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -215,12 +235,15 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     }
   }
 
-  function handlePrompt(prompt: string) {
+  function handlePrompt(
+    prompt: string,
+    options?: { shouldCreateStory?: boolean },
+  ) {
     if (composerDisabled) {
       setDraft(prompt);
       return;
     }
-    void sendMessage(prompt);
+    void sendMessage(prompt, options);
   }
 
   function navigateToSession(id: string) {
@@ -348,6 +371,8 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
 
   const rightSidebar = (
     <ChatRightSidebar
+      potentialStoryTopics={potentialStoryTopicsState.topics}
+      potentialTopicsLoading={potentialStoryTopicsState.isLoading}
       actions={uiSuggestions.actions}
       questions={uiSuggestions.questions}
       isRefreshing={uiSuggestions.isRefreshing}
@@ -415,16 +440,18 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
               </SheetHeader>
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <ChatRightSidebar
-                actions={uiSuggestions.actions}
-                questions={uiSuggestions.questions}
-                isRefreshing={uiSuggestions.isRefreshing}
-                animationGeneration={uiSuggestions.generation}
-                onPrompt={(prompt) => {
-                  handlePrompt(prompt);
-                  setMobileToolsOpen(false);
-                }}
-                disabled={composerDisabled}
-              />
+                  potentialStoryTopics={potentialStoryTopicsState.topics}
+                  potentialTopicsLoading={potentialStoryTopicsState.isLoading}
+                  actions={uiSuggestions.actions}
+                  questions={uiSuggestions.questions}
+                  isRefreshing={uiSuggestions.isRefreshing}
+                  animationGeneration={uiSuggestions.generation}
+                  onPrompt={(prompt, options) => {
+                    handlePrompt(prompt, options);
+                    setMobileToolsOpen(false);
+                  }}
+                  disabled={composerDisabled}
+                />
               </div>
             </SheetContent>
           </Sheet>

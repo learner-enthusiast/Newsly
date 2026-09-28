@@ -1,43 +1,80 @@
 /**
- * News-story chat pipeline (first deep-dive run)
+ * News-story chat pipeline (first deep-dive / story-anchored first turn)
  *
  * Event: `chat/pipeline.requested`
- * Input: `{ userId, chatSessionId, userMessageId }`
  *
- * Trigger: `POST /api/newsStoryChat` (deep dive) or `startNewChat` with
- * `newsStoryId` → first user message on a story-anchored session.
- * Timeout: 30 minutes.
+ * Event data (`chatPipelineEventDataSchema`):
+ * - `userId` — owner of the session
+ * - `chatSessionId` — `ChatSession` UUID
+ * - `userMessageId` — first (or triggering) user message on this path
+ *
+ * Trigger:
+ * - `POST /api/newsStoryChat` — deep dive from a published story
+ * - Legacy story-anchored session start with an initial user message
+ *
+ * Function id: `chat-pipeline` (exported as `chatPipelineFunction`)
+ * Timeout: 30 minutes
  *
  * Purpose:
- * Handle the first research turn for a chat session tied to a published
- * `NewsStory` (`isFromNewsStory=true`). Builds a long research brief from the
- * story fields + linked `NewsSource` scraped text via `runNewsNewChatAgent`,
- * then Serp, article selection, Firecrawl, and ChatModel reply. Does not use
- * pgvector session research on this path. Query enhancement is skipped when
- * `isNewsStory` is true on the determiner.
+ * Handle the **first research turn** for a session that may be anchored to a
+ * `NewsStory` (`isFromNewsStory=true`, `newsStoryId` set). When anchored, builds
+ * a long research brief from story fields + linked `NewsSource` text via
+ * `runNewsNewChatAgent`. Otherwise uses the raw user message as the research prompt.
  *
- * General chats use `chat/message.research.requested` (chatPipeline.ts) instead.
+ * Then: guardrails + determiner (query enhancement skipped when `isNewsStory`),
+ * Serp, article selection, Firecrawl, `ResearchSource` persistence, and a single
+ * ChatModel Markdown reply. Does **not** use pgvector session recall on this path.
+ *
+ * Follow-up turns in the same session use `chat/message.research.requested`
+ * (`inngest/chatPipeline.ts`) instead.
+ *
+ * Does not create chat-origin `NewsStory` rows or run potential-story-topic detection.
  *
  * ── Happy-path steps ────────────────────────────────────────────────────────
  *
- * 1. load-chat-session — Verify session belongs to `userId`.
- * 2. load-user-message — Load triggering user message content.
- * 3. build-research-prompt — Story deep dive: expand story + sources; else raw text.
- * 4. run-determiner — Guardrails + Serp routing (`recentMessages` when not news story).
- * 5. save-guardrail-message — Persist refusal if guardrails block.
- * 6. fetch-and-normalize-serp — Execute determiner Serp calls; merge normalized hits.
- * 7. select-articles — Article synthesizer chooses URLs to scrape.
- * 8. preload-existing-research-sources — Session sources for reply context (parallel).
- * 9. scrape-and-persist-sources — Firecrawl + `ResearchSource` rows + cleaning.
- * 10. generate-assistant-reply — ChatModel with Serp + scraped context.
- * 11. save-assistant-message — Persist agent Markdown.
- * 12. create-completion-notification — Deep-dive or chat completion notification.
+ * 1. load-chat-session + load-user-message (parallel)
+ *    Owner-scoped session; validate user message exists for session.
+ *
+ * 2. build-research-prompt
+ *    If `isFromNewsStory` + `newsStoryId`: load story bundle + selected
+ *    `newsSourceId` list → `runNewsNewChatAgent` → long `researchPrompt`.
+ *    Else: `researchPrompt = user message` text.
+ *
+ * 3. run-determiner
+ *    `runSmallDeterminerAgent` with `isNewsStory` flag; recent ~10 messages for
+ *    context when not a news-story session. Guardrail block returns blocked payload.
+ *
+ * 4. save-guardrail-message (guardrail branch only)
+ *    Refusal agent message; stop.
+ *
+ * 5. fetch-and-normalize-serp
+ *    Execute determiner Serp tool calls; normalize hits (shared chat Serp helpers).
+ *
+ * 6. select-articles + preload-existing-research-sources (parallel)
+ *    `runArticleSynthesizerAgent` on Serp hits; load session `ResearchSource` rows.
+ *
+ * 7. scrape-and-persist-sources
+ *    Firecrawl selected URLs; clean content; create `ResearchSource` rows (enqueue
+ *    background description + embedding index per insert).
+ *
+ * 8. generate-assistant-reply
+ *    `runChatModelAgent` with research prompt, Serp hits, scraped + preloaded sources,
+ *    and sliced chat history.
+ *
+ * 9. save-assistant-message
+ *    Persist agent Markdown.
+ *
+ * 10. create-completion-notification
+ *     `deepDiveCompletedNotification` when `isFromNewsStory`, else general chat
+ *     research completed variant. Dedupe keyed by `userMessageId`.
  *
  * ── Failure path ────────────────────────────────────────────────────────────
  *
- * save-error-message — Agent error message for the UI when appropriate.
- * onFailure → create-failure-notification (deep dive vs general chat variant by
- * `session.isFromNewsStory`; dedupe by `userMessageId`).
+ * save-error-message — User-visible agent error when the run throws (non-guardrail).
+ *
+ * onFailure → create-failure-notification
+ *     `deepDiveFailedNotification` vs `chatResearchFailedNotification` based on
+ *     `session.isFromNewsStory`.
  */
 
 import { runArticleSynthesizerAgent } from "@/Agents/chat/ArticleSythesizerAgent";

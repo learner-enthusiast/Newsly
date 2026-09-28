@@ -114,6 +114,7 @@ export async function POST(request: Request, context: RouteContext) {
       userId: user.id,
       chatSessionId,
       content: parsed.data.content,
+      shouldCreateStory: parsed.data.shouldCreateStory,
     });
 
     if (!result) {
