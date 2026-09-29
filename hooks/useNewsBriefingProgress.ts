@@ -72,7 +72,7 @@ export function useNewsBriefingProgress(
   const showResults = status === "success" && !showWait;
 
   useEffect(() => {
-    if (!showWait || status === "failed") {
+    if (!showWait) {
       return;
     }
     const intervalMs = catchingUp ? 50 : 250;
