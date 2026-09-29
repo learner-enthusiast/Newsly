@@ -70,6 +70,27 @@ export function LandingStoryMotion() {
           });
         });
       });
+
+      gsap.utils.toArray<HTMLElement>("[data-chat-turns]").forEach((group) => {
+        const turns = group.querySelectorAll<HTMLElement>("[data-chat-turn]");
+        turns.forEach((turn) => {
+          const fromRight = turn.getAttribute("data-chat-turn") === "user";
+          const fromX = fromRight ? 96 : -96;
+          gsap.set(turn, { x: fromX, opacity: 0 });
+          gsap.to(turn, {
+            x: 0,
+            opacity: 1,
+            ease: "none",
+            scrollTrigger: {
+              trigger: turn,
+              scroller,
+              start: "top 90%",
+              end: "top 62%",
+              scrub: 0.7,
+            },
+          });
+        });
+      });
     }, root);
 
     ScrollTrigger.refresh();
