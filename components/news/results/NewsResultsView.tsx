@@ -6,6 +6,7 @@ import {
   NewsCategoryTabs,
 } from "@/components/news/results/NewsCategoryTabs";
 import { KeyTopicsSidebar } from "@/components/news/results/KeyTopicsSidebar";
+import { NewsGenerationWaitPanel } from "@/components/news/results/NewsGenerationWaitPanel";
 import { NewsRecentRequestsSidebar } from "@/components/news/results/NewsRecentRequestsSidebar";
 import { NewsRequestHeader } from "@/components/news/results/NewsRequestHeader";
 import { NewsRequestSummaryCard } from "@/components/news/results/NewsRequestSummaryCard";
@@ -21,6 +22,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useRecentNewsRequests } from "@/hooks/useRecentNewsRequests";
+import { useNewsBriefingProgress } from "@/hooks/useNewsBriefingProgress";
 import type { NewsRequestResultPayload } from "@/services/news/newsRequestTypes";
 import { cn } from "@/lib/utils";
 import gsap from "gsap";
@@ -48,7 +50,6 @@ export function NewsResultsView({
   newsId,
   data,
   isPending,
-  isSuccess,
   isFailed,
   showActions,
   deepDiveStoryId,
@@ -71,6 +72,11 @@ export function NewsResultsView({
   const listRef = useRef<HTMLDivElement>(null);
 
   const filteredStories = filterStoriesByCategoryTab(stories, categoryTab);
+  const briefing = useNewsBriefingProgress(
+    request?.id ?? newsId,
+    request?.createdAt ?? "1970-01-01T00:00:00.000Z",
+    request?.status ?? "pending",
+  );
 
   useLayoutEffect(() => {
     const reduceMotion = window.matchMedia(
@@ -129,7 +135,7 @@ export function NewsResultsView({
   }
 
   const storyCountFound = stories.length;
-  const showKeyTopics = isSuccess && storyCountFound > 0;
+  const showKeyTopics = briefing.showResults && storyCountFound > 0;
 
   const rightSidebar = (
     <div className="flex flex-col gap-4">
@@ -138,6 +144,8 @@ export function NewsResultsView({
         request={request}
         onRetry={isFailed ? onRetry : undefined}
         retrying={retrying}
+        progressPercent={briefing.percent}
+        progressBusy={briefing.busy}
       />
       {showKeyTopics ? <KeyTopicsSidebar stories={stories} /> : null}
     </div>
@@ -221,18 +229,19 @@ export function NewsResultsView({
 
           <div className="lg:hidden">{rightSidebar}</div>
 
-          {isPending ? (
-            <p className="text-sm text-muted-foreground" aria-live="polite">
-              Your briefing is still being prepared. Stories will appear here
-              when ready.
-            </p>
+          {isPending || briefing.catchingUp ? (
+            <NewsGenerationWaitPanel
+              percent={briefing.percent}
+              overdue={briefing.overdue}
+              catchingUp={briefing.catchingUp && !isPending}
+            />
           ) : null}
 
-          {isSuccess && storyCountFound === 0 ? (
+          {briefing.showResults && storyCountFound === 0 ? (
             <NewsResultsEmptyState />
           ) : null}
 
-          {isSuccess && storyCountFound > 0 ? (
+          {briefing.showResults && storyCountFound > 0 ? (
             <>
               <NewsCategoryTabs
                 stories={stories}

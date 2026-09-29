@@ -27,6 +27,14 @@ export const NEWS_REQUEST_LOADING_MESSAGES = [
   "Reviewing research steps…",
 ] as const;
 
+export const NEWS_BRIEFING_OVERDUE_MESSAGES = [
+  "Will be ready any time…",
+  "AI is working on your briefing…",
+  "Still reading sources…",
+  "Wrapping up the last research pass…",
+  "This usually finishes shortly…",
+] as const;
+
 export const CHAT_LOADING_MESSAGES = [
   "Searching trusted sources…",
   "Reading recent coverage…",
