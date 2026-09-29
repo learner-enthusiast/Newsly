@@ -22,9 +22,13 @@ export function HeadlineContext() {
           <p className="font-display mt-4 max-w-md text-3xl leading-snug sm:text-4xl">
             India raises duties on imported electric cars
           </p>
-          <ol className="mt-10">
+          <ol className="mt-10 overflow-x-hidden" data-headline-layers>
             {HEADLINE_LAYERS.map((layer, i) => (
-              <li key={layer.kicker} className="grid grid-cols-[2.5rem_1fr] gap-4 border-t border-border/40 py-5">
+              <li
+                key={layer.kicker}
+                data-headline-layer
+                className="grid grid-cols-[2.5rem_1fr] gap-4 border-t border-border/40 py-5"
+              >
                 <span className="pt-1 text-xs" style={{ color: ACCENT }}>
                   {String(i + 1).padStart(2, "0")}
                 </span>

@@ -16,8 +16,9 @@ function registerPlugins() {
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /**
- * Progressive enhancement for /about. Everything it touches already renders
- * statically on the server; this only adds motion that explains the flow.
+ * Progressive enhancement for /about and the home landing page. Everything it
+ * touches already renders statically on the server; this only adds motion that
+ * explains the flow.
  *
  * data-about-draw            stroke draws in when scrolled into view
  * data-about-reveal          children with data-about-item fade/rise in sequence
@@ -32,7 +33,9 @@ export function AboutMotion() {
     if (prefersReducedMotion()) return;
     registerPlugins();
 
-    const root = document.querySelector<HTMLElement>("[data-about-page]");
+    const root =
+      document.querySelector<HTMLElement>("[data-about-page]") ??
+      document.querySelector<HTMLElement>("[data-landing-page]");
     if (!root) return;
     const scroller = root;
 

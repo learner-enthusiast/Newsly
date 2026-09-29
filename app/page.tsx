@@ -1,3 +1,4 @@
+import { AboutPageShell } from "@/components/about/AboutPageShell";
 import { NewslyDashboardPage } from "@/components/landing/NewslyDashboardPage";
 import { NewslyLandingPage } from "@/components/landing/NewslyLandingPage";
 import { auth } from "@clerk/nextjs/server";
@@ -21,5 +22,9 @@ export default async function HomePage() {
     return <NewslyDashboardPage />;
   }
 
-  return <NewslyLandingPage />;
+  return (
+    <AboutPageShell>
+      <NewslyLandingPage />
+    </AboutPageShell>
+  );
 }

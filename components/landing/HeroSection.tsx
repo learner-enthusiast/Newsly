@@ -1,15 +1,66 @@
+"use client";
+
+import { prefersReducedMotion } from "@/components/about/diagrams/prefersReducedMotion";
 import { GetStartedButton } from "@/components/landing/GetStartedButton";
 import { HeroVisual } from "@/components/landing/HeroVisual";
 import { LandingEyebrow } from "@/components/landing/LandingBlock";
 import { Button } from "@/components/ui/button";
+import gsap from "gsap";
 import Link from "next/link";
+import { useLayoutEffect, useRef } from "react";
 
 export function HeroSection() {
+  const copyRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const root = copyRef.current;
+    if (!root) {
+      return;
+    }
+
+    const items = root.querySelectorAll("[data-hero-copy-item]");
+    if (items.length === 0) {
+      return;
+    }
+
+    if (prefersReducedMotion()) {
+      gsap.set(items, { opacity: 1, clearProps: "transform,filter" });
+      return;
+    }
+
+    const tween = gsap.fromTo(
+      items,
+      {
+        opacity: 0,
+        x: -56,
+        filter: "blur(12px)",
+      },
+      {
+        opacity: 1,
+        x: 0,
+        filter: "blur(0px)",
+        duration: 0.95,
+        stagger: 0.12,
+        delay: 0.08,
+        ease: "power3.out",
+      },
+    );
+
+    return () => {
+      tween.kill();
+    };
+  }, []);
+
   return (
     <section className="landing-section grid items-center gap-16 pt-16 pb-8 sm:pt-20 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-20 lg:pt-28 lg:pb-12">
-      <div>
-        <LandingEyebrow>News, researched.</LandingEyebrow>
-        <h1 className="font-display mt-6 max-w-xl text-[2.75rem] leading-[1.02] font-normal tracking-tight text-balance sm:text-6xl lg:text-[4.5rem]">
+      <div ref={copyRef}>
+        <div data-hero-copy-item className="opacity-0 will-change-transform">
+          <LandingEyebrow>News, researched.</LandingEyebrow>
+        </div>
+        <h1
+          data-hero-copy-item
+          className="font-display mt-6 max-w-xl text-[2.75rem] leading-[1.02] font-normal tracking-tight text-balance opacity-0 will-change-transform sm:text-6xl lg:text-[4.5rem]"
+        >
           Don&apos;t just read <br className="hidden sm:block" />
           what happened. <br />
           <span className="relative inline-block">
@@ -24,11 +75,17 @@ export function HeroSection() {
             </svg>
           </span>
         </h1>
-        <p className="mt-8 max-w-md text-lg leading-relaxed text-muted-foreground">
+        <p
+          data-hero-copy-item
+          className="mt-8 max-w-md text-lg leading-relaxed text-muted-foreground opacity-0 will-change-transform"
+        >
           Newsly looks past the headline for markets, economics, and business.
           It reads the sources, keeps them, and lets you keep asking.
         </p>
-        <div className="mt-9 flex flex-wrap items-center gap-3">
+        <div
+          data-hero-copy-item
+          className="mt-9 flex flex-wrap items-center gap-3 opacity-0 will-change-transform"
+        >
           <GetStartedButton label="Start researching" />
           <Button
             variant="outline"
