@@ -9,6 +9,7 @@ import {
   QUICK_LOCATIONS,
   STORY_COUNT_OPTIONS,
   TOPIC_OPTIONS,
+  DEFAULT_STORY_COUNT,
   type NewsPreset,
   type NewsScopeValue,
 } from "@/components/news/newsPageConstants";
@@ -31,7 +32,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { DEFAULT_STORY_COUNT } from "@/services/news/newsGenerationRequest";
+import {
+  pickFirstAutocompleteGeo,
+  readSuggestionCoordinates,
+} from "@/services/location/mapsAutocomplete";
 import type { SerializedNewsRequest } from "@/services/news/newsRequestTypes";
 import {
   ArrowRight,
@@ -43,7 +47,7 @@ import {
   Search,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type SubmitEvent } from "react";
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -175,7 +179,7 @@ export default function NewsRequestPage() {
     setError(null);
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitLockRef.current || loading) {
       return;
@@ -201,6 +205,30 @@ export default function NewsRequestPage() {
 
       if (scope === "local" || scope === "both") {
         body.location = location.trim();
+        let coords = locationAnchor;
+        if (!coords && body.location) {
+          try {
+            const autocompleteResponse = await fetch(
+              `/api/location/autocomplete?${new URLSearchParams({
+                q: String(body.location),
+              }).toString()}`,
+            );
+            const autocompletePayload = (await autocompleteResponse.json()) as {
+              suggestions?: LocationAutocompleteSuggestion[];
+            };
+            if (autocompleteResponse.ok) {
+              coords = pickFirstAutocompleteGeo(
+                autocompletePayload.suggestions ?? [],
+              );
+            }
+          } catch {
+            /* server requestNews also resolves coords from autocomplete[0] */
+          }
+        }
+        if (coords) {
+          body.latitude = coords.latitude;
+          body.longitude = coords.longitude;
+        }
       }
       if (customQuery.trim()) {
         body.customQuery = customQuery.trim();
@@ -343,18 +371,17 @@ export default function NewsRequestPage() {
                           required
                           value={location}
                           geoAnchor={locationAnchor}
-                          onChange={setLocation}
+                          onChange={(next) => {
+                            setLocation(next);
+                            setLocationAnchor(null);
+                          }}
                           onSelectSuggestion={(
                             suggestion: LocationAutocompleteSuggestion,
                           ) => {
-                            if (
-                              typeof suggestion.latitude === "number" &&
-                              typeof suggestion.longitude === "number"
-                            ) {
-                              setLocationAnchor({
-                                latitude: suggestion.latitude,
-                                longitude: suggestion.longitude,
-                              });
+                            const coords =
+                              readSuggestionCoordinates(suggestion);
+                            if (coords) {
+                              setLocationAnchor(coords);
                             }
                           }}
                           placeholder="City, state, country"
@@ -376,7 +403,10 @@ export default function NewsRequestPage() {
                           className="size-3.5 animate-spin"
                         />
                       ) : (
-                        <Navigation data-icon="inline-start" className="size-3.5" />
+                        <Navigation
+                          data-icon="inline-start"
+                          className="size-3.5"
+                        />
                       )}
                       Use my location
                     </Button>

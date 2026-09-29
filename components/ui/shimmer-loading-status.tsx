@@ -71,9 +71,13 @@ export function ShimmerLoadingStatus({
   layout = "page",
 }: ShimmerLoadingStatusProps) {
   const pool = useMemo(() => [...messages], [messages]);
-  const [phrase, setPhrase] = useState(() => pickNextMessage(pool, ""));
+  const initialPhrase = pool[0] ?? "Loading…";
+  const [phrase, setPhrase] = useState(initialPhrase);
 
   useEffect(() => {
+    if (pool.length < 2) {
+      return;
+    }
     const interval = window.setInterval(() => {
       setPhrase((current) => pickNextMessage(pool, current));
     }, 2_600);

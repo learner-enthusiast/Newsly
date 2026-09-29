@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { buildNewsSearchPlanPairs } from "./newsSearchPlanning";
 import {
-  buildNewsSearchPlanPairs,
   normalizeNewsGenerationRequest,
   normalizeSourceDomains,
 } from "./newsGenerationRequest";
@@ -26,6 +26,17 @@ describe("normalizeNewsGenerationRequest", () => {
         scope: "both",
       }),
     );
+  });
+
+  it("defaults Serp radius when latitude and longitude are provided", () => {
+    const config = normalizeNewsGenerationRequest({
+      date: "2026-09-26",
+      scope: "local",
+      location: "Hyderabad, India",
+      latitude: 17.38,
+      longitude: 78.48,
+    });
+    assert.equal(config.locationRadiusMeters, 20_000);
   });
 
   it("normalizes categories and domains", () => {

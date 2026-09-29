@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireAuthenticatedUser } from "@/lib/auth";
 import {
   listRecentNewsRequests,
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
   const parsed = requestNewsBodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten() },
+      { error: "Validation failed", details: z.treeifyError(parsed.error) },
       { status: 400 },
     );
   }

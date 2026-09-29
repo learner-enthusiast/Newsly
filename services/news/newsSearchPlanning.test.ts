@@ -53,6 +53,25 @@ describe("buildNewsSearchExecutionPlans", () => {
     assert.equal(plan!.googleSearchParams.tbm, "nws");
     assert.equal(plan!.googleNewsParams.gl, "in");
   });
+
+  it("uses lat, lon, and radius on Google Search (nws) only when coords exist", () => {
+    const config = normalizeNewsGenerationRequest({
+      date: "2026-09-26",
+      scope: "local",
+      location: "Hyderabad, Telangana, India",
+      latitude: 17.385,
+      longitude: 78.4867,
+    });
+    const [plan] = buildNewsSearchExecutionPlans(config);
+    assert.equal(plan!.googleSearchParams.lat, 17.385);
+    assert.equal(plan!.googleSearchParams.lon, 78.4867);
+    assert.equal(plan!.googleSearchParams.radius, 20_000);
+    assert.equal(plan!.googleSearchParams.location, undefined);
+    assert.equal(plan!.googleNewsParams.lat, undefined);
+    assert.equal(plan!.googleNewsParams.lon, undefined);
+    assert.equal(plan!.googleNewsParams.radius, undefined);
+    assert.equal(plan!.googleNewsParams.location, undefined);
+  });
 });
 
 describe("budget helpers", () => {

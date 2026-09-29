@@ -25,6 +25,56 @@ export function resolveAutocompleteLl(input?: {
   return DEFAULT_MAPS_AUTOCOMPLETE_LL;
 }
 
+function readNumericField(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function readGpsCoordinates(record: Record<string, unknown>): {
+  latitude?: number;
+  longitude?: number;
+} {
+  const gps = record.gps_coordinates;
+  if (!gps || typeof gps !== "object") {
+    return {};
+  }
+  const row = gps as Record<string, unknown>;
+  return {
+    latitude: readNumericField(row.latitude),
+    longitude: readNumericField(row.longitude),
+  };
+}
+
+export function readSuggestionCoordinates(
+  suggestion: LocationAutocompleteSuggestion,
+): { latitude: number; longitude: number } | null {
+  const latitude = suggestion.latitude;
+  const longitude = suggestion.longitude;
+  if (typeof latitude === "number" && typeof longitude === "number") {
+    return { latitude, longitude };
+  }
+  return null;
+}
+
+/** Use the first autocomplete hit when the user did not pick a suggestion. */
+export function pickFirstAutocompleteGeo(
+  suggestions: LocationAutocompleteSuggestion[],
+): { latitude: number; longitude: number } | null {
+  const first = suggestions[0];
+  if (!first) {
+    return null;
+  }
+  return readSuggestionCoordinates(first);
+}
+
 export function extractAutocompleteSuggestions(
   payload: unknown,
 ): LocationAutocompleteSuggestion[] {
@@ -46,15 +96,16 @@ export function extractAutocompleteSuggestions(
     if (!value) {
       continue;
     }
+    const gps = readGpsCoordinates(record);
     out.push({
       value,
       subtext:
         typeof record.subtext === "string" ? record.subtext.trim() : undefined,
       type: typeof record.type === "string" ? record.type : undefined,
       latitude:
-        typeof record.latitude === "number" ? record.latitude : undefined,
+        readNumericField(record.latitude) ?? gps.latitude,
       longitude:
-        typeof record.longitude === "number" ? record.longitude : undefined,
+        readNumericField(record.longitude) ?? gps.longitude,
       data_id: typeof record.data_id === "string" ? record.data_id : undefined,
       serpapi_link:
         typeof record.serpapi_link === "string" ? record.serpapi_link : undefined,
@@ -129,6 +180,30 @@ export function formatLocationLabelFromSuggestion(
     return suggestion.subtext;
   }
   return suggestion.value;
+}
+
+/**
+ * Full location string for forms and API payloads — keeps Serp/Google address detail
+ * (typically `subtext`) instead of the shortened display label.
+ */
+export function formatLocationStorageValueFromSuggestion(
+  suggestion: LocationAutocompleteSuggestion,
+): string {
+  if (isCoordinateLikeLocationValue(suggestion.value)) {
+    const subtext = suggestion.subtext?.trim();
+    if (subtext) {
+      return subtext;
+    }
+    return suggestion.value.trim();
+  }
+  if (suggestion.type === "keyword") {
+    return suggestion.value.trim();
+  }
+  const subtext = suggestion.subtext?.trim();
+  if (subtext) {
+    return subtext;
+  }
+  return suggestion.value.trim();
 }
 
 function rankLocationSuggestion(

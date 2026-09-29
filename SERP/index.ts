@@ -152,7 +152,9 @@ async function fetchGoogleAiOverview(
     options.output === "md"
       ? { output: options.output }
       : {}),
-    ...(typeof options.timeout === "number" ? { timeout: options.timeout } : {}),
+    ...(typeof options.timeout === "number"
+      ? { timeout: options.timeout }
+      : {}),
   });
 }
 
@@ -200,11 +202,14 @@ async function searchGoogle<T = unknown>(
   responseSchema?: z.ZodType<T>,
   client = serpClient,
 ): Promise<T> {
-  const { tbm: _tbm, trigger_ai_overview, ...rest } =
-    params as SerpEngineSearchParams & {
-      tbm?: unknown;
-      trigger_ai_overview?: unknown;
-    };
+  const {
+    tbm: _tbm,
+    trigger_ai_overview,
+    ...rest
+  } = params as SerpEngineSearchParams & {
+    tbm?: unknown;
+    trigger_ai_overview?: unknown;
+  };
   const shouldFetchAiOverview = trigger_ai_overview === true;
   const followUpParams: GoogleAiOverviewFollowUpParams = {
     ...(typeof rest.no_cache === "boolean" ? { no_cache: rest.no_cache } : {}),
@@ -293,8 +298,7 @@ function withYoutubeSearchQuery(
   const search_query =
     (typeof params.search_query === "string"
       ? params.search_query.trim()
-      : "") ||
-    (typeof params.q === "string" ? params.q.trim() : "");
+      : "") || (typeof params.q === "string" ? params.q.trim() : "");
   if (!search_query) {
     throw new Error("youtube requires search_query");
   }
@@ -402,7 +406,9 @@ function withGoogleMapsParams(
     typeof params.data_cid === "string" ? params.data_cid.trim() : "";
 
   if (placeId && dataCid) {
-    throw new Error("google_maps: place_id and data_cid cannot be used together");
+    throw new Error(
+      "google_maps: place_id and data_cid cannot be used together",
+    );
   }
 
   if (placeId || dataCid) {
@@ -449,6 +455,9 @@ const googleInputSchema = z.looseObject({
   safe: z.enum(["active", "off"]).optional(),
   /** When true, fetches google_ai_overview via page_token (News pipeline only for now). */
   trigger_ai_overview: z.boolean().optional(),
+  lat: z.number().optional(),
+  lon: z.number().optional(),
+  radius: z.number().int().positive().optional(),
   ...serpSharedInputShape,
 });
 
@@ -532,7 +541,7 @@ const googleNewsInputSchema = z
     section_token: z.string().min(1).optional(),
     story_token: z.string().min(1).optional(),
     kgmid: z.string().min(1).optional(),
-    so: z.union([z.literal(0), z.literal(1)]).optional(),
+    so: z.union([z.literal(0), z.literal(1)]).default(0),
     gl: serpSharedInputShape.gl,
     hl: serpSharedInputShape.hl,
     no_cache: serpSharedInputShape.no_cache,
@@ -717,9 +726,21 @@ const googleMapsAutocompleteOutputSchema = serpCommonOutputSchema.extend({
     .array(
       z.looseObject({
         value: z.string().optional(),
+        subtext: z.string().optional(),
         serpapi_link: z.string().optional(),
         maps_serpapi_link: z.string().optional(),
+        reviews_serpapi_link: z.string().optional(),
+        photos_serpapi_link: z.string().optional(),
         type: z.string().optional(),
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+        data_id: z.string().optional(),
+        gps_coordinates: z
+          .looseObject({
+            latitude: z.number().optional(),
+            longitude: z.number().optional(),
+          })
+          .optional(),
       }),
     )
     .optional(),
@@ -742,9 +763,7 @@ const googleMapsInputSchema = z
     start: z.number().int().min(0).optional(),
     min_price: z.number().optional(),
     max_price: z.number().optional(),
-    min_rating: z
-      .enum(["2.0", "2.5", "3.0", "3.5", "4.0", "4.5"])
-      .optional(),
+    min_rating: z.enum(["2.0", "2.5", "3.0", "3.5", "4.0", "4.5"]).optional(),
     open_state: z.enum(["now", "24h"]).optional(),
     open_on_day: z
       .enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])

@@ -1,6 +1,7 @@
 import { serpEngines } from "@/SERP/index";
 import {
   formatLocationLabelFromSuggestion,
+  formatLocationStorageValueFromSuggestion,
   isCoordinateLikeLocationValue,
   labelFromPostalAddress,
   searchLocationAutocomplete,
@@ -147,7 +148,7 @@ function parseAdminFromSuggestion(
   return {
     latitude,
     longitude,
-    label: formatLocationLabelFromSuggestion(suggestion),
+    label: formatLocationStorageValueFromSuggestion(suggestion),
     metroCity,
     state,
     country,
@@ -231,7 +232,7 @@ export async function resolveUserLocationFromCoordinates(
   const parsed = parseAdminFromSuggestion(suggestion, latitude, longitude);
   return {
     ...parsed,
-    label: formatLocationLabelFromSuggestion(suggestion),
+    label: formatLocationStorageValueFromSuggestion(suggestion),
     suggestion,
   };
 }

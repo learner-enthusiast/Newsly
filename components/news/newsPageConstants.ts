@@ -92,4 +92,6 @@ export const NEWS_QUICK_PRESETS: NewsPreset[] = [
   },
 ];
 
+export const DEFAULT_STORY_COUNT = 5;
+
 export const STORY_COUNT_OPTIONS = [3, 5, 8, 10, 12] as const;

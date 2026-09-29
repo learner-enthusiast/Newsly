@@ -27,6 +27,26 @@ type LoadOlderOptions = {
   force?: boolean;
 };
 
+type SessionPageState = {
+  sessionId: string;
+  messages: SerializedChatMessageListItem[];
+  hasMoreOlder: boolean;
+  olderError: string | null;
+  loadingInitial: boolean;
+  loadingOlder: boolean;
+};
+
+function emptySessionState(sessionId: string): SessionPageState {
+  return {
+    sessionId,
+    messages: [],
+    hasMoreOlder: false,
+    olderError: null,
+    loadingInitial: true,
+    loadingOlder: false,
+  };
+}
+
 async function fetchMessagesPage(
   chatSessionId: string,
   options: { before?: string | null },
@@ -89,89 +109,90 @@ function resolveNextOlderCursor(
 export function useChatMessagePages(
   chatSessionId: string,
 ): UseChatMessagePagesResult {
-  const [messages, setMessages] = useState<SerializedChatMessageListItem[]>([]);
-  const [loadingInitial, setLoadingInitial] = useState(true);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [hasMoreOlder, setHasMoreOlder] = useState(false);
-  const [olderError, setOlderError] = useState<string | null>(null);
-
-  const messagesRef = useRef(messages);
-  const hasMoreOlderRef = useRef(false);
+  const [pageState, setPageState] = useState<SessionPageState>(() =>
+    emptySessionState(chatSessionId),
+  );
+  const pageStateRef = useRef(pageState);
   const nextOlderCursorRef = useRef<ChatMessageListCursor | null>(null);
   const loadOlderInFlightRef = useRef(false);
-  const sessionEpochRef = useRef(0);
+
+  const isCurrentSession = pageState.sessionId === chatSessionId;
+  const messages = isCurrentSession ? pageState.messages : [];
+  const hasMoreOlder = isCurrentSession ? pageState.hasMoreOlder : false;
+  const olderError = isCurrentSession ? pageState.olderError : null;
+  const loadingInitial = !isCurrentSession || pageState.loadingInitial;
+  const loadingOlder = isCurrentSession && pageState.loadingOlder;
 
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    pageStateRef.current = pageState;
+  }, [pageState]);
 
-  useEffect(() => {
-    hasMoreOlderRef.current = hasMoreOlder;
-  }, [hasMoreOlder]);
-
-  const applyLatestPageMeta = useCallback((page: ChatMessagesPageResponse) => {
-    nextOlderCursorRef.current = resolveNextOlderCursor(page);
-    hasMoreOlderRef.current = page.hasMore;
-    setHasMoreOlder(page.hasMore);
-    setOlderError(null);
-  }, []);
+  const applyFetchedPage = useCallback(
+    (sessionId: string, page: ChatMessagesPageResponse) => {
+      nextOlderCursorRef.current = resolveNextOlderCursor(page);
+      setPageState({
+        sessionId,
+        messages: page.messages,
+        hasMoreOlder: page.hasMore,
+        olderError: null,
+        loadingInitial: false,
+        loadingOlder: false,
+      });
+    },
+    [],
+  );
 
   const replaceWithLatestPage = useCallback(
     (page: ChatMessagesPageResponse) => {
-      setMessages(page.messages);
-      applyLatestPageMeta(page);
+      applyFetchedPage(chatSessionId, page);
     },
-    [applyLatestPageMeta],
-  );
-
-  const loadInitial = useCallback(
-    async (epoch: number) => {
-      setLoadingInitial(true);
-      setOlderError(null);
-      try {
-        const page = await fetchMessagesPage(chatSessionId, {});
-        if (epoch !== sessionEpochRef.current) {
-          return;
-        }
-        replaceWithLatestPage(page);
-      } catch (error) {
-        if (epoch === sessionEpochRef.current) {
-          setOlderError(
-            error instanceof Error
-              ? error.message
-              : "Failed to load messages",
-          );
-        }
-      } finally {
-        if (epoch === sessionEpochRef.current) {
-          setLoadingInitial(false);
-        }
-      }
-    },
-    [chatSessionId, replaceWithLatestPage],
+    [applyFetchedPage, chatSessionId],
   );
 
   useEffect(() => {
-    sessionEpochRef.current += 1;
-    const epoch = sessionEpochRef.current;
-    setMessages([]);
-    messagesRef.current = [];
-    nextOlderCursorRef.current = null;
-    hasMoreOlderRef.current = false;
-    setHasMoreOlder(false);
-    setOlderError(null);
+    const abort = new AbortController();
     loadOlderInFlightRef.current = false;
-    void loadInitial(epoch);
-  }, [chatSessionId, loadInitial]);
+    nextOlderCursorRef.current = null;
+
+    void fetchMessagesPage(chatSessionId, {}, abort.signal)
+      .then((page) => {
+        if (abort.signal.aborted) {
+          return;
+        }
+        applyFetchedPage(chatSessionId, page);
+      })
+      .catch((error: unknown) => {
+        if (abort.signal.aborted) {
+          return;
+        }
+        setPageState({
+          sessionId: chatSessionId,
+          messages: [],
+          hasMoreOlder: false,
+          olderError:
+            error instanceof Error ? error.message : "Failed to load messages",
+          loadingInitial: false,
+          loadingOlder: false,
+        });
+      });
+
+    return () => {
+      abort.abort();
+    };
+  }, [chatSessionId, applyFetchedPage]);
 
   const refreshLatestPage = useCallback(async () => {
-    const epoch = sessionEpochRef.current;
     try {
       const page = await fetchMessagesPage(chatSessionId, {});
-      if (epoch !== sessionEpochRef.current) {
-        return;
-      }
-      setMessages((current) => mergeChatMessagesById(current, page.messages));
+      setPageState((current) => {
+        if (current.sessionId !== chatSessionId) {
+          return current;
+        }
+        return {
+          ...current,
+          messages: mergeChatMessagesById(current.messages, page.messages),
+        };
+      });
     } catch {
       /* polling refresh is best-effort */
     }
@@ -187,49 +208,68 @@ export function useChatMessagePages(
         loadOlderInFlightRef.current = false;
       }
 
-      const cursor = oldestMessageCursor(messagesRef.current);
+      const current = pageStateRef.current;
+      if (current.sessionId !== chatSessionId) {
+        return;
+      }
+
+      const cursor = oldestMessageCursor(current.messages);
       nextOlderCursorRef.current = cursor;
 
       if (!cursor) {
         if (options?.force) {
-          setOlderError("Nothing older to load.");
+          setPageState((prev) =>
+            prev.sessionId === chatSessionId
+              ? { ...prev, olderError: "Nothing older to load." }
+              : prev,
+          );
         }
         return;
       }
 
-      if (!options?.force && !hasMoreOlderRef.current) {
+      if (!options?.force && !current.hasMoreOlder) {
         return;
       }
 
-      const epoch = sessionEpochRef.current;
       loadOlderInFlightRef.current = true;
-      setLoadingOlder(true);
-      setOlderError(null);
+      setPageState((prev) =>
+        prev.sessionId === chatSessionId
+          ? { ...prev, loadingOlder: true, olderError: null }
+          : prev,
+      );
 
       try {
         const page = await fetchMessagesPage(chatSessionId, {
           before: encodeChatMessageCursor(cursor),
         });
-        if (epoch !== sessionEpochRef.current) {
-          return;
-        }
-        setMessages((current) => mergeChatMessagesById(page.messages, current));
-        nextOlderCursorRef.current = resolveNextOlderCursor(page);
-        hasMoreOlderRef.current = page.hasMore;
-        setHasMoreOlder(page.hasMore);
+        setPageState((prev) => {
+          if (prev.sessionId !== chatSessionId) {
+            return prev;
+          }
+          nextOlderCursorRef.current = resolveNextOlderCursor(page);
+          return {
+            ...prev,
+            messages: mergeChatMessagesById(page.messages, prev.messages),
+            hasMoreOlder: page.hasMore,
+            loadingOlder: false,
+            olderError: null,
+          };
+        });
       } catch (error) {
-        if (epoch === sessionEpochRef.current) {
-          setOlderError(
-            error instanceof Error
-              ? error.message
-              : "Couldn't load older messages",
-          );
-        }
+        setPageState((prev) =>
+          prev.sessionId === chatSessionId
+            ? {
+                ...prev,
+                loadingOlder: false,
+                olderError:
+                  error instanceof Error
+                    ? error.message
+                    : "Couldn't load older messages",
+              }
+            : prev,
+        );
       } finally {
         loadOlderInFlightRef.current = false;
-        if (epoch === sessionEpochRef.current) {
-          setLoadingOlder(false);
-        }
       }
     },
     [chatSessionId],

@@ -594,6 +594,33 @@ export async function listTrendingNewsStories(input: {
   });
 }
 
+export async function countStoriesByNewsRequestIds(
+  newsRequestIds: string[],
+): Promise<Map<string, number>> {
+  const ids = newsRequestIds
+    .map((id) => newsRequestIdSchema.safeParse(id))
+    .filter((parsed) => parsed.success)
+    .map((parsed) => parsed.data);
+
+  const counts = new Map<string, number>();
+  if (ids.length === 0) {
+    return counts;
+  }
+
+  const rows = await prisma.newsStory.groupBy({
+    by: ["newsRequestId"],
+    where: { newsRequestId: { in: ids } },
+    _count: { _all: true },
+  });
+
+  for (const row of rows) {
+    if (row.newsRequestId) {
+      counts.set(row.newsRequestId, row._count._all);
+    }
+  }
+  return counts;
+}
+
 export async function listNewsStoriesByNewsRequestId(newsRequestId: string) {
   const rows = await prisma.newsStory.findMany({
     where: { newsRequestId: newsRequestIdSchema.parse(newsRequestId) },

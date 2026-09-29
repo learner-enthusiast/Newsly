@@ -34,8 +34,10 @@
  * Search planning:
  * `buildNewsSearchExecutionPlans(config)` — one or two tiers (`local` / `world`
  * when `scope` is `both`). Each tier supplies Serp params (combined category +
- * custom query + optional `site:` filters; local Google search uses Serp
- * `location` + `gl`/`hl`). Result volume scales with `storyCount`
+ * custom query + optional `site:` filters; local Google Search news tab uses
+ * `lat`/`lon`/`radius` when the request has coordinates, else Serp `location`
+ * (+ `gl`/`hl`). `google_news` uses q + gl/hl only. Result volume scales with
+ * `storyCount`
  * (`serpResultsPerEngine`, `articleCandidateBudget`, `maxArticlesToScrape`).
  *
  * ── Happy-path steps ───────────────────────────────────────────────────────
@@ -135,6 +137,7 @@ import {
   buildArticleSelectionPrompt,
   buildNewsSearchExecutionPlans,
   maxArticlesToScrape,
+  pickSerpSharedGeoFromSearchParams,
   preferArticlesFromSources,
   serpResultsPerEngine,
 } from "@/services/news/newsSearchPlanning";
@@ -190,7 +193,7 @@ export const newsPipelineEventDataSchema = z
     userId: z.string().min(1),
     newsRequestId: z.uuid(),
   })
-  .merge(newsPipelineGenerationEventSchema);
+  .extend(newsPipelineGenerationEventSchema.shape);
 
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;
 
@@ -299,6 +302,17 @@ export const newsPipelineFunction = inngest.createFunction(
               news: pair.news.query,
               search: pair.search.query,
             })),
+            ...(config.latitude != null && config.longitude != null
+              ? {
+                  locationGeo: {
+                    latitude: config.latitude,
+                    longitude: config.longitude,
+                    ...(config.locationRadiusMeters != null
+                      ? { radiusMeters: config.locationRadiusMeters }
+                      : {}),
+                  },
+                }
+              : {}),
           },
         });
         await appendNewsRequestLoadingLog(
@@ -351,9 +365,9 @@ export const newsPipelineFunction = inngest.createFunction(
             num: serpNum,
             ...(primaryGl ? { gl: primaryGl } : {}),
             hl: plans.news.suggestedHl ?? config.serpHl,
-            ...(primaryPlan.googleSearchParams.location
-              ? { location: primaryPlan.googleSearchParams.location }
-              : {}),
+            ...pickSerpSharedGeoFromSearchParams(
+              primaryPlan.googleSearchParams,
+            ),
           };
 
           if (serpPayloadHasAiOverview(googleSearchPayload)) {

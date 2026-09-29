@@ -20,9 +20,10 @@ export function NewslyLandingPage() {
     >
       <LandingStoryMotion />
       <HeroSection />
+
       <HeadlineContext />
-      <ResearchDifference />
-      <ResearchJourney />
+      {/* <ResearchDifference /> */}
+      {/* <ResearchJourney /> */}
       <ConversationalResearch />
       <AskSection />
       <ChatToStory />

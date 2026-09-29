@@ -1,13 +1,17 @@
+import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
 import { inngest } from "@/clients/inngestClient";
 import { NEWS_PIPELINE_EVENT } from "@/inngest";
 import {
   appendNewsRequestLoadingLog,
   createNewsRequest,
   getNewsRequestByIdForUser,
+  listNewsRequestsByUserIdPage,
+  listRecentNewsRequestsByUserId,
   patchNewsRequest,
 } from "@/repositories/newsRequest";
 import { getUserVotesForStories } from "@/repositories/newsStoryVote";
 import {
+  countStoriesByNewsRequestIds,
   getNewsStoryWithSourcesForPage,
   listNewsStoriesByNewsRequestId,
   listPublishedNewsStoriesPaginated,
@@ -23,7 +27,6 @@ import {
   isUserStoryGenerationFailed,
   isUserStoryGenerating,
 } from "@/services/news/newsStoryAccess";
-import type { PublishStatus } from "@/services/news/newsRequestTypes";
 import {
   type NewsGenerationConfig,
   newsGenerationConfigFromNewsRequest,
@@ -31,10 +34,16 @@ import {
   normalizeNewsGenerationRequest,
 } from "@/services/news/newsGenerationRequest";
 import {
+  RECENT_NEWS_REQUEST_LIMIT,
+  USER_NEWS_REQUESTS_MAX_LIMIT,
+  type PublishStatus,
+  type SerializedNewsRequest,
+} from "@/services/news/newsRequestTypes";
+import {
   findUserNewsRequest,
-  getNewsRequestsByUserId,
 } from "@/repositories/user";
 import { z } from "zod";
+import { resolveCoordsFromFirstAutocompleteHit } from "@/services/location/autocompleteServerCache";
 
 export const requestNewsBodySchema = newsGenerationRequestSchema;
 
@@ -127,8 +136,25 @@ function serializeStory(
   );
 }
 
+function readSearchQueries(searchQuery: unknown): SerializedNewsRequest["searchQueries"] {
+  const parsed = newsSearchQuerySchema.safeParse(searchQuery);
+  if (!parsed.success) {
+    return null;
+  }
+  const extraPairs = (parsed.data.planPairs ?? []).filter(
+    (pair) =>
+      pair.news !== parsed.data.news || pair.search !== parsed.data.search,
+  );
+  return {
+    news: parsed.data.news,
+    search: parsed.data.search,
+    extraPairs,
+  };
+}
+
 function serializeNewsRequest(
   request: NonNullable<Awaited<ReturnType<typeof getNewsRequestByIdForUser>>>,
+  createdStoryCount = 0,
 ) {
   const config = newsGenerationConfigFromNewsRequest(request);
   return {
@@ -141,6 +167,8 @@ function serializeNewsRequest(
     error: request.error,
     searchQuery: request.searchQuery,
     storyCount: config.storyCount,
+    createdStoryCount,
+    searchQueries: readSearchQueries(request.searchQuery),
     categories: config.categories,
     customQuery: config.customQuery,
     language: config.language,
@@ -149,6 +177,15 @@ function serializeNewsRequest(
     createdAt: request.createdAt.toISOString(),
     completedAt: request.completedAt?.toISOString() ?? null,
   };
+}
+
+async function serializeNewsRequestsWithStoryCounts(
+  rows: Array<NonNullable<Awaited<ReturnType<typeof getNewsRequestByIdForUser>>>>,
+) {
+  const counts = await countStoriesByNewsRequestIds(rows.map((row) => row.id));
+  return rows.map((row) =>
+    serializeNewsRequest(row, counts.get(row.id) ?? 0),
+  );
 }
 
 async function loadStoriesIfReady(
@@ -191,6 +228,9 @@ async function triggerNewsPipeline(params: {
       date: params.config.date,
       scope: params.config.scope,
       location: params.config.location,
+      latitude: params.config.latitude,
+      longitude: params.config.longitude,
+      locationRadiusMeters: params.config.locationRadiusMeters,
       categories: params.config.categories,
       customQuery: params.config.customQuery,
       storyCount: params.config.storyCount,
@@ -199,6 +239,24 @@ async function triggerNewsPipeline(params: {
       serpHl: params.config.serpHl,
     },
   });
+}
+
+function buildInitialSearchQuery(config: NewsGenerationConfig) {
+  return {
+    news: "pending",
+    search: "pending",
+    ...(config.latitude != null && config.longitude != null
+      ? {
+          locationGeo: {
+            latitude: config.latitude,
+            longitude: config.longitude,
+            ...(config.locationRadiusMeters != null
+              ? { radiusMeters: config.locationRadiusMeters }
+              : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 function newsRequestCreateFields(config: NewsGenerationConfig) {
@@ -211,7 +269,7 @@ function newsRequestCreateFields(config: NewsGenerationConfig) {
     customQuery: config.customQuery,
     language: config.language,
     sources: config.sources,
-    searchQuery: { news: "pending", search: "pending" },
+    searchQuery: buildInitialSearchQuery(config),
     status: "pending" as const,
     loadingLogs: ["Request accepted; pipeline queued."],
   };
@@ -219,7 +277,26 @@ function newsRequestCreateFields(config: NewsGenerationConfig) {
 
 /** Create or reuse a news request; trigger pipeline when new or retrying failed. */
 export async function requestNews(userId: string, body: RequestNewsBody) {
-  const config = normalizeNewsGenerationRequest(body);
+  let input = body;
+  const needsLocation = body.scope === "local" || body.scope === "both";
+  if (
+    needsLocation &&
+    body.location?.trim() &&
+    (body.latitude === undefined || body.longitude === undefined)
+  ) {
+    const coords = await resolveCoordsFromFirstAutocompleteHit(
+      body.location,
+    ).catch(() => null);
+    if (coords) {
+      input = {
+        ...body,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      };
+    }
+  }
+
+  const config = normalizeNewsGenerationRequest(input);
 
   const existing = await findUserNewsRequest({
     userId,
@@ -286,14 +363,40 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
   };
 }
 
-const RECENT_NEWS_REQUEST_LIMIT = 20;
-
 /** Recent news requests for the signed-in user (newest first). */
 export async function listRecentNewsRequests(userId: string) {
-  const rows = await getNewsRequestsByUserId(userId);
-  return rows
-    .slice(0, RECENT_NEWS_REQUEST_LIMIT)
-    .map((row) => serializeNewsRequest(row));
+  const rows = await listRecentNewsRequestsByUserId(
+    userId,
+    RECENT_NEWS_REQUEST_LIMIT,
+  );
+  return serializeNewsRequestsWithStoryCounts(rows);
+}
+
+/** Paginated news requests for the signed-in user (newest first). */
+export async function listUserNewsRequestsPage(input: {
+  userId: string;
+  page: number;
+  limit: number;
+}) {
+  const limit = Math.min(
+    Math.max(1, input.limit),
+    USER_NEWS_REQUESTS_MAX_LIMIT,
+  );
+  const page = Math.max(1, input.page);
+  const { total, rows } = await listNewsRequestsByUserIdPage({
+    userId: input.userId,
+    skip: (page - 1) * limit,
+    take: limit,
+  });
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  return {
+    newsRequests: await serializeNewsRequestsWithStoryCounts(rows),
+    page,
+    limit,
+    total,
+    totalPages,
+  };
 }
 
 export const PUBLIC_NEWS_STORIES_DEFAULT_LIMIT = 20;

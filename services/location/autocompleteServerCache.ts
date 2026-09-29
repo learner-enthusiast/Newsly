@@ -1,5 +1,6 @@
 import { getLogger } from "@/clients/logger";
 import { fetchLocationAutocompleteFromDbCache } from "@/services/location/autocompleteDbCache";
+import { pickFirstAutocompleteGeo } from "@/services/location/mapsAutocomplete";
 import {
   buildServerMemoryCacheKey,
   coarseAutocompleteGeoKey,
@@ -58,4 +59,11 @@ export async function fetchLocationAutocompleteCached(input: {
   });
 
   return results;
+}
+
+export async function resolveCoordsFromFirstAutocompleteHit(
+  query: string,
+): Promise<{ latitude: number; longitude: number } | null> {
+  const suggestions = await fetchLocationAutocompleteCached({ q: query });
+  return pickFirstAutocompleteGeo(suggestions);
 }

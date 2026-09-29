@@ -1,6 +1,10 @@
 /** DB enum `NewsRequestStatus`: pending → in progress, success → completed, failed → failed. */
 export type NewsRequestStatus = "pending" | "failed" | "success";
 
+export const RECENT_NEWS_REQUEST_LIMIT = 4;
+export const USER_NEWS_REQUESTS_PAGE_SIZE = 10;
+export const USER_NEWS_REQUESTS_MAX_LIMIT = 50;
+
 export type PublishStatus = "draft" | "published";
 
 export type ChatStoryCreationPayload = {
@@ -34,6 +38,13 @@ export type SerializedNewsRequest = {
   loadingLogs: string[];
   createdAt: string;
   completedAt: string | null;
+  /** Stories actually created for this request. */
+  createdStoryCount: number;
+  searchQueries: {
+    news: string;
+    search: string;
+    extraPairs: Array<{ news: string; search: string }>;
+  } | null;
 };
 
 export type SerializedTrendingNewsStory = {

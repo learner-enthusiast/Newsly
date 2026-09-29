@@ -1,6 +1,9 @@
 "use client";
 
-import { formatLocationLabelFromSuggestion } from "@/services/location/mapsAutocomplete";
+import {
+  formatLocationLabelFromSuggestion,
+  formatLocationStorageValueFromSuggestion,
+} from "@/services/location/mapsAutocomplete";
 import type {
   LocationAutocompleteSuggestion,
   LocationGeoAnchor,
@@ -39,7 +42,7 @@ export function LocationAutocomplete({
   placeholder,
   disabled,
   inputClassName = "rounded-md border px-3 py-2",
-}: LocationAutocompleteProps) {
+}: Readonly<LocationAutocompleteProps>) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -57,10 +60,10 @@ export function LocationAutocomplete({
 
   const selectSuggestion = useCallback(
     (suggestion: LocationAutocompleteSuggestion) => {
-      const label = formatLocationLabelFromSuggestion(suggestion);
+      const storageValue = formatLocationStorageValueFromSuggestion(suggestion);
       setPanelLockedAfterSelect(true);
       close();
-      onChange(label);
+      onChange(storageValue);
       onSelectSuggestion?.(suggestion);
     },
     [close, onChange, onSelectSuggestion],

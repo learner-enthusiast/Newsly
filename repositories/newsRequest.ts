@@ -1,25 +1,14 @@
 import { z } from "zod";
 import { prisma } from "@/db";
 import { newsScopeSchema } from "@/lib/newsScope";
+import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
 
 const newsRequestIdSchema = z.uuid("id must be a uuid");
 const userIdSchema = z.string().min(1, "userId is required");
 
 export { newsScopeSchema };
+export { newsSearchQuerySchema };
 export const newsRequestStatusSchema = z.enum(["pending", "failed", "success"]);
-
-export const newsSearchQuerySchema = z.object({
-  news: z.string().min(1),
-  search: z.string().min(1),
-  planPairs: z
-    .array(
-      z.object({
-        news: z.string().min(1),
-        search: z.string().min(1),
-      }),
-    )
-    .optional(),
-});
 
 const newsRequestWriteSchema = z.object({
   userId: userIdSchema,
@@ -136,6 +125,39 @@ export async function appendNewsRequestLoadingLog(id: string, message: string) {
       loadingLogs: { push: trimmed },
     },
   });
+}
+
+export async function listRecentNewsRequestsByUserId(
+  userId: string,
+  take: number,
+) {
+  return prisma.newsRequest.findMany({
+    where: { userId: userIdSchema.parse(userId) },
+    orderBy: { createdAt: "desc" },
+    take: Math.max(1, take),
+  });
+}
+
+export async function listNewsRequestsByUserIdPage(input: {
+  userId: string;
+  skip: number;
+  take: number;
+}) {
+  const userId = userIdSchema.parse(input.userId);
+  const take = Math.max(1, input.take);
+  const skip = Math.max(0, input.skip);
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.newsRequest.count({ where: { userId } }),
+    prisma.newsRequest.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+    }),
+  ]);
+
+  return { total, rows };
 }
 
 export async function deleteNewsRequest(id: string) {

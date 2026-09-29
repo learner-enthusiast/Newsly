@@ -3,6 +3,7 @@ import {
   type NewsSearchPlannerResult,
 } from "@/Agents/news/searchPlanner";
 import type { NewsScope } from "@/lib/newsScope";
+import { DEFAULT_SERP_LOCATION_RADIUS_METERS } from "@/lib/serpLocationGeo";
 import type { NewsGenerationConfig } from "@/services/news/newsGenerationRequest";
 import { normalizeSerpApiLocation } from "@/services/chat/serpApiLocation";
 import { z } from "zod";
@@ -128,6 +129,47 @@ function primaryPlaceLabel(location: string): string {
   return location.split(",")[0]?.trim() || location.trim();
 }
 
+/**
+ * Geo params for Serp **Google Search** (`engine=google`, e.g. `tbm=nws` only).
+ * `google_news` does not accept `lat`/`lon` — do not spread this onto `googleNewsParams`.
+ */
+export function buildSerpGoogleSearchGeoParams(
+  config: Pick<
+    NewsGenerationConfig,
+    "latitude" | "longitude" | "location" | "locationRadiusMeters"
+  >,
+): Record<string, unknown> {
+  if (config.latitude != null && config.longitude != null) {
+    const radius =
+      config.locationRadiusMeters ?? DEFAULT_SERP_LOCATION_RADIUS_METERS;
+    return {
+      lat: config.latitude,
+      lon: config.longitude,
+      // radius,
+    };
+  }
+  if (config.location?.trim()) {
+    return { location: normalizeSerpApiLocation(config.location) };
+  }
+  return {};
+}
+
+export function pickSerpSharedGeoFromSearchParams(
+  params: Record<string, unknown>,
+): Record<string, unknown> {
+  if (typeof params.lat === "number" && typeof params.lon === "number") {
+    return {
+      lat: params.lat,
+      lon: params.lon,
+      ...(typeof params.radius === "number" ? { radius: params.radius } : {}),
+    };
+  }
+  if (typeof params.location === "string" && params.location.length > 0) {
+    return { location: params.location };
+  }
+  return {};
+}
+
 function buildSourceSiteFilter(sources: string[]): string | null {
   if (sources.length === 0) {
     return null;
@@ -146,7 +188,7 @@ export function buildGoogleQueryFromContext(
 ): string {
   const base = buildNewsSearchQuery({
     type: tier === "local" ? "LOCAL" : "WORLD",
-    location: tier === "local" ? ctx.location ?? undefined : undefined,
+    location: tier === "local" ? (ctx.location ?? undefined) : undefined,
     date: ctx.date,
     channel,
   });
@@ -159,7 +201,9 @@ export function buildGoogleQueryFromContext(
     );
     parts.push(base.query.match(/after:.*before:.*/)?.[0] ?? "");
   } else if (tier === "local" && ctx.location && channel === "news") {
-    parts.push(`${primaryPlaceLabel(ctx.location)} economy business news ${ctx.date}`);
+    parts.push(
+      `${primaryPlaceLabel(ctx.location)} economy business news ${ctx.date}`,
+    );
   } else {
     parts.push(base.query);
   }
@@ -249,10 +293,15 @@ export function buildNewsSearchExecutionPlans(
     const newsQuery = buildGoogleQueryFromContext(tierCtx, tier, "news");
     const searchQuery = buildGoogleQueryFromContext(tierCtx, tier, "search");
 
-    const serpLocation =
-      tier === "local" && location
-        ? normalizeSerpApiLocation(location)
-        : undefined;
+    const googleSearchGeo =
+      tier === "local"
+        ? buildSerpGoogleSearchGeoParams({
+            latitude: config.latitude,
+            longitude: config.longitude,
+            location,
+            locationRadiusMeters: config.locationRadiusMeters,
+          })
+        : {};
 
     return {
       tier,
@@ -274,6 +323,7 @@ export function buildNewsSearchExecutionPlans(
           channel: "search",
         },
       },
+      /** `engine=google_news`: q + gl/hl only (no lat/lon/location). */
       googleNewsParams: {
         q: newsQuery,
         num,
@@ -286,7 +336,7 @@ export function buildNewsSearchExecutionPlans(
         num,
         hl,
         ...(gl ? { gl } : {}),
-        ...(serpLocation ? { location: serpLocation } : {}),
+        ...googleSearchGeo,
       },
       youtubeParams: {
         search_query: searchQuery,
@@ -313,7 +363,9 @@ export function buildNewsSearchPlanPairs(
   }));
 }
 
-export function buildArticleSelectionPrompt(config: NewsGenerationConfig): string {
+export function buildArticleSelectionPrompt(
+  config: NewsGenerationConfig,
+): string {
   const categoryHint =
     config.categories.length > 0
       ? ` Focus on categories: ${config.categories.join(", ")}.`
@@ -336,17 +388,16 @@ export function buildArticleSelectionPrompt(config: NewsGenerationConfig): strin
     scopeLine + categoryHint + sourceHint,
     "Judge geographic relevance from the article (LOCAL, REGIONAL, NATIONAL, GLOBAL).",
     "Do not treat every national or global policy story as local merely because the request mentions a city.",
-    config.customQuery
-      ? `User emphasis: ${config.customQuery}`
-      : null,
+    config.customQuery ? `User emphasis: ${config.customQuery}` : null,
   ]
     .filter(Boolean)
     .join(" ");
 }
 
-export function preferArticlesFromSources<
-  T extends { url: string },
->(articles: T[], sources: string[]): T[] {
+export function preferArticlesFromSources<T extends { url: string }>(
+  articles: T[],
+  sources: string[],
+): T[] {
   if (sources.length === 0) {
     return articles;
   }
@@ -354,7 +405,9 @@ export function preferArticlesFromSources<
   const other: T[] = [];
   for (const article of articles) {
     try {
-      const host = new URL(article.url).hostname.replace(/^www\./, "").toLowerCase();
+      const host = new URL(article.url).hostname
+        .replace(/^www\./, "")
+        .toLowerCase();
       const match = sources.some(
         (domain) => host === domain || host.endsWith(`.${domain}`),
       );
