@@ -11,17 +11,21 @@ import { useChatUiSuggestions } from "@/hooks/useChatUiSuggestions";
 import { useChatMessagePages } from "@/hooks/useChatMessagePages";
 import { usePotentialStoryTopicPages } from "@/hooks/usePotentialStoryTopicPages";
 import {
-  createOptimisticUserMessage,
+  getComposerPlaceholder,
+  getPotentialStoryTopicsFetchKey,
+  isMessageResearchBlockingChat,
+  shouldScheduleChatPoll,
+} from "@/components/chat/chatLayoutHelpers";
+import { listStoryIdsAwaitingChatUpdate } from "@/services/chat/chatStoryRequestMessage";
+import {
   mergeOptimisticChatMessages,
   pruneConfirmedOptimisticMessages,
   type OptimisticChatMessage,
 } from "@/services/chat/chatOptimisticUi";
+import { useChatLayoutSessionActions } from "@/hooks/useChatLayoutSessionActions";
 import { buildChatSuggestionsRefreshKey } from "@/services/chat/chatSuggestionRefreshKey";
-import {
-  hasAssistantReplyAfterLastUser,
-  type ChatSessionSummary,
-} from "@/services/chat/chatUiUtils";
-import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
+import type { ChatSessionSummary } from "@/services/chat/chatUiUtils";
+import type { ChatLayoutState } from "@/components/chat/chatLayoutTypes";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -31,7 +35,6 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Menu, PanelRight } from "lucide-react";
-import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -39,33 +42,23 @@ import {
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
-
-type ChatState = {
-  chatSessionId: string;
-  status: "initializing" | "ready" | "failed";
-  storyCreation: ChatStoryCreationPayload | null;
-  chatSession: {
-    id: string;
-    title: string | null;
-    newsStoryId: string | null;
-    isFromNewsStory: boolean;
-  };
-};
 
 const POLL_MS = 2000;
 
-export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
-  const router = useRouter();
+export function ChatLayout({
+  chatSessionId,
+}: Readonly<{ chatSessionId: string }>) {
   const messagePages = useChatMessagePages(chatSessionId);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
-  const [state, setState] = useState<ChatState | null>(null);
+  const [state, setState] = useState<ChatLayoutState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [creatingChat, setCreatingChat] = useState(false);
+  const [renderedChatSessionId, setRenderedChatSessionId] =
+    useState(chatSessionId);
   const [optimisticMessages, setOptimisticMessages] = useState<
     OptimisticChatMessage[]
   >([]);
@@ -73,6 +66,12 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
   const scrollToBottomRef = useRef<(() => void) | null>(null);
   const [showScrollToBottomFab, setShowScrollToBottomFab] = useState(false);
   const lastMessageCountRef = useRef(0);
+
+  if (chatSessionId !== renderedChatSessionId) {
+    setRenderedChatSessionId(chatSessionId);
+    setOptimisticMessages([]);
+    setShowScrollToBottomFab(false);
+  }
 
   const handleAtBottomChange = useCallback((atBottom: boolean) => {
     setShowScrollToBottomFab((current) => {
@@ -103,7 +102,9 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
 
   const loadState = useCallback(async () => {
     const response = await fetch(`/api/newsStoryChat/${chatSessionId}`);
-    const payload = (await response.json()) as ChatState & { error?: string };
+    const payload = (await response.json()) as ChatLayoutState & {
+      error?: string;
+    };
     if (!response.ok) {
       throw new Error(payload.error ?? "Failed to load chat");
     }
@@ -111,21 +112,34 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     return payload;
   }, [chatSessionId]);
 
-  useEffect(() => {
-    setOptimisticMessages((pending) =>
-      pruneConfirmedOptimisticMessages(pending, messagePages.messages),
-    );
-  }, [messagePages.messages]);
+  const prunedOptimisticMessages = useMemo(
+    () =>
+      pruneConfirmedOptimisticMessages(
+        optimisticMessages,
+        messagePages.messages,
+      ),
+    [optimisticMessages, messagePages.messages],
+  );
 
-  useEffect(() => {
-    setOptimisticMessages([]);
-    setShowScrollToBottomFab(false);
-  }, [chatSessionId]);
+  const visibleMessages = useMemo(
+    () =>
+      mergeOptimisticChatMessages(
+        messagePages.messages,
+        prunedOptimisticMessages,
+      ),
+    [messagePages.messages, prunedOptimisticMessages],
+  );
+
+  const pendingStoryRequestIds = useMemo(
+    () => listStoryIdsAwaitingChatUpdate(visibleMessages),
+    [visibleMessages],
+  );
 
   const shouldPoll =
     state === null ||
     state.status === "initializing" ||
-    state?.storyCreation?.isGenerating;
+    state?.storyCreation?.isGenerating ||
+    pendingStoryRequestIds.length > 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -139,8 +153,8 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
         }
         setError(null);
         void loadSessions();
-        await messagePages.refreshLatestPage();
-        if (payload.status === "initializing" || payload.storyCreation?.isGenerating) {
+        const refreshedMessages = await messagePages.refreshLatestPage();
+        if (shouldScheduleChatPoll(payload, refreshedMessages)) {
           timer = setTimeout(poll, POLL_MS);
         }
       } catch (pollError) {
@@ -150,6 +164,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
               ? pollError.message
               : "Failed to load chat",
           );
+          timer = setTimeout(poll, POLL_MS);
         }
       }
     }
@@ -165,6 +180,10 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
   }, [loadState, loadSessions, chatSessionId, shouldPoll, messagePages.refreshLatestPage]);
 
   useEffect(() => {
+    lastMessageCountRef.current = 0;
+  }, [chatSessionId]);
+
+  useEffect(() => {
     const count = messagePages.messages.length;
     if (count > lastMessageCountRef.current && conversationRef.current) {
       const nodes = conversationRef.current.querySelectorAll("[data-chat-message]");
@@ -175,11 +194,6 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
   }, [messagePages.messages.length]);
 
   const title = state?.chatSession.title ?? "Chat";
-  const visibleMessages = useMemo(
-    () =>
-      mergeOptimisticChatMessages(messagePages.messages, optimisticMessages),
-    [messagePages.messages, optimisticMessages],
-  );
 
   const suggestionsRefreshKey = useMemo(
     () => buildChatSuggestionsRefreshKey(visibleMessages),
@@ -191,22 +205,23 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     suggestionsRefreshKey,
   );
 
-  const potentialStoryTopicsFetchKey =
-    state?.status === "ready" &&
-    !state.storyCreation?.isGenerating &&
-    hasAssistantReplyAfterLastUser(visibleMessages) &&
-    suggestionsRefreshKey !== "no-assistant-yet"
-      ? suggestionsRefreshKey
-      : null;
+  const potentialStoryTopicsFetchKey = getPotentialStoryTopicsFetchKey({
+    status: state?.status,
+    storyCreation: state?.storyCreation,
+    visibleMessages,
+    suggestionsRefreshKey,
+  });
 
   const potentialStoryTopicsState = usePotentialStoryTopicPages(
     chatSessionId,
     potentialStoryTopicsFetchKey,
   );
 
-  const pipelineInProgress =
-    state?.status === "initializing" &&
-    !hasAssistantReplyAfterLastUser(visibleMessages);
+  const messageResearchBlocking = isMessageResearchBlockingChat({
+    status: state?.status,
+    storyCreation: state?.storyCreation,
+    visibleMessages,
+  });
 
   const showWelcome =
     state?.status === "ready" &&
@@ -224,261 +239,41 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
     [state?.storyCreation, visibleMessages.length],
   );
 
-  const composerDisabled = state == null || pipelineInProgress;
+  const composerDisabled = state == null || messageResearchBlocking;
 
-  const composerPlaceholder =
-    state != null && !pipelineInProgress
-      ? visibleMessages.length === 0
-        ? "Ask anything about the news…"
-        : "Ask a follow-up…"
-      : "Waiting for the assistant reply…";
+  const composerPlaceholder = getComposerPlaceholder(
+    state != null,
+    messageResearchBlocking,
+    visibleMessages.length,
+  );
 
-  async function sendMessage(
-    content: string,
-    options?: { shouldCreateStory?: boolean },
-  ) {
-    const trimmed = content.trim();
-    if (!trimmed || composerDisabled || sending) {
-      return;
-    }
-
-    const shouldCreateStory = options?.shouldCreateStory === true;
-    const optimisticMessage = createOptimisticUserMessage(trimmed);
-
-    setOptimisticMessages((current) => [...current, optimisticMessage]);
-    setDraft("");
-    setError(null);
-    const touchedAt = new Date().toISOString();
-    setSessions((current) =>
-      current.map((session) =>
-        session.id === chatSessionId
-          ? { ...session, updatedAt: touchedAt }
-          : session,
-      ),
-    );
-    setState((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        status: shouldCreateStory ? "ready" : "initializing",
-      };
-    });
-
-    setSending(true);
-
-    try {
-      const response = await fetch(`/api/chat/${chatSessionId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: trimmed,
-          shouldCreateStory,
-        }),
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        storyCreation?: ChatStoryCreationPayload | null;
-        status?: ChatState["status"];
-      };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to send message");
-      }
-
-      if (payload.storyCreation) {
-        setState((current) =>
-          current
-            ? {
-                ...current,
-                status: payload.status ?? "ready",
-                storyCreation: payload.storyCreation ?? null,
-              }
-            : current,
-        );
-      }
-
-      void loadSessions();
-      await loadState();
-      await messagePages.refreshLatestPage();
-    } catch (sendError) {
-      setOptimisticMessages((current) =>
-        current.filter((message) => message.id !== optimisticMessage.id),
-      );
-      setDraft(trimmed);
-      void loadState().catch(() => {
-        /* keep rollback UI if refetch fails */
-      });
-      const message =
-        sendError instanceof Error
-          ? sendError.message
-          : "Failed to send message";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setSending(false);
-    }
-  }
-
-  function handlePrompt(
-    prompt: string,
-    options?: { shouldCreateStory?: boolean },
-  ) {
-    if (composerDisabled) {
-      setDraft(prompt);
-      return;
-    }
-    void sendMessage(prompt, options);
-  }
-
-  function navigateToSession(id: string) {
-    setMobileHistoryOpen(false);
-    router.push(`/chat/${id}`);
-  }
-
-  async function handleNewChat() {
-    if (creatingChat) {
-      return;
-    }
-
-    setCreatingChat(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/chat", { method: "POST" });
-      const payload = (await response.json()) as {
-        chatSessionId?: string;
-        error?: string;
-      };
-      if (!response.ok || !payload.chatSessionId) {
-        throw new Error(payload.error ?? "Failed to start a new chat");
-      }
-
-      await loadSessions();
-      navigateToSession(payload.chatSessionId);
-    } catch (newChatError) {
-      toast.error(
-        newChatError instanceof Error
-          ? newChatError.message
-          : "Failed to start a new chat",
-      );
-    } finally {
-      setCreatingChat(false);
-    }
-  }
-
-  async function handleBookmarkChat(id: string, isBookmarked: boolean) {
-    const previous = sessions;
-    setSessions((current) =>
-      current.map((session) =>
-        session.id === id ? { ...session, isBookmarked } : session,
-      ),
-    );
-
-    try {
-      const response = await fetch(`/api/chat/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isBookmarked }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to update bookmark");
-      }
-      void loadSessions();
-    } catch (bookmarkError) {
-      setSessions(previous);
-      toast.error(
-        bookmarkError instanceof Error
-          ? bookmarkError.message
-          : "Bookmark update failed",
-      );
-    }
-  }
-
-  async function handleRenameChat(id: string, title: string) {
-    const previousSessions = sessions;
-    const previousTitle = state?.chatSession.title ?? null;
-
-    setSessions((current) =>
-      current.map((session) =>
-        session.id === id ? { ...session, title } : session,
-      ),
-    );
-    if (id === chatSessionId) {
-      setState((current) =>
-        current
-          ? {
-              ...current,
-              chatSession: { ...current.chatSession, title },
-            }
-          : current,
-      );
-    }
-
-    try {
-      const response = await fetch(`/api/chat/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to rename chat");
-      }
-      void loadSessions();
-      if (id === chatSessionId) {
-        void loadState();
-      }
-    } catch (renameError) {
-      setSessions(previousSessions);
-      if (id === chatSessionId) {
-        setState((current) =>
-          current
-            ? {
-                ...current,
-                chatSession: {
-                  ...current.chatSession,
-                  title: previousTitle,
-                },
-              }
-            : current,
-        );
-      }
-      toast.error(
-        renameError instanceof Error ? renameError.message : "Rename failed",
-      );
-    }
-  }
-
-  async function handleDeleteChat(id: string) {
-    const previousSessions = sessions;
-    const remaining = sessions.filter((session) => session.id !== id);
-    setSessions(remaining);
-
-    try {
-      const response = await fetch(`/api/chat/${id}`, { method: "DELETE" });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to delete chat");
-      }
-
-      if (id === chatSessionId) {
-        if (remaining.length > 0) {
-          navigateToSession(remaining[0]!.id);
-        } else {
-          void handleNewChat();
-        }
-      }
-
-      void loadSessions();
-    } catch (deleteError) {
-      setSessions(previousSessions);
-      toast.error(
-        deleteError instanceof Error ? deleteError.message : "Delete failed",
-      );
-    }
-  }
+  const {
+    sendMessage,
+    handlePrompt,
+    navigateToSession,
+    handleNewChat,
+    handleBookmarkChat,
+    handleRenameChat,
+    handleDeleteChat,
+  } = useChatLayoutSessionActions({
+    chatSessionId,
+    activeSessionTitle: state?.chatSession.title ?? null,
+    composerDisabled,
+    sending,
+    creatingChat,
+    sessions,
+    setSessions,
+    setState,
+    setOptimisticMessages,
+    setDraft,
+    setError,
+    setSending,
+    setCreatingChat,
+    setMobileHistoryOpen,
+    loadSessions,
+    loadState,
+    refreshLatestPage: messagePages.refreshLatestPage,
+  });
 
   const sidebar = (
     <ChatSidebar
@@ -548,7 +343,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
 
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-base font-semibold">{title}</h1>
-            {pipelineInProgress ? (
+            {messageResearchBlocking ? (
               <p className="text-xs text-muted-foreground">Research in progress…</p>
             ) : null}
           </div>
@@ -669,7 +464,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
             value={draft}
             onChange={setDraft}
             onSend={() => void sendMessage(draft)}
-            disabled={pipelineInProgress}
+            disabled={composerDisabled}
             sending={sending}
             placeholder={composerPlaceholder}
             chatSessionId={chatSessionId}

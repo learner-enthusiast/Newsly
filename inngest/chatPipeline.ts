@@ -177,6 +177,7 @@ import {
   CHAT_ASSISTANT_PROGRESS_PLACEHOLDER,
   isChatAssistantProgressPlaceholder,
 } from "@/services/chat/chatAssistantProgress";
+import { CHAT_STORY_REQUEST_PENDING_CONTENT } from "@/services/chat/chatStoryRequestMessage";
 import { NonRetriableError } from "inngest";
 import { z } from "zod";
 
@@ -938,8 +939,6 @@ export const messageChatPipelineFunction = inngest.createFunction(
         const storyHandoff = await step.run(
           "save-story-status-message",
           async () => {
-            const storyStatusContent =
-              "I'm researching and writing your news story. You'll be notified when it's ready to review.";
             const again = await findAssistantReplyAfterUserMessage(
               input.chatSessionId,
               input.chatMessageId,
@@ -950,7 +949,9 @@ export const messageChatPipelineFunction = inngest.createFunction(
                 "Story research queued.",
               );
               const updated = await patchChatMessage(again.id, {
-                content: storyStatusContent,
+                content: CHAT_STORY_REQUEST_PENDING_CONTENT,
+                isAStoryRequest: true,
+                newsStoryId: storyShell.storyId,
               });
               return toJsonSafeStepOutput({
                 storyId: storyShell.storyId,
@@ -962,8 +963,10 @@ export const messageChatPipelineFunction = inngest.createFunction(
             const message = await createChatMessage({
               chatSessionId: input.chatSessionId,
               role: "agent",
-              content: storyStatusContent,
+              content: CHAT_STORY_REQUEST_PENDING_CONTENT,
               loadingLogs: ["Story research queued."],
+              isAStoryRequest: true,
+              newsStoryId: storyShell.storyId,
             });
 
             return toJsonSafeStepOutput({

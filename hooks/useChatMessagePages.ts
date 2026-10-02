@@ -18,7 +18,7 @@ type UseChatMessagePagesResult = {
   olderError: string | null;
   loadOlderMessages: () => Promise<void>;
   retryLoadOlder: () => Promise<void>;
-  refreshLatestPage: () => Promise<void>;
+  refreshLatestPage: () => Promise<SerializedChatMessageListItem[]>;
   replaceWithLatestPage: (page: ChatMessagesPageResponse) => void;
 };
 
@@ -184,17 +184,24 @@ export function useChatMessagePages(
   const refreshLatestPage = useCallback(async () => {
     try {
       const page = await fetchMessagesPage(chatSessionId, {});
+      let merged: SerializedChatMessageListItem[] = [];
       setPageState((current) => {
         if (current.sessionId !== chatSessionId) {
+          merged = current.messages;
           return current;
         }
+        merged = mergeChatMessagesById(current.messages, page.messages);
         return {
           ...current,
-          messages: mergeChatMessagesById(current.messages, page.messages),
+          messages: merged,
         };
       });
+      return merged;
     } catch {
       /* polling refresh is best-effort */
+      return pageStateRef.current.sessionId === chatSessionId
+        ? pageStateRef.current.messages
+        : [];
     }
   }, [chatSessionId]);
 

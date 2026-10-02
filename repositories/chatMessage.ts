@@ -7,12 +7,16 @@ const chatMessageIdSchema = z.uuid("id must be a uuid");
 const chatSessionIdSchema = z.uuid("chatSessionId must be a uuid");
 const scriptIdSchema = z.uuid("scriptId must be a uuid");
 
+const newsStoryIdSchema = z.uuid("newsStoryId must be a uuid");
+
 const chatMessageWriteSchema = z.object({
   chatSessionId: chatSessionIdSchema,
   role: z.string().min(1),
   content: z.string().min(1),
   scriptId: scriptIdSchema.nullable().optional(),
   loadingLogs: z.array(z.string()).optional(),
+  isAStoryRequest: z.boolean().optional(),
+  newsStoryId: newsStoryIdSchema.nullable().optional(),
 });
 
 const chatMessagePutSchema = chatMessageWriteSchema.omit({ chatSessionId: true });
@@ -140,6 +144,8 @@ export async function listChatMessagesCursorPage(input: {
       content: true,
       createdAt: true,
       loadingLogs: true,
+      isAStoryRequest: true,
+      newsStoryId: true,
     },
   });
 
@@ -181,6 +187,32 @@ export async function patchChatMessage(id: string, input: ChatMessagePatchInput)
   return prisma.chatMessage.update({
     where: { id: chatMessageIdSchema.parse(id) },
     data: chatMessagePatchSchema.parse(input),
+  });
+}
+
+export async function updateChatStoryRequestAssistantMessage(input: {
+  chatSessionId: string;
+  userMessageId: string;
+  content: string;
+  newsStoryId: string;
+  loadingLog?: string;
+}) {
+  const assistant = await findAssistantReplyAfterUserMessage(
+    input.chatSessionId,
+    input.userMessageId,
+  );
+  if (!assistant) {
+    return null;
+  }
+
+  if (input.loadingLog?.trim()) {
+    await appendChatMessageLoadingLog(assistant.id, input.loadingLog);
+  }
+
+  return patchChatMessage(assistant.id, {
+    content: input.content,
+    isAStoryRequest: true,
+    newsStoryId: input.newsStoryId,
   });
 }
 

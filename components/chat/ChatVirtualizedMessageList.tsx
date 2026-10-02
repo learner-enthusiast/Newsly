@@ -5,7 +5,9 @@ import { UserMessage } from "@/components/chat/UserMessage";
 import { isOptimisticMessageId } from "@/services/chat/chatOptimisticUi";
 import { CHAT_LOAD_OLDER_SCROLL_THRESHOLD_PX } from "@/services/chat/chatMessagePagination";
 import type { SerializedChatMessageListItem } from "@/services/chat/chatMessagePagination";
+import { deriveStoryCreationPayloadForMessage } from "@/services/chat/chatStoryRequestMessage";
 import { isAssistantRole } from "@/services/chat/chatUiUtils";
+import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import {
   prefersReducedMotion,
   scrollElementToBottom,
@@ -41,18 +43,26 @@ type ChatVirtualizedMessageListProps = {
   sessionScrollKey?: string;
   onAtBottomChange?: (atBottom: boolean) => void;
   bindScrollToBottom?: (scrollToBottom: () => void) => void;
+  storyCreation?: ChatStoryCreationPayload | null;
 };
 
 function MessageRow({
   message,
+  storyCreation,
 }: {
   message: SerializedChatMessageListItem;
+  storyCreation?: ChatStoryCreationPayload | null;
 }) {
   if (isAssistantRole(message.role)) {
+    const inlineStoryCreation = deriveStoryCreationPayloadForMessage(
+      message,
+      storyCreation,
+    );
     return (
       <MemoAssistantMessage
         content={message.content}
         createdAt={message.createdAt}
+        storyCreation={inlineStoryCreation}
       />
     );
   }
@@ -81,6 +91,7 @@ export function ChatVirtualizedMessageList({
   sessionScrollKey,
   onAtBottomChange,
   bindScrollToBottom,
+  storyCreation,
 }: ChatVirtualizedMessageListProps) {
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(
     null,
@@ -388,7 +399,7 @@ export function ChatVirtualizedMessageList({
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <MemoMessageRow message={message} />
+              <MemoMessageRow message={message} storyCreation={storyCreation} />
             </div>
           );
         })}

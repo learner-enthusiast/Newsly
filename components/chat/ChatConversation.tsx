@@ -1,6 +1,5 @@
 "use client";
 
-import { ChatStoryCreationCard } from "@/components/chat/ChatStoryCreationCard";
 import { ChatDeepDiveBanner } from "@/components/chat/ChatDeepDiveBanner";
 import { ChatResearchProgressPanel } from "@/components/chat/ChatResearchProgressPanel";
 import { ChatVirtualizedMessageList } from "@/components/chat/ChatVirtualizedMessageList";
@@ -81,10 +80,6 @@ export function ChatConversation({
 
   const footer = (
     <>
-      {storyCreation ? (
-        <ChatStoryCreationCard storyCreation={storyCreation} />
-      ) : null}
-
       <ChatResearchProgressPanel messages={messages} status={status} />
 
       {status === "failed" ? (
@@ -121,6 +116,7 @@ export function ChatConversation({
       sessionScrollKey={sessionScrollKey}
       onAtBottomChange={onAtBottomChange}
       bindScrollToBottom={bindScrollToBottom}
+      storyCreation={storyCreation}
     />
   );
 }

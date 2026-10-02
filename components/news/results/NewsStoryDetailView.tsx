@@ -6,6 +6,11 @@ import { NewsRequestSummaryCard } from "@/components/news/results/NewsRequestSum
 import { NewsStoryCard } from "@/components/news/results/NewsStoryCard";
 import { NewsStoryPageHeader } from "@/components/news/results/NewsStoryPageHeader";
 import {
+  NewsStoryGeneratingSection,
+  shouldShowStoryGenerationUi,
+} from "@/components/news/results/NewsStoryGeneratingSection";
+import { useChatAsyncJobProgress } from "@/hooks/useChatAsyncJobProgress";
+import {
   NewsStoryStatusPanel,
   shouldRenderFullStoryBody,
   shouldShowStoryEngagement,
@@ -63,7 +68,17 @@ export function NewsStoryDetailView({
   onStoryUpdated,
 }: NewsStoryDetailViewProps) {
   const { story, newsRequest, canViewFullBriefing } = data;
-  const showFullBody = shouldRenderFullStoryBody(story);
+  const generationProgress = useChatAsyncJobProgress(
+    story.id,
+    story.createdAt,
+    story.isGenerating,
+  );
+  const showGenerationUi = shouldShowStoryGenerationUi(
+    story,
+    generationProgress,
+  );
+  const showFullBody =
+    shouldRenderFullStoryBody(story) && !generationProgress.catchingUp;
   const showEngagement = shouldShowStoryEngagement(story);
   const showStoryActions =
     showFullBody &&
@@ -76,6 +91,14 @@ export function NewsStoryDetailView({
 
   const rightSidebar = (
     <div className="flex flex-col gap-4">
+      {showGenerationUi ? (
+        <NewsStoryGeneratingSection
+          story={story}
+          progress={generationProgress}
+          pollWarning={pollWarning}
+          layout="sidebar"
+        />
+      ) : null}
       {newsRequest ? (
         <NewsRequestSummaryCard request={newsRequest} />
       ) : null}
@@ -150,7 +173,16 @@ export function NewsStoryDetailView({
             headerRef={headerRef}
           />
 
-          <NewsStoryStatusPanel story={story} pollWarning={pollWarning} />
+          {showGenerationUi ? (
+            <NewsStoryGeneratingSection
+              story={story}
+              progress={generationProgress}
+              pollWarning={pollWarning}
+              layout="main"
+            />
+          ) : (
+            <NewsStoryStatusPanel story={story} />
+          )}
 
           {isSignedIn ? <div className="lg:hidden">{rightSidebar}</div> : null}
 

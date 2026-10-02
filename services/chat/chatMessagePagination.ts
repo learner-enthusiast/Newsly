@@ -10,6 +10,8 @@ export type SerializedChatMessageListItem = {
   content: string;
   createdAt: string;
   loadingLogs: string[];
+  isAStoryRequest: boolean;
+  newsStoryId: string | null;
 };
 
 export type ChatMessageListCursor = {

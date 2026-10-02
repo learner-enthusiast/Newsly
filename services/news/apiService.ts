@@ -109,6 +109,7 @@ function serializeStoryBase(
     sourceUrls: story.sourceUrls,
     createdAt: story.createdAt.toISOString(),
     updatedAt: story.updatedAt.toISOString(),
+    loadingLogs: story.loadingLogs ?? [],
     canEdit:
       isUserCreated &&
       !isGenerating &&

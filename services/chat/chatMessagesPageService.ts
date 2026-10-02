@@ -24,6 +24,8 @@ function serializeRow(row: {
   content: string;
   createdAt: Date;
   loadingLogs: string[];
+  isAStoryRequest: boolean;
+  newsStoryId: string | null;
 }): SerializedChatMessageListItem {
   return {
     id: row.id,
@@ -31,6 +33,8 @@ function serializeRow(row: {
     content: row.content,
     createdAt: row.createdAt.toISOString(),
     loadingLogs: row.loadingLogs ?? [],
+    isAStoryRequest: row.isAStoryRequest,
+    newsStoryId: row.newsStoryId,
   };
 }
 

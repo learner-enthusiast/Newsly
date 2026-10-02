@@ -7,17 +7,21 @@ import { PerspectiveCards } from "@/components/chat/PerspectiveCards";
 import { formatMessageTimestamp } from "@/services/chat/chatUiUtils";
 import { parseAssistantMessage } from "@/services/chat/parseAssistantMessage";
 import { cn } from "@/lib/utils";
+import { ChatStoryCreationCard } from "@/components/chat/ChatStoryCreationCard";
+import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { Bot } from "lucide-react";
 
 type AssistantMessageProps = {
   content: string;
   createdAt: string;
+  storyCreation?: ChatStoryCreationPayload | null;
   className?: string;
 };
 
 export function AssistantMessage({
   content,
   createdAt,
+  storyCreation = null,
   className,
 }: AssistantMessageProps) {
   const parsed = parseAssistantMessage(content);
@@ -43,6 +47,10 @@ export function AssistantMessage({
             <ChatMarkdown content={content} className="text-foreground" />
           )}
         </div>
+
+        {storyCreation ? (
+          <ChatStoryCreationCard storyCreation={storyCreation} />
+        ) : null}
 
         {cardLinks.length > 0 ? (
           <div className="flex flex-wrap gap-3" data-chat-news-cards>

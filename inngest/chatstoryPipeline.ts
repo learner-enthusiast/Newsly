@@ -103,6 +103,11 @@ import { resolveNewsStoryImageUrl } from "@/services/news/articleImageUrl";
 import { canonicalResearchUrl } from "@/services/chat/normalizeSerpResults";
 import { todayIsoDateUtc } from "@/services/chat/researchPrompt";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
+import { updateChatStoryRequestAssistantMessage } from "@/repositories/chatMessage";
+import {
+  buildChatStoryRequestFailedMessage,
+  buildChatStoryRequestReadyMessage,
+} from "@/services/chat/chatStoryRequestMessage";
 import { NonRetriableError } from "inngest";
 
 export const CHAT_STORY_PIPELINE_EVENT = "chat/story.research.requested" as const;
@@ -141,6 +146,15 @@ export const chatStoryPipelineFunction = inngest.createFunction(
           { storyId: parsed.data.storyId },
         );
       });
+      await step.run("update-story-request-message-failed", async () => {
+        await updateChatStoryRequestAssistantMessage({
+          chatSessionId: parsed.data.chatSessionId,
+          userMessageId: parsed.data.chatMessageId,
+          newsStoryId: parsed.data.storyId,
+          content: buildChatStoryRequestFailedMessage(parsed.data.storyId),
+          loadingLog: "Story generation failed.",
+        });
+      });
     },
   },
   async ({ event, step }) => {
@@ -173,6 +187,26 @@ export const chatStoryPipelineFunction = inngest.createFunction(
     });
 
     if (story.skip) {
+      await step.run("update-story-request-message-already-ready", async () => {
+        const row = await getChatNewsStoryForPipeline({
+          storyId: input.storyId,
+          userId: input.userId,
+          chatSessionId: input.chatSessionId,
+        });
+        if (!row || isUserStoryGenerationFailed(row)) {
+          return;
+        }
+        await updateChatStoryRequestAssistantMessage({
+          chatSessionId: input.chatSessionId,
+          userMessageId: input.chatMessageId,
+          newsStoryId: input.storyId,
+          content: buildChatStoryRequestReadyMessage({
+            storyId: input.storyId,
+            title: row.title,
+          }),
+          loadingLog: "Story ready for review.",
+        });
+      });
       return toJsonSafeStepOutput({
         storyId: input.storyId,
         publishStatus: story.publishStatus,
@@ -358,6 +392,19 @@ export const chatStoryPipelineFunction = inngest.createFunction(
         }),
         { storyId: input.storyId },
       );
+    });
+
+    await step.run("update-story-request-message-ready", async () => {
+      await updateChatStoryRequestAssistantMessage({
+        chatSessionId: input.chatSessionId,
+        userMessageId: input.chatMessageId,
+        newsStoryId: input.storyId,
+        content: buildChatStoryRequestReadyMessage({
+          storyId: input.storyId,
+          title: synthesized.title,
+        }),
+        loadingLog: "Story ready for review.",
+      });
     });
 
     pipelineLog("run", "finished", { storyId: input.storyId });

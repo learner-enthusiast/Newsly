@@ -89,6 +89,7 @@ export type SerializedNewsStory = {
   userSaved: boolean;
   createdAt: string;
   updatedAt: string;
+  loadingLogs: string[];
   canEdit: boolean;
   originChatSessionId: string | null;
 };

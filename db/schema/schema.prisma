@@ -215,6 +215,8 @@ model ChatMessage {
   createdAt     DateTime @default(now()) @map("created_at")
   scriptId      String?  @map("script_id") @db.Uuid
   loadingLogs   String[] @default([]) @map("loading_logs")
+  isAStoryRequest Boolean @default(false) @map("is_a_story_request")
+  newsStoryId     String? @map("news_story_id") @db.Uuid
 
   chatSession ChatSession           @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
   embedding   ChatMessageEmbedding?

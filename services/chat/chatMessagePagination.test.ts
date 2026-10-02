@@ -14,7 +14,15 @@ function message(
   createdAt: string,
   role = "user",
 ): SerializedChatMessageListItem {
-  return { id, role, content: `body-${id}`, createdAt, loadingLogs: [] };
+  return {
+    id,
+    role,
+    content: `body-${id}`,
+    createdAt,
+    loadingLogs: [],
+    isAStoryRequest: false,
+    newsStoryId: null,
+  };
 }
 
 describe("chatMessagePagination", () => {
