@@ -17,6 +17,8 @@ This document is the primary technical and product documentation for the reposit
 - [System Architecture](#system-architecture)
 - [How Newsly Works](#how-newsly-works)
 - [News Pipeline](#news-pipeline)
+- [News Rerun Pipeline](#news-rerun-pipeline)
+- [Billing and Pro Subscription](#billing-and-pro-subscription)
 - [Chat Pipeline](#chat-pipeline)
 - [Story Deep Dive Pipeline](#story-deep-dive-pipeline)
 - [Chat → Story Pipeline](#chat--story-pipeline)
@@ -75,6 +77,8 @@ What distinguishes the implementation:
 - **Decision agents, not one prompt.** A guardrail classifier, a query enhancer, and a *determiner* decide whether to search, what to search, whether to scrape user-provided URLs, whether to pull YouTube evidence, and whether the user wants a story.
 - **Durable background work.** Research takes minutes; every pipeline is an Inngest function with step checkpoints, idempotency keys, timeouts, and failure notifications.
 - **Scoped domain.** Guardrails restrict chat research to financial, economic, company, market, trade, and commodity topics.
+- **Pro access (optional).** Razorpay one-time checkout grants time-boxed Pro (`User.plan` + `Subscription.currentPeriodEnd`) with a **5-day grace** after period end; some nav routes and research pages are Pro-gated server-side.
+- **Incremental briefing refresh.** A fulfilled briefing can be **rerun** to discover new sources since the last completion, update existing stories, or add net-new stories without creating a second `NewsRequest`.
 
 ---
 
@@ -101,7 +105,9 @@ USER
   ├── Bookmark community stories      (/newsStory/bookmarks)
   ├── Ask a research question         (/chat, /chat/[id])
   ├── Deep-dive a public story        (story page → chat)
-  └── Ask the chat to write a story   (draft → edit → publish)
+  ├── Ask the chat to write a story   (draft → edit → publish)
+  ├── Upgrade to Pro                  (/pricing → Razorpay Checkout)
+  └── Pro research surfaces           (/stockResearch, /MfResearch, /etfResearch)
            │
            ▼
    RESEARCH ENGINE (Inngest functions)
@@ -220,6 +226,32 @@ USER
 
 Clerk handles sign-in/sign-up. Each authenticated request upserts a local `User` row keyed by `clerkId`. See [Authentication and Authorization](#authentication-and-authorization).
 
+### News briefing rerun (incremental refresh)
+
+**Purpose** — After a briefing succeeds, refresh it with **new** web/YouTube evidence since the last completion without re-running the full initial pipeline from scratch.
+
+**User flow** — From `/news/[newsId]` the user starts a rerun when the request is `success` and not already rerunning. The wait panel switches to rerun copy; polling continues while `isRerunning` is true.
+
+**System flow** — `POST /api/news/[newsId]/rerun` sets `NewsRequest.isRerunning = true`, resets rerun-specific `loadingLogs`, and emits `news/pipeline.rerun.requested`. The [News Rerun Pipeline](#news-rerun-pipeline) dedupes known URLs/videos, researches only new hits, runs `StoryMatcherAgent` / `StoryUpdateDecisionAgent`, and may update stories or add new ones. On completion or “no new evidence”, `isRerunning` clears and an idempotent notification is written. Request `status` stays `success`; failures do not flip the briefing to `failed`.
+
+**Config fidelity** — Rerun rebuilds `NewsGenerationConfig` from the stored row: briefing **`date`** (not “today”), `location`, optional **`latitude` / `longitude`** columns (preferred over JSON in `searchQuery`), categories, custom query, story count, language, and source domains.
+
+### Pro subscription and pricing
+
+**Purpose** — Sell **Newsly Pro** as a one-time Razorpay Order (Standard Checkout), not recurring Razorpay Subscriptions API yet.
+
+**User flow** — `/pricing` shows the catalog (`GET /api/billing/catalog`). Signed-in users click **Upgrade to Pro** → `POST /api/payments/razorpay/create-order` → Razorpay modal → `POST /api/payments/razorpay/verify` on success. The UI uses `useIsProSubscriber` (reads `/api/me`, applies grace logic client-side via `userPlanAccess.ts`).
+
+**System flow** — Server creates a `Payment` row, Razorpay order (receipt ≤ 40 chars), verifies signature, fetches payment from Razorpay, sets `User.plan = PRO`, upserts `Subscription` with `currentPeriodEnd = now + accessDays` (30 for `PRO_MONTHLY`). `reconcileExpiredProSubscription()` runs on authenticated requests: after period end + **5 grace days**, downgrades to `FREE` and marks subscription `EXPIRED`. Optional `POST /api/payments/razorpay/webhook` for provider events.
+
+**Gating** — `requireProSubscriber()` on `/stockResearch`, `/MfResearch`, `/etfResearch`. Nav/sidebar links marked `proOnly` use `ProGatedNavLink` / `ProGatedSidebarLink`. **Client code must import `@/services/billing/userPlanAccess` only** (no Prisma); server reconciliation lives in `userPlan.ts`.
+
+See [Billing and Pro Subscription](#billing-and-pro-subscription).
+
+### Upstox API client (optional)
+
+`clients/upstoxClient.ts` wraps Upstox Developer API (OAuth token exchange, orders, market quotes, etc.) for future Pro research surfaces. Configure `UPSTOX_*` in `.env`; not wired into a user-facing pipeline in this repo yet.
+
 ### UI suggestion helpers
 
 `GET /api/chat/quickactions/[chatSessionId]` and `GET /api/chat/trythesequestion/[chatSessionId]` run small agents (`QuickActionAgent`, `TryTheseQuestionAgent`) that propose follow-up actions/questions for the chat UI. They read session context and do not browse the web.
@@ -244,9 +276,11 @@ flowchart TD
   SVC -->|inngest.send| ING[Inngest]
 
   ING --> NP[newsPipelineFunction]
+  ING --> NRR[newsRerunPipelineFunction]
   ING --> DD[chatPipelineFunction - deep dive first turn]
   ING --> MC[messageChatPipelineFunction]
   ING --> CS[chatStoryPipelineFunction]
+  ING --> PST[chatPotentialStoryTopicsFunction]
   ING --> RSI[researchSourceDescriptionFunction]
   ING --> CME[chatMessageEmbeddingFunction]
 
@@ -296,7 +330,7 @@ Search helpers (`SERP/index.ts`, `services/chat/chatSerpResearch.ts`, `services/
 
 ### Background processing
 
-Six Inngest functions registered in `inngest/index.ts` and served at `app/api/inngest/route.ts`. See [Background Processing](#background-processing).
+Eight Inngest functions registered in `inngest/index.ts` and served at `app/api/inngest/route.ts`. See [Background Processing](#background-processing).
 
 ### Persistence
 
@@ -454,6 +488,45 @@ For each synthesized story with a primary article source: create `NewsStory` (`n
 - Partial failures are tolerated: a failed Firecrawl URL becomes `null` and is skipped; YouTube steps can yield nothing; AI Overview follow-up is optional.
 - The user can retry from `/news/[newsId]` (`POST /api/news/[newsId]`).
 
+### Geo and search planning persistence
+
+During `save-search-queries`, the pipeline persists planned Serp parameters on `NewsRequest.searchQuery` and patches **`latitude`**, **`longitude`**, and `locationGeo` JSON when the client supplied coordinates. Downstream planning and **rerun** prefer the columns over JSON so local Serp `ll` / `location` stay stable across refreshes.
+
+---
+
+## News Rerun Pipeline
+
+**Event:** `news/pipeline.rerun.requested` · **Function:** `newsRerunPipelineFunction` (`inngest/reRunPipeline.ts`) · **Timeout:** 45 minutes · **Concurrency:** one run per `newsId`.
+
+**Trigger** — `POST /api/news/[newsId]/rerun` after a successful briefing (`status = success`, `isRerunning = false`). Sets `isRerunning = true`, replaces progress logs with rerun copy, enqueues `{ newsId }`.
+
+**Purpose** — Incremental discovery: find articles and YouTube videos **not** already attached to the briefing, then decide whether to attach sources only, rewrite an existing story, or synthesize a **net-new** story.
+
+```mermaid
+flowchart TD
+  RER[POST /api/news/id/rerun] --> FLAG[isRerunning true]
+  FLAG --> EV[news/pipeline.rerun.requested]
+  EV --> LOAD[load-news-request + load-previous-context]
+  LOAD --> PLAN[plan-search-queries - same planner as initial run]
+  PLAN --> SERP[fetch-and-normalize-serp - rerun boundary + drop known URLs]
+  SERP --> RES[research-new-evidence - selector scrape clean YouTube branch]
+  RES --> ZERO{new evidence?}
+  ZERO -->|no| DONE0[complete-no-new-evidence clear isRerunning notify]
+  ZERO -->|yes| MATCH[story-match - StoryMatcherAgent]
+  MATCH --> OUT[apply-rerun-outcomes - StoryUpdateDecision + NewsSynthesizer per story]
+  OUT --> DONE[clear isRerunning completion notification]
+```
+
+**Dedupe boundary** — `load-previous-context` builds canonical URL keys and known YouTube video IDs from existing `NewsSource` rows, plus a **time boundary** from request/story metadata (`services/news/newsRerunBoundary.ts`). Serp hits on or before the boundary or already known are skipped.
+
+**Agents (rerun-specific)** — `StoryMatcherAgent` maps new evidence to existing `NewsStory` ids or `newStoryCandidates`; `StoryUpdateDecisionAgent` chooses full rewrite vs attach-only per match; `NewsSynthesizerAgent` runs with `targetStoryCount: 1` and `fixedStoryId` for updates or creates one story per new candidate.
+
+**Shared with initial news pipeline** — Search planning, Serp fetch/normalize (with rerun mode), article selector, Firecrawl, content cleaner, YouTube select/transcript/analyze/synthesize helpers.
+
+**Failure semantics** — Unlike the initial pipeline, a rerun error does **not** set `NewsRequest.status = failed`; `onFailure` clears `isRerunning` and writes a failure notification. The original briefing remains readable.
+
+**UI** — `useNewsRequestPolling` / `newsRequestPollingLogic` keep polling while `status === pending` **or** `isRerunning`. `deriveProgressSteps` and `NewsGenerationWaitPanel` support `mode: "rerun"`.
+
 ---
 
 ## Chat Pipeline
@@ -567,7 +640,7 @@ For each surviving URL: Firecrawl → `NewsContentCleanerAgent` (date = today UT
 
 ### Assistant message and notification
 
-`save-assistant-message` stores an `agent` `ChatMessage` (which also enqueues `chat/message.index.requested`). `create-completion-notification` writes `CHAT_RESEARCH_COMPLETED` deduped by message. On unrecoverable error, `save-error-message` stores an agent message beginning `Research pipeline failed:` — the UI derives a `failed` status from that prefix — and `onFailure` writes `RESEARCH_FAILED`.
+`save-assistant-message` stores an `agent` `ChatMessage` (which also enqueues `chat/message.index.requested`). After a normal (non–story-handoff) reply, the pipeline may enqueue **`chat/potential-story-topics.requested`** so `chatPotentialStoryTopicsFunction` appends deduped topic labels to `ChatSession.potentialStories` for the composer UI. `create-completion-notification` writes `CHAT_RESEARCH_COMPLETED` deduped by message. On unrecoverable error, `save-error-message` stores an agent message beginning `Research pipeline failed:` — the UI derives a `failed` status from that prefix — and `onFailure` writes `RESEARCH_FAILED`.
 
 ---
 
@@ -883,7 +956,9 @@ All agents call `clients/AIClient.ts`, which wraps the OpenAI SDK (structured ou
 | **YouTube video agent** | Selection | Pick relevant videos | Serp video rows, prompt | selection | News |
 | **YouTube transcript agent** | Transformation | Analyze a transcript | transcript | structured analysis | News |
 | **YouTube transcript synthesize agent** | Synthesis | Merge analyses into facts | analyses | facts + overview | News |
-| **News synthesizer** | Synthesis | Cluster evidence into stories | articles, YouTube facts, target count | stories with sources | News, chat story |
+| **News synthesizer** | Synthesis | Cluster evidence into stories | articles, YouTube facts, target count | stories with sources | News, rerun, chat story |
+| **Story matcher** | Decision | Map new rerun evidence to existing stories or new topics | stories, new articles | story ids / candidates | News rerun |
+| **Story update decision** | Decision | Rewrite vs attach-only per matched story | story + new evidence | update plan | News rerun |
 | **News new-chat agent** | Transformation | Build deep-dive research brief | story, sources, request | research prompt | Deep dive |
 | **Chat model** | Synthesis | Final Markdown answer | prompt, history, research context | Markdown | Chat, deep dive |
 | **Chat story research gap agent** | Decision | Decide extra research for one story | prompt + evidence counts | gap plan | Chat story |
@@ -986,11 +1061,13 @@ flowchart LR
 | Event | Producer | Function (`id`) | Idempotency | Timeout |
 |-------|----------|-----------------|-------------|---------|
 | `news/pipeline.requested` | `POST /api/news`, retry route | `news-pipeline` | — (request status guards) | 45 m |
+| `news/pipeline.rerun.requested` | `POST /api/news/[newsId]/rerun` | `news-rerun-pipeline` | concurrency key `newsId` | 45 m |
 | `chat/pipeline.requested` | `POST /api/newsStoryChat`, `startNewChat` with story | `chat-pipeline` | — | 30 m |
 | `chat/message.research.requested` | `POST /api/chat`, `POST /api/chat/[id]` | `message-chat-research-pipeline` | `event.data.chatMessageId` | 30 m |
 | `chat/story.research.requested` | message chat pipeline | `chat-story-pipeline` | `event.data.storyId` | 45 m |
 | `research/source.index.requested` | `createResearchSource` (fire-and-forget) | `research-source-description-index` | — | 15 m |
 | `chat/message.index.requested` | `createChatMessage` (fire-and-forget) | `chat-message-embedding-index` | — | 15 m |
+| `chat/potential-story-topics.requested` | message chat pipeline after reply | `chat-potential-story-topics` | `event.data.chatMessageId` | 15 m |
 
 Why Inngest: research runs for minutes and calls flaky external APIs. `step.run` memoizes completed steps so a retry resumes rather than restarts; `onFailure` hooks write user-visible failure state; parallel `Promise.all` of steps runs independent branches concurrently. Locally, `pnpm inngest:dev` runs the dev server against `/api/inngest`. In production the SDK runs in dev mode (`INNGEST_DEV=1`) against a self-hosted dev server.
 
@@ -1023,10 +1100,13 @@ erDiagram
 ```
 
 ### User
-Clerk-synced identity (`clerkId`, email, profile). Holds `saved_stories UUID[]` (bookmarks). Created/updated by `upsertUserFromClerk` on every authenticated request.
+Clerk-synced identity (`clerkId`, email, profile). Holds `saved_stories UUID[]` (bookmarks) and **`plan`** (`FREE` | `PRO`, default `FREE`). Optional **`Subscription`** row (one per user) stores provider metadata and **`currentPeriodEnd`** for Pro expiry. Created/updated by `upsertUserFromClerk` on every authenticated request; Pro expiry reconciled in `getAuthenticatedUser()`.
+
+### Subscription / Payment / PaymentWebhookEvent
+Defined in `db/schema/billing.prisma`. **Subscription** tracks Pro period boundaries and status (`ACTIVE`, `EXPIRED`, etc.). **Payment** records Razorpay order/payment ids and amounts in paise. **PaymentWebhookEvent** dedupes provider webhook deliveries. Razorpay Orders checkout is one-time; recurring Razorpay Subscriptions API is not implemented.
 
 ### NewsRequest
-A briefing job: `date`, `scope`, `location`, `categories[]`, `customQuery`, `storyCount`, `language`, `sources[]`, planned `searchQuery` JSON, `status` (`pending` → `success` | `failed`), `error`, `completedAt`, `loadingLogs[]`. Created by the API; updated by the news pipeline; read by polling.
+A briefing job: `date`, `scope`, `location`, optional **`latitude` / `longitude`**, `categories[]`, `customQuery`, `storyCount`, `language`, `sources[]`, planned `searchQuery` JSON, `status` (`pending` → `success` | `failed`), **`isRerunning`**, `error`, `completedAt`, `loadingLogs[]`. Created by the API; updated by the news and rerun pipelines; read by polling.
 
 ### NewsStory
 See [Story Architecture](#story-architecture). Unique `(newsRequestId, slug)`; indexes on `(isUserCreated, publishStatus)`, `(ownerId, publishStatus)`, `(upvotes, publishedAt)`.
@@ -1097,7 +1177,8 @@ sequenceDiagram
 
 | Flow | Create | Poll | Interval | Stop when |
 |------|--------|------|----------|-----------|
-| Briefing | `POST /api/news` | `GET /api/news/[newsId]` | 3 s (`useNewsRequestPolling`) | `status !== pending` |
+| Briefing | `POST /api/news` | `GET /api/news/[newsId]` | 3 s (`useNewsRequestPolling`) | `status !== pending` and `isRerunning === false` |
+| Briefing rerun | `POST /api/news/[newsId]/rerun` | same | same | `isRerunning === false` |
 | Chat turn | `POST /api/chat[/id]` | `GET /api/newsStoryChat/[chatSessionId]` | `ChatLayout` `POLL_MS` | derived `status` is `ready`/`failed` and no story is generating |
 | Deep dive | `POST /api/newsStoryChat` | same as chat | same | same |
 | Chat story | (inside chat) | story page `GET /api/news/stories/[storyId]` and chat state | 5 s (`useNewsStoryPolling`) | `isGenerating` false |
@@ -1121,6 +1202,7 @@ Chat status is **derived from messages**: `initializing` while the last user mes
 | Type | Producer | Link |
 |------|----------|------|
 | `NEWS_PIPELINE_COMPLETED` / `NEWS_PIPELINE_FAILED` | News pipeline | `/news/[newsRequestId]` |
+| `NEWS_PIPELINE_RERUN_COMPLETED` / rerun failure variant | News rerun pipeline | `/news/[newsRequestId]` |
 | `CHAT_RESEARCH_COMPLETED` / `RESEARCH_FAILED` | Chat pipeline | `/chat/[chatSessionId]` |
 | `DEEP_DIVE_COMPLETED` / failed variant | Deep-dive pipeline | `/chat/[chatSessionId]` |
 | `CHAT_STORY_COMPLETED` / `RESEARCH_FAILED` | Chat story pipeline | `/newsStory/[storyId]` |
@@ -1187,7 +1269,10 @@ Why: autocomplete fires on every keystroke; prefix reuse and a shared persistent
 ## Authentication and Authorization
 
 - **Clerk** middleware (`proxy.ts`) runs on all app and API routes. Sign-in/up pages are Clerk components.
-- `requireAuthenticatedUser()` (`lib/auth.ts`) resolves the Clerk user and **upserts** the local `User` row; handlers return 401 when it is null.
+- `getAuthenticatedUser()` / `requireAuthenticatedUser()` (`lib/auth.ts`) resolve Clerk, **upsert** the local `User`, run **`reconcileExpiredProSubscription()`**, and return the user with **`subscription`** selected for `/api/me`.
+- **Effective Pro** — `isProSubscriberPlan(plan, currentPeriodEnd)` in `services/billing/userPlanAccess.ts`: plan must be `PRO` and now must be before `currentPeriodEnd + 5 days` (`PRO_SUBSCRIPTION_GRACE_DAYS`). Missing `currentPeriodEnd` with `PRO` is treated as active (legacy rows).
+- **`requireProSubscriber()`** — Server Components / routes for Pro-only pages; redirects or throws when not Pro.
+- **Client gating** — `hooks/useIsProSubscriber.ts` fetches `/api/me` and applies the same helpers from **`userPlanAccess`** (never import `userPlan.ts` in `"use client"` code — it pulls Prisma/pg).
 - **Ownership checks are server-side** in repositories/services: `getNewsRequestByIdForUser`, `getChatSessionByIdForUser`, `getNewsStoryByIdForUser`, `patchOwnedUserStory`, `publishOwnedUserStory`, `getChatNewsStoryForPipeline` all filter by user ID.
 - **Story visibility** (`newsStoryAccess.ts`): public = system story with successful request, or user story `published`; draft user stories are visible only to `ownerId`. Deep dive on a non-published user story returns 404.
 - **Public routes**: `GET /api/news/trending`, `GET /api/news/stories` (viewer optional), `GET /api/news/stories/[storyId]` (viewer optional, access-checked), location autocomplete/reverse, `/api/inngest` (Inngest signature model).
@@ -1300,26 +1385,27 @@ In prose: a user action creates a canonical record and an event. For chat paths,
 
 ## Pipeline Comparison
 
-| Capability | News Pipeline | Chat Pipeline | Deep Dive (first turn) | Chat Story Pipeline |
-|------------|---------------|---------------|------------------------|---------------------|
-| Primary purpose | Multi-story briefing | Answer one message | Answer one story-anchored brief | Write one story |
-| Event | `news/pipeline.requested` | `chat/message.research.requested` | `chat/pipeline.requested` | `chat/story.research.requested` |
-| Producer | `POST /api/news` | `POST /api/chat[/id]` | `POST /api/newsStoryChat` | Chat pipeline |
-| Guardrails | No (config, not free text) | Yes | Yes | No (already passed) |
-| Query enhancer | No | Yes | No | No |
-| Determiner | No (planner instead) | Yes | Yes (story creation off) | Gap agent instead |
-| Search scope | Multi-engine, multi-tier, budgeted by `storyCount` | Determiner-chosen calls, `CHAT_SERP_NUM` each | Determiner-chosen calls | Only if gap agent asks |
-| Existing research (pgvector) | No | Yes (top 8, ≥ 0.72) | No | Passed in from chat |
-| YouTube | Agent-selected videos, analyzed, synthesized | Top 3, raw transcripts | No | Passed in / gap |
-| AI Overview follow-up | Yes (weight 1.4) | If determiner asks (≤ 3) | If determiner asks | If gap agent asks |
-| Article selection | Selector with budgets | Selector 40 % / ≤ 6 | Selector 40 % / ≤ 6 | Prepared + gap |
-| Firecrawl | Selected articles | Selected + direct URLs | Selected | Gap URLs only |
-| Content cleaning | Yes | Yes | Yes | Yes (gap pages) |
-| Synthesis | NewsSynthesizer (≤ `storyCount`) | ChatModel | ChatModel | NewsSynthesizer (exactly 1) |
-| Output | `NewsStory[]` + `NewsSource` | `ChatMessage` | `ChatMessage` | Updated draft `NewsStory` + `NewsSource` |
-| Evidence persisted as | `NewsSource` | `ResearchSource` (+ embedding) | `ResearchSource` (+ embedding) | `NewsSource` |
-| Idempotency | Request status | `chatMessageId` | — | `storyId` |
-| Timeout | 45 m | 30 m | 30 m | 45 m |
+| Capability | News Pipeline | News Rerun | Chat Pipeline | Deep Dive (first turn) | Chat Story Pipeline |
+|------------|---------------|------------|---------------|------------------------|---------------------|
+| Primary purpose | Multi-story briefing | Incremental refresh | Answer one message | Answer one story-anchored brief | Write one story |
+| Event | `news/pipeline.requested` | `news/pipeline.rerun.requested` | `chat/message.research.requested` | `chat/pipeline.requested` | `chat/story.research.requested` |
+| Producer | `POST /api/news` | `POST /api/news/[id]/rerun` | `POST /api/chat[/id]` | `POST /api/newsStoryChat` | Chat pipeline |
+| Guardrails | No (config, not free text) | No | Yes | Yes | No (already passed) |
+| Query enhancer | No | No | Yes | No | No |
+| Determiner / matcher | Planner | StoryMatcher + update decision | Determiner | Determiner (story off) | Gap agent |
+| Search scope | Multi-engine, multi-tier | Same plans; known-URL filter | Determiner calls | Determiner calls | Gap-only extras |
+| Existing research (pgvector) | No | N/A | Yes (top 8, ≥ 0.72) | No | Passed from chat |
+| YouTube | Agent-selected, analyzed | New videos only | Top 3 transcripts | No | Passed in / gap |
+| AI Overview follow-up | Yes (weight 1.4) | Yes | If determiner asks | If determiner asks | If gap asks |
+| Article selection | Budgeted selector | Selector on new hits only | 40 % / ≤ 6 | 40 % / ≤ 6 | Prepared + gap |
+| Firecrawl | Selected articles | New URLs only | Selected + URLs | Selected | Gap URLs |
+| Content cleaning | Yes | Yes | Yes | Yes | Yes (gap) |
+| Synthesis | NewsSynthesizer (≤ `storyCount`) | Per-story update or +1 new | ChatModel | ChatModel | NewsSynthesizer (1) |
+| Output | `NewsStory[]` + sources | Updated/new stories | `ChatMessage` | `ChatMessage` | Draft story + sources |
+| Evidence | `NewsSource` | `NewsSource` | `ResearchSource` | `ResearchSource` | `NewsSource` |
+| Request status on error | `failed` | unchanged (`success`) | message failed | — | story failed |
+| Idempotency | Request status | `isRerunning` + concurrency | `chatMessageId` | — | `storyId` |
+| Timeout | 45 m | 45 m | 30 m | 30 m | 45 m |
 
 ---
 
@@ -1328,6 +1414,9 @@ In prose: a user action creates a canonical record and an event. For chat paths,
 | Feature | Pipeline / service | Primary output |
 |---------|--------------------|----------------|
 | News briefing | News pipeline | `NewsStory[]`, `NewsSource[]`, `loadingLogs` |
+| Briefing rerun | News rerun pipeline | Updated/new stories, sources; `isRerunning` |
+| Pro checkout | Razorpay create-order + verify | `Payment`, `Subscription`, `User.plan` |
+| Pro gating | `requireProSubscriber`, `userPlanAccess` | Access to Pro routes / nav |
 | Public feed / trending | `apiService`, `trendingNewsStoriesService` | Story lists |
 | Votes | `storyVoteService` | `NewsStoryVote`, counters |
 | Bookmarks | `savedStoryService` | `users.saved_stories` |
@@ -1391,11 +1480,11 @@ Pages render on the server; client components are limited to forms, polling, cha
 ```text
 .
 ├── app/                     # Next.js App Router: pages + app/api/* route handlers
-│   ├── api/                 # news, newsStoryChat, chat, notifications, location, me, inngest
-│   ├── news/, newsStory/, chat/, about/, blog/, privacy/, terms/, contact/
+│   ├── api/                 # news, newsStoryChat, chat, billing, payments, notifications, location, me, inngest
+│   ├── news/, newsStory/, chat/, pricing/, stockResearch/, MfResearch/, etfResearch/, about/, feature-request/
 │   └── sign-in/, sign-up/   # Clerk
 ├── Agents/                  # LLM agents (news/ and chat/) with Zod output schemas
-├── clients/                 # AIClient, Serp, Firecrawl, Inngest, env validation, logging, photo upload
+├── clients/                 # AIClient, Serp, Firecrawl, Inngest, Upstox, env validation, logging, photo upload
 ├── components/              # UI: news/, chat/, landing/, about/, marketing/, notifications/, ui/
 ├── db/
 │   ├── schema/schema.prisma # Prisma schema (loaded from db/schema)
@@ -1408,7 +1497,7 @@ Pages render on the server; client components are limited to forms, polling, cha
 ├── inngest/                 # Pipeline functions + index.ts registry
 ├── lib/                     # auth, model resolution, location client cache, utils
 ├── repositories/            # Thin Prisma access (one file per model, plus pgvector raw SQL)
-├── services/                # Business logic: news/, chat/, location/, notifications/, firecrawl/
+├── services/                # Business logic: news/, chat/, billing/, location/, notifications/, firecrawl/
 ├── SERP/                    # SerpAPI engine catalog and helpers
 ├── scripts/                 # Ops SQL (production migration-history repair)
 ├── instrumentation.ts       # Loads env validation at server start
@@ -1500,6 +1589,13 @@ Values are never committed. Required variables cause a startup error when missin
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_FOLDER` | No | Cover-photo upload (Cloudinary). Startup warns if neither Cloudinary nor S3 is set. |
 | `NEWS_STORY_PHOTO_FOLDER` | No | Cloudinary/S3 folder for story photos (default `newsly/stories`) |
 | `AWS_REGION`/`AWS_S3_REGION`, `AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_KEY_PREFIX`, `AWS_S3_PUBLIC_URL_BASE` | No | S3 fallback when Cloudinary is not fully configured |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | No* | Required for payments; startup allows missing keys but checkout returns 503 |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | No | If set, must match `RAZORPAY_KEY_ID` |
+| `RAZORPAY_WEBHOOK_SECRET` | No | Defaults to `RAZORPAY_KEY_SECRET` |
+| `BILLING_PRO_MONTHLY_PAISE` | No | Default `19900` (₹199) |
+| `UPSTOX_CLIENT_ID`, `UPSTOX_CLIENT_SECRET`, `UPSTOX_ACCESS_TOKEN`, `UPSTOX_ENV`, `UPSTOX_API_BASE_URL` | No | Optional Upstox client (`clients/upstoxClient.ts`) |
+
+\* Razorpay is optional for local dev unless you exercise `/pricing` checkout.
 
 ---
 
@@ -1513,7 +1609,7 @@ Values are never committed. Required variables cause a startup error when missin
 | Lint | `pnpm lint` |
 | Typecheck | `pnpm typecheck` |
 | Prisma | `pnpm db:generate` · `pnpm db:migrate` · `pnpm db:migrate:deploy` · `pnpm db:push` · `pnpm db:studio` · `pnpm db:migrate:reset` |
-| Tests (Node test runner via tsx) | `pnpm test:guardrails` · `pnpm test:query-enhancer` · `pnpm test:small-determiner` · `pnpm test:youtube-transcript` · `pnpm test:youtube-video` · `pnpm test:youtube-research` · `pnpm test:story-votes` · `pnpm test:news-generation` |
+| Tests (Node test runner via tsx) | `pnpm test:guardrails` · `pnpm test:query-enhancer` · `pnpm test:small-determiner` · `pnpm test:youtube-transcript` · `pnpm test:youtube-video` · `pnpm test:youtube-research` · `pnpm test:story-votes` · `pnpm test:news-generation` · `pnpm test:billing` |
 
 Adding a pipeline step: add `step.run("name", …)` in the relevant `inngest/*.ts`; keep side effects inside steps. Adding a function: export it from `inngest/index.ts` and add it to `inngestFunctions`. Schema change: edit `db/schema/schema.prisma` → `pnpm db:migrate` → update repositories.
 
@@ -1528,6 +1624,11 @@ All routes are under `app/api`. Auth = `requireAuthenticatedUser()` unless noted
 | `POST` | `/api/news` | Yes | Create `NewsRequest`, emit `news/pipeline.requested` | Yes |
 | `GET` | `/api/news` | Yes | Recent requests for the user | — |
 | `GET` / `POST` | `/api/news/[newsId]` | Yes | Poll request + stories / retry failed request | Poll / Yes |
+| `POST` | `/api/news/[newsId]/rerun` | Yes | Start incremental rerun → `news/pipeline.rerun.requested` | Yes |
+| `GET` | `/api/billing/catalog` | No | Public product catalog (amounts, access days) | — |
+| `POST` | `/api/payments/razorpay/create-order` | Yes | Create Razorpay order + `Payment` row | — |
+| `POST` | `/api/payments/razorpay/verify` | Yes | Verify signature, grant Pro | — |
+| `POST` | `/api/payments/razorpay/webhook` | Razorpay | Provider webhook (signature verified) | — |
 | `GET` | `/api/news/stories` | Optional | Paginated public stories (with viewer vote/saved flags) | — |
 | `GET` | `/api/news/trending` | No | Trending public stories (7 days, top 4) | — |
 | `GET` / `PATCH` | `/api/news/stories/[storyId]` | Optional / Owner | Story page payload (access-checked) / edit user story | — |
@@ -1550,6 +1651,60 @@ All routes are under `app/api`. Auth = `requireAuthenticatedUser()` unless noted
 | `POST` | `/api/location/reverse` | No | Coordinates → location label | — |
 | `GET` / `PUT` / `PATCH` / `DELETE` | `/api/me` | Yes | Current user profile | — |
 | `*` | `/api/inngest` | Inngest | Function serving endpoint | — |
+
+---
+
+## Billing and Pro Subscription
+
+Newsly Pro is implemented as **Razorpay Orders + Standard Checkout** (one-time payment per period), not the Razorpay Subscriptions API. Product catalog is code-defined in `services/billing/pricing.ts` (`PRO_MONTHLY`: default **₹199** / `19900` paise, **30** access days, overridable via `BILLING_PRO_MONTHLY_PAISE`).
+
+### Checkout flow
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant API as Next.js API
+  participant RZ as Razorpay
+  participant DB as PostgreSQL
+
+  B->>API: POST /api/payments/razorpay/create-order
+  API->>DB: Payment CREATED → PENDING, providerOrderId
+  API->>RZ: orders.create (server key + secret)
+  API-->>B: orderId, amount, keyId (must match server RAZORPAY_KEY_ID)
+  B->>RZ: Checkout.js modal
+  RZ-->>B: payment_id, order_id, signature
+  B->>API: POST /api/payments/razorpay/verify
+  API->>API: HMAC verify (razorpaySignature.ts)
+  API->>RZ: payments.fetch (confirm captured)
+  API->>DB: User.plan=PRO, Subscription.currentPeriodEnd, Payment SUCCESS
+  B->>API: GET /api/me → effective plan PRO
+```
+
+### Key modules
+
+| Module | Role |
+|--------|------|
+| `services/billing/pricing.ts` | Product ids, paise, public catalog for `/api/billing/catalog` |
+| `services/billing/razorpayConfig.ts` | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`; optional `NEXT_PUBLIC_RAZORPAY_KEY_ID` **must equal** `RAZORPAY_KEY_ID` if set |
+| `services/billing/createRazorpayOrder.ts` | Order + `Payment` row; receipt max **40** chars (`newsly_<uuidNoDashes>`) |
+| `services/billing/confirmRazorpayPayment.ts` | Idempotent verify path shared by client verify + webhook |
+| `services/billing/userPlanAccess.ts` | **Browser-safe** plan helpers (`planFromMeResponse`, grace logic) |
+| `services/billing/userPlan.ts` | **Server-only** `reconcileExpiredProSubscription()` |
+| `components/billing/UpgradeToProButton.tsx` | Loads Checkout.js, create-order → verify → `router.refresh()` |
+
+### Expiry and grace
+
+When `Subscription.currentPeriodEnd` is more than **five days** in the past, `reconcileExpiredProSubscription` sets `User.plan = FREE` and `Subscription.status = EXPIRED`. Until then, `isProSubscriberPlan` still returns true. Reconciliation runs on each `getAuthenticatedUser()` call (including `/api/me`).
+
+### Configuration pitfalls
+
+- **401 on Razorpay `standard_checkout/preferences`** — Checkout `key_id` does not match the keys used to create the order; align env vars and restart the dev server.
+- **500 on create-order** — Often invalid Razorpay credentials or receipt validation; server logs include Razorpay `description` via `razorpayErrors.ts`.
+- Payments routes return **503** when Razorpay env is unset (`isRazorpayConfigured()`).
+
+### Tests
+
+`pnpm test:billing` runs `services/billing/razorpaySignature.test.ts` and `userPlan.test.ts` (grace / effective Pro logic).
 
 ---
 
@@ -1590,6 +1745,8 @@ So: a single host runs Next.js as a systemd service (`newsly`), reads `.env` fro
 - **Story retries** — A failed chat-origin story is not retried automatically; the user creates a new one.
 - **Unwired code** — `Script` model, `relevanceAgent`, `chatstorySimilarityQueryagent`.
 - **Single-host deployment** with Inngest dev mode; no horizontal scaling story in the repo.
+- **Pro billing** — One-time Orders only; no auto-renewal or Razorpay Subscription plans; manual repurchase after period + grace.
+- **Upstox** — Client module only; no production UI flow wired yet.
 
 ---
 
