@@ -70,6 +70,8 @@ model NewsRequest {
   userId      String            @map("user_id")
   date        DateTime          @db.Date
   location    String?
+  latitude    Float?
+  longitude   Float?
   scope       NewsScope
   searchQuery Json              @map("search_query")
   status      NewsRequestStatus

@@ -23,8 +23,9 @@
  * Config:
  * - Reloads generation fields from the persisted `NewsRequest` via
  *   `newsGenerationConfigFromNewsRequest`.
- * - `rerunConfigFromRequest` sets `date` to **today (UTC)** for query freshness while keeping
- *   scope, categories, custom query, story count, language, and domain `sources`.
+ * - Rebuilds `NewsGenerationConfig` from the persisted row (`date`, `location`, optional
+ *   `latitude`/`longitude` columns, categories, custom query, story count, language, sources).
+ *   Serp date window uses the row’s briefing **`date`**, not “today”.
  *
  * Known-source dedupe (incremental semantics):
  * - `load-previous-context` — existing stories, per-story scraped articles, canonical URL keys,
@@ -222,10 +223,6 @@ const RERUN_LOADING_LOG_RESET = ["Refreshing your briefing."];
 
 const DEFAULT_NEWS_SYNTHESIZER_MODEL = "gpt-5.4-mini";
 
-function todayIsoDateUtc(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function youtubeSynthesisInput(
   synthesis: unknown,
 ): Pick<
@@ -260,19 +257,15 @@ function resolveNewsSynthesizerModel(): string {
   );
 }
 
-function rerunConfigFromRequest(
-  row: Parameters<typeof newsGenerationConfigFromNewsRequest>[0] & {
-    date: Date | string;
-  },
-): NewsGenerationConfig {
-  const base = newsGenerationConfigFromNewsRequest({
-    ...row,
-    date: row.date instanceof Date ? row.date : new Date(row.date),
-  });
-  return newsGenerationConfigSchema.parse({
-    ...base,
-    date: todayIsoDateUtc(),
-  });
+/** Run async work in order without `await` inside a `for` loop (eslint no-await-in-loop). */
+async function runSequentially<T>(
+  items: readonly T[],
+  run: (item: T) => Promise<void>,
+): Promise<void> {
+  await items.reduce(
+    (chain, item) => chain.then(() => run(item)),
+    Promise.resolve(),
+  );
 }
 
 export function enqueueNewsRerunPipeline(newsId: string) {
@@ -343,6 +336,8 @@ export const newsRerunPipelineFunction = inngest.createFunction(
             date: row.date.toISOString(),
             scope: row.scope,
             location: row.location,
+            latitude: row.latitude,
+            longitude: row.longitude,
             categories: row.categories,
             customQuery: row.customQuery,
             storyCount: row.storyCount,
@@ -372,6 +367,8 @@ export const newsRerunPipelineFunction = inngest.createFunction(
       date: string;
       scope: "local" | "world" | "both";
       location: string | null;
+      latitude: number | null;
+      longitude: number | null;
       categories: string[];
       customQuery: string | null;
       storyCount: number;
@@ -379,10 +376,21 @@ export const newsRerunPipelineFunction = inngest.createFunction(
       sources: string[];
       searchQuery: unknown;
     };
-    const config = rerunConfigFromRequest({
-      ...requestPayload,
-      date: new Date(requestPayload.date),
-    });
+    const config = newsGenerationConfigSchema.parse(
+      newsGenerationConfigFromNewsRequest({
+        date: new Date(requestPayload.date),
+        scope: requestPayload.scope,
+        location: requestPayload.location,
+        latitude: requestPayload.latitude,
+        longitude: requestPayload.longitude,
+        categories: requestPayload.categories,
+        customQuery: requestPayload.customQuery,
+        storyCount: requestPayload.storyCount,
+        language: requestPayload.language,
+        sources: requestPayload.sources,
+        searchQuery: requestPayload.searchQuery,
+      }),
+    );
 
     await step.run("reset-rerun-loading-logs", async () => {
       await patchNewsRequest(newsRequestId, {
@@ -473,7 +481,7 @@ export const newsRerunPipelineFunction = inngest.createFunction(
           await runResearchArticleSelectorAgent({
             userPrompt: researchPrompt,
             links,
-            topPercent: 80,
+            topPercent: 50,
             abortSignal: AbortSignal.timeout(180_000),
           })
         )
@@ -741,15 +749,16 @@ export const newsRerunPipelineFunction = inngest.createFunction(
         reason: string;
       }>;
 
-      for (const match of matches) {
+      const sourcesByStoryId = previousContext.sourcesByStoryId as Record<
+        string,
+        ResearchedArticle[]
+      >;
+
+      await runSequentially(matches, async (match) => {
         const story = await getNewsStoryById(match.storyId);
         if (!story) {
-          continue;
+          return;
         }
-        const sourcesByStoryId = previousContext.sourcesByStoryId as Record<
-          string,
-          ResearchedArticle[]
-        >;
         const existingArticles = sourcesByStoryId[match.storyId] ?? [];
         const newEvidenceArticles = match.resourceIds
           .map((id) => researchedByResource.get(id))
@@ -761,7 +770,7 @@ export const newsRerunPipelineFunction = inngest.createFunction(
             reason:
               "Matched new sources could not be loaded; skipping story update.",
           });
-          continue;
+          return;
         }
 
         const decision = await runStoryUpdateDecisionAgent({
@@ -789,22 +798,29 @@ export const newsRerunPipelineFunction = inngest.createFunction(
             storyId: story.id,
             reason: decision.reason,
           });
-          for (const article of newEvidenceArticles) {
-            const saved = await createNewsSource({
-              newsStoryId: story.id,
-              url: article.url,
-              domain: article.domain ?? new URL(article.url).hostname,
-              title: article.title,
-              scrapedContent: article.scrapedContent,
-              publishedAt: article.publishedAt,
-              sourceType: article.sourceType,
-            });
-            result.newSources += 1;
+          const attached = await Promise.all(
+            newEvidenceArticles.map((article) =>
+              createNewsSource({
+                newsStoryId: story.id,
+                url: article.url,
+                domain: article.domain ?? new URL(article.url).hostname,
+                title: article.title,
+                scrapedContent: article.scrapedContent,
+                publishedAt: article.publishedAt,
+                sourceType: article.sourceType,
+              }),
+            ),
+          );
+          result.newSources += attached.length;
+          if (attached.length > 0) {
             await patchNewsStory(story.id, {
-              newsSourceIds: [...story.newsSourceIds, saved.id],
+              newsSourceIds: [
+                ...story.newsSourceIds,
+                ...attached.map((row) => row.id),
+              ],
             });
           }
-          continue;
+          return;
         }
 
         const combinedArticles = [...existingArticles, ...newEvidenceArticles];
@@ -826,7 +842,7 @@ export const newsRerunPipelineFunction = inngest.createFunction(
             storyId: story.id,
             reason: "Synthesizer did not produce an updatable story.",
           });
-          continue;
+          return;
         }
 
         const storyImageUrl = resolveNewsStoryImageUrl({
@@ -851,28 +867,31 @@ export const newsRerunPipelineFunction = inngest.createFunction(
             .map((a) => canonicalResearchUrl(a.url))
             .filter(Boolean),
         );
-        const newSourceIds: string[] = [];
-        for (const source of updated.sources) {
+        const sourcesToCreate = updated.sources.filter((source) => {
           const key = canonicalResearchUrl(source.url);
-          if (key && existingUrlKeys.has(key)) {
-            continue;
-          }
-          const saved = await createNewsSource({
-            newsStoryId: story.id,
-            url: source.url,
-            domain: source.domain,
-            title: source.title,
-            scrapedContent: source.scrapedContent,
-            publishedAt: source.publishedAt,
-            sourceType: source.sourceType,
-            transcript: source.transcript,
-          });
-          newSourceIds.push(saved.id);
-          result.newSources += 1;
-        }
-        if (newSourceIds.length > 0) {
+          return !(key && existingUrlKeys.has(key));
+        });
+        const createdSources = await Promise.all(
+          sourcesToCreate.map((source) =>
+            createNewsSource({
+              newsStoryId: story.id,
+              url: source.url,
+              domain: source.domain,
+              title: source.title,
+              scrapedContent: source.scrapedContent,
+              publishedAt: source.publishedAt,
+              sourceType: source.sourceType,
+              transcript: source.transcript,
+            }),
+          ),
+        );
+        result.newSources += createdSources.length;
+        if (createdSources.length > 0) {
           await patchNewsStory(story.id, {
-            newsSourceIds: [...story.newsSourceIds, ...newSourceIds],
+            newsSourceIds: [
+              ...story.newsSourceIds,
+              ...createdSources.map((row) => row.id),
+            ],
           });
         }
 
@@ -880,7 +899,7 @@ export const newsRerunPipelineFunction = inngest.createFunction(
           storyId: story.id,
           reason: decision.reason,
         });
-      }
+      });
 
       let candidates = matchResult.newStoryCandidates as Array<{
         resourceIds: string[];
@@ -920,12 +939,12 @@ export const newsRerunPipelineFunction = inngest.createFunction(
         }
       }
 
-      for (const candidate of candidates) {
+      await runSequentially(candidates, async (candidate) => {
         const candidateArticles = candidate.resourceIds
           .map((id) => researchedByResource.get(id))
           .filter((row): row is ResearchedArticle => row != null);
         if (!candidateArticles.some((a) => a.isPrimaryStorySource !== false)) {
-          continue;
+          return;
         }
 
         const stories = await runNewsSynthesizerAgent({
@@ -941,7 +960,7 @@ export const newsRerunPipelineFunction = inngest.createFunction(
 
         const story = stories[0];
         if (!story || !storyHasPrimaryArticleSource(story)) {
-          continue;
+          return;
         }
 
         const storyImageUrl = resolveNewsStoryImageUrl({
@@ -965,26 +984,28 @@ export const newsRerunPipelineFunction = inngest.createFunction(
           loadingLogs: ["Story added during briefing refresh."],
         });
 
-        const newsSourceIds: string[] = [];
-        for (const source of story.sources) {
-          const saved = await createNewsSource({
-            newsStoryId: savedStory.id,
-            url: source.url,
-            domain: source.domain,
-            title: source.title,
-            scrapedContent: source.scrapedContent,
-            publishedAt: source.publishedAt,
-            sourceType: source.sourceType,
-            transcript: source.transcript,
+        const createdSources = await Promise.all(
+          story.sources.map((source) =>
+            createNewsSource({
+              newsStoryId: savedStory.id,
+              url: source.url,
+              domain: source.domain,
+              title: source.title,
+              scrapedContent: source.scrapedContent,
+              publishedAt: source.publishedAt,
+              sourceType: source.sourceType,
+              transcript: source.transcript,
+            }),
+          ),
+        );
+        result.newSources += createdSources.length;
+        if (createdSources.length > 0) {
+          await patchNewsStory(savedStory.id, {
+            newsSourceIds: createdSources.map((row) => row.id),
           });
-          newsSourceIds.push(saved.id);
-          result.newSources += 1;
-        }
-        if (newsSourceIds.length > 0) {
-          await patchNewsStory(savedStory.id, { newsSourceIds });
         }
         result.newStories.push({ storyId: savedStory.id });
-      }
+      });
 
       await appendNewsRequestLoadingLog(
         newsRequestId,

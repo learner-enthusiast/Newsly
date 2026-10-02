@@ -14,6 +14,8 @@ const newsRequestWriteSchema = z.object({
   userId: userIdSchema,
   date: z.coerce.date(),
   location: z.string().min(1).nullable().optional(),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
   scope: newsScopeSchema,
   searchQuery: newsSearchQuerySchema,
   status: newsRequestStatusSchema,

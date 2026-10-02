@@ -13,18 +13,26 @@ export type RazorpayServerConfig = {
 export function getRazorpayServerConfig(): RazorpayServerConfig {
   const keyId = read("RAZORPAY_KEY_ID");
   const keySecret = read("RAZORPAY_KEY_SECRET");
-  const publicKeyId =
-    read("NEXT_PUBLIC_RAZORPAY_KEY_ID") ?? keyId ?? undefined;
-
-  if (!keyId || !keySecret || !publicKeyId) {
+  const publicKeyFromEnv = read("NEXT_PUBLIC_RAZORPAY_KEY_ID");
+  console.log("keyId", keyId);
+  console.log("keySecret", keySecret);
+  console.log("publicKeyFromEnv", publicKeyFromEnv);
+  if (!keyId || !keySecret) {
     throw new Error(
-      "Razorpay is not configured. Set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and NEXT_PUBLIC_RAZORPAY_KEY_ID.",
+      "Razorpay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
+    );
+  }
+
+  if (publicKeyFromEnv && publicKeyFromEnv !== keyId) {
+    throw new Error(
+      "NEXT_PUBLIC_RAZORPAY_KEY_ID must match RAZORPAY_KEY_ID (same test/live key pair). Checkout 401s usually mean these diverged.",
     );
   }
 
   const webhookSecret = read("RAZORPAY_WEBHOOK_SECRET") ?? keySecret;
 
-  return { keyId, keySecret, webhookSecret, publicKeyId };
+  // Checkout must use the same key_id as Orders API (server keyId).
+  return { keyId, keySecret, webhookSecret, publicKeyId: keyId };
 }
 
 export function isRazorpayConfigured(): boolean {

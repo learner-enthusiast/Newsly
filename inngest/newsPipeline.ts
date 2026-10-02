@@ -329,6 +329,12 @@ export const newsPipelineFunction = inngest.createFunction(
                 }
               : {}),
           },
+          ...(config.latitude != null && config.longitude != null
+            ? {
+                latitude: config.latitude,
+                longitude: config.longitude,
+              }
+            : {}),
         });
         await appendNewsRequestLoadingLog(
           newsRequest.id,
@@ -626,7 +632,7 @@ export const newsPipelineFunction = inngest.createFunction(
               await runResearchArticleSelectorAgent({
                 userPrompt: researchPrompt,
                 links,
-                topPercent: 80,
+                topPercent: 50,
                 abortSignal: AbortSignal.timeout(180_000),
               })
             )
@@ -776,7 +782,7 @@ export const newsPipelineFunction = inngest.createFunction(
           location: config.location,
           articles: [...researched, ...youtubeArticles],
           youtubeTranscriptSynthesis: youtubeSynthesis,
-          userPrompt: `${researchPrompt}\n\nReturn at most ${config.storyCount} distinct stories backed by primary article sources. Do not pad with low-quality pages.`,
+          userPrompt: `${researchPrompt}\n\nReturn at most ${Math.ceil(config.storyCount * 1.5)} distinct stories backed by primary article sources. Do not pad with low-quality pages.`,
           targetStoryCount: config.storyCount,
           model: synthesizerModel,
           abortSignal: AbortSignal.timeout(300_000),

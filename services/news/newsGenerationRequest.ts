@@ -196,6 +196,8 @@ export function newsGenerationConfigFromNewsRequest(row: {
   date: Date;
   scope: z.infer<typeof newsScopeSchema>;
   location: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   categories?: string[] | null;
   customQuery?: string | null;
   storyCount?: number | null;
@@ -208,6 +210,9 @@ export function newsGenerationConfigFromNewsRequest(row: {
     ? storedSearch.data.locationGeo
     : undefined;
 
+  const latitude = row.latitude ?? locationGeo?.latitude ?? null;
+  const longitude = row.longitude ?? locationGeo?.longitude ?? null;
+
   return normalizeNewsGenerationRequest({
     date: row.date.toISOString().slice(0, 10),
     scope: row.scope,
@@ -217,8 +222,8 @@ export function newsGenerationConfigFromNewsRequest(row: {
     storyCount: row.storyCount ?? DEFAULT_STORY_COUNT,
     language: row.language ?? DEFAULT_LANGUAGE,
     sources: row.sources ?? [],
-    latitude: locationGeo?.latitude,
-    longitude: locationGeo?.longitude,
+    latitude: latitude ?? undefined,
+    longitude: longitude ?? undefined,
     radius: locationGeo?.radiusMeters,
   });
 }

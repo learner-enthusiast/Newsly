@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useIsProSubscriber } from "@/hooks/useIsProSubscriber";
-import type { UserPlan } from "@/services/billing/userPlan";
+import type { UserPlan } from "@/services/billing/userPlanAccess";
 import { useEffect, useState } from "react";
 
 type Catalog = {

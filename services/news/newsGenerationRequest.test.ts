@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildNewsSearchPlanPairs } from "./newsSearchPlanning";
 import {
+  newsGenerationConfigFromNewsRequest,
   normalizeNewsGenerationRequest,
   normalizeSourceDomains,
 } from "./newsGenerationRequest";
@@ -26,6 +27,24 @@ describe("normalizeNewsGenerationRequest", () => {
         scope: "both",
       }),
     );
+  });
+
+  it("prefers latitude and longitude columns over searchQuery.locationGeo", () => {
+    const config = newsGenerationConfigFromNewsRequest({
+      date: new Date("2026-10-02T00:00:00.000Z"),
+      scope: "local",
+      location: "Belgachia, Kolkata, India",
+      latitude: 22.59,
+      longitude: 88.39,
+      searchQuery: {
+        news: "pending",
+        search: "pending",
+        locationGeo: { latitude: 1, longitude: 2 },
+      },
+    });
+    assert.equal(config.date, "2026-10-02");
+    assert.equal(config.latitude, 22.59);
+    assert.equal(config.longitude, 88.39);
   });
 
   it("defaults Serp radius when latitude and longitude are provided", () => {

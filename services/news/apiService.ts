@@ -262,6 +262,9 @@ function newsRequestCreateFields(config: NewsGenerationConfig) {
   return {
     date: toRequestDate(config.date),
     location: config.location,
+    ...(config.latitude != null && config.longitude != null
+      ? { latitude: config.latitude, longitude: config.longitude }
+      : {}),
     scope: config.scope,
     storyCount: config.storyCount,
     categories: config.categories,
@@ -315,6 +318,9 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
         customQuery: config.customQuery,
         language: config.language,
         sources: config.sources,
+        ...(config.latitude != null && config.longitude != null
+          ? { latitude: config.latitude, longitude: config.longitude }
+          : {}),
       });
       await appendNewsRequestLoadingLog(
         existing.id,

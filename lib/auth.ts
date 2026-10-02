@@ -1,4 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { prisma } from "@/db";
+import { reconcileExpiredProSubscription } from "@/services/billing/userPlan";
 import { upsertUserFromClerk } from "@/repositories/user";
 
 export async function getAuthenticatedUser() {
@@ -14,7 +16,21 @@ export async function getAuthenticatedUser() {
     return null;
   }
 
-  return upsertUserFromClerk(clerkUser);
+  const user = await upsertUserFromClerk(clerkUser);
+  await reconcileExpiredProSubscription(user.id);
+
+  return prisma.user.findUnique({
+    where: { id: user.id },
+    include: {
+      subscription: {
+        select: {
+          status: true,
+          currentPeriodEnd: true,
+          currentPeriodStart: true,
+        },
+      },
+    },
+  });
 }
 
 export async function requireAuthenticatedUser() {

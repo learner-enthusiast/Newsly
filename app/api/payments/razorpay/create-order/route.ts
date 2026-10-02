@@ -4,6 +4,7 @@ import { requireAuthenticatedUser } from "@/lib/auth";
 import { createRazorpayOrderForUser } from "@/services/billing/createRazorpayOrder";
 import { createOrderBodySchema } from "@/services/billing/pricing";
 import { isRazorpayConfigured } from "@/services/billing/razorpayConfig";
+import { razorpayErrorMessage } from "@/services/billing/razorpayErrors";
 
 export async function POST(request: Request) {
   if (!isRazorpayConfigured()) {
@@ -40,11 +41,20 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(order);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Order creation failed";
+    const message = razorpayErrorMessage(error);
     if (message === "already_pro") {
       return NextResponse.json({ error: "You already have Pro access." }, { status: 400 });
     }
-    console.error("[razorpay] create-order failed", message);
+    if (
+      message.includes("NEXT_PUBLIC_RAZORPAY_KEY_ID must match RAZORPAY_KEY_ID")
+    ) {
+      console.error("[razorpay] create-order config", message);
+      return NextResponse.json(
+        { error: "Payment keys misconfigured on the server." },
+        { status: 503 },
+      );
+    }
+    console.error("[razorpay] create-order failed", message, error);
     return NextResponse.json({ error: "Could not create payment order." }, { status: 500 });
   }
 }

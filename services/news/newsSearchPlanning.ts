@@ -106,7 +106,7 @@ export function serpResultsPerEngine(storyCount: number): number {
 }
 
 export function maxArticlesToScrape(storyCount: number): number {
-  return Math.min(20, Math.max(storyCount + 2, storyCount * 2));
+  return Math.max(10, storyCount * 3);
 }
 
 export function newsSearchContextFromConfig(
