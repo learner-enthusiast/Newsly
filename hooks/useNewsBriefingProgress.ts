@@ -40,9 +40,12 @@ export function useNewsBriefingProgress(
   requestId: string,
   createdAt: string,
   status: NewsRequestStatus,
+  isRerunning = false,
+  rerunStartedAtMs: number | null = null,
 ) {
   const [now, setNow] = useState(() => Date.now());
   const createdMs = parseNewsRequestCreatedAtMs(createdAt, now);
+  const rerunAnchorMs = rerunStartedAtMs ?? now;
   const [session, setSession] = useState<ProgressSession>(() => ({
     requestId,
     watchedPending: status === "pending",
@@ -68,7 +71,7 @@ export function useNewsBriefingProgress(
   const catchUpElapsed = catchUp ? now - catchUp.startedAt : 0;
   const catchingUp =
     watchedPending && status === "success" && catchUpElapsed < NEWS_BRIEFING_CATCH_UP_MS;
-  const showWait = status === "pending" || catchingUp;
+  const showWait = status === "pending" || catchingUp || isRerunning;
   const showResults = status === "success" && !showWait;
 
   useEffect(() => {
@@ -82,7 +85,9 @@ export function useNewsBriefingProgress(
     return () => window.clearInterval(id);
   }, [showWait, catchingUp, status]);
 
-  const pending = pendingBriefingPercent(createdMs, now);
+  const pending = isRerunning
+    ? pendingBriefingPercent(rerunAnchorMs, now)
+    : pendingBriefingPercent(createdMs, now);
   let percent = pending.percent;
   if (showResults) {
     percent = 100;
@@ -92,7 +97,7 @@ export function useNewsBriefingProgress(
 
   return {
     percent,
-    overdue: status === "pending" && pending.overdue,
+    overdue: (status === "pending" || isRerunning) && pending.overdue,
     catchingUp,
     showWait,
     showResults,

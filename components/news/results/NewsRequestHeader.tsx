@@ -12,7 +12,8 @@ import {
 } from "@/services/news/newsRequestDisplay";
 import type { SerializedNewsRequest } from "@/services/news/newsRequestTypes";
 import { cn } from "@/lib/utils";
-import { Calendar, CheckCircle2, MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Calendar, CheckCircle2, MapPin, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { RefObject } from "react";
 
@@ -21,6 +22,8 @@ type NewsRequestHeaderProps = {
   storyCountFound: number;
   className?: string;
   headerRef?: RefObject<HTMLElement | null>;
+  onRerun?: () => void;
+  rerunBusy?: boolean;
 };
 
 export function NewsRequestHeader({
@@ -28,7 +31,11 @@ export function NewsRequestHeader({
   storyCountFound,
   className,
   headerRef,
+  onRerun,
+  rerunBusy = false,
 }: NewsRequestHeaderProps) {
+  const rerunDisabled =
+    request.isRerunning || rerunBusy || request.status !== "success";
   const title = formatNewsRequestTitle(request);
   const generatedLabel = formatRequestTimestamp(request.createdAt);
   const completedLabel = formatRequestTimestamp(request.completedAt);
@@ -70,7 +77,32 @@ export function NewsRequestHeader({
           </div>
         </div>
 
-        <div className="shrink-0 space-y-1 text-sm lg:text-right">
+        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end lg:text-right">
+          {onRerun && request.status === "success" ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={rerunDisabled}
+              onClick={onRerun}
+              className="w-full sm:w-auto"
+            >
+              <RefreshCw
+                className={cn(
+                  "size-4",
+                  request.isRerunning && "animate-spin",
+                )}
+                data-icon="inline-start"
+                aria-hidden
+              />
+              {request.isRerunning
+                ? "Refreshing…"
+                : rerunBusy
+                  ? "Starting…"
+                  : "Rerun"}
+            </Button>
+          ) : null}
+          <div className="space-y-1 text-sm">
           {request.status === "success" ? (
             <p className="inline-flex items-center gap-1.5 font-medium text-emerald-800 dark:text-emerald-400">
               <CheckCircle2 className="size-4" aria-hidden />
@@ -89,6 +121,7 @@ export function NewsRequestHeader({
               Completed on {completedLabel}
             </p>
           ) : null}
+          </div>
         </div>
       </div>
     </header>

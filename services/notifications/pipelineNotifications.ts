@@ -8,6 +8,7 @@ const LOG_PREFIX = "[pipeline-notification]";
 
 export const PIPELINE_NOTIFICATION_TYPES = {
   NEWS_PIPELINE_COMPLETED: "NEWS_PIPELINE_COMPLETED",
+  NEWS_PIPELINE_RERUN_COMPLETED: "NEWS_PIPELINE_RERUN_COMPLETED",
   CHAT_RESEARCH_COMPLETED: "CHAT_RESEARCH_COMPLETED",
   DEEP_DIVE_COMPLETED: "DEEP_DIVE_COMPLETED",
   CHAT_STORY_COMPLETED: "CHAT_STORY_COMPLETED",
@@ -106,6 +107,45 @@ export function newsPipelineCompletedNotification(input: {
     dedupeKey: buildDedupeKey(
       PIPELINE_NOTIFICATION_TYPES.NEWS_PIPELINE_COMPLETED,
       input.newsRequestId,
+    ),
+  };
+}
+
+export function newsPipelineRerunCompletedNotification(input: {
+  userId: string;
+  newsRequestId: string;
+  eventId: string;
+  summary: string;
+}) {
+  return {
+    userId: input.userId,
+    type: PIPELINE_NOTIFICATION_TYPES.NEWS_PIPELINE_RERUN_COMPLETED,
+    title: "Briefing refreshed",
+    message: input.summary,
+    link: newsRequestPagePath(input.newsRequestId),
+    read: false as const,
+    dedupeKey: buildDedupeKey(
+      PIPELINE_NOTIFICATION_TYPES.NEWS_PIPELINE_RERUN_COMPLETED,
+      `${input.newsRequestId}:${input.eventId}`,
+    ),
+  };
+}
+
+export function newsPipelineRerunFailedNotification(input: {
+  userId: string;
+  newsRequestId: string;
+  eventId: string;
+}) {
+  return {
+    userId: input.userId,
+    type: PIPELINE_NOTIFICATION_TYPES.RESEARCH_FAILED,
+    title: "Briefing refresh failed",
+    message: "We couldn't refresh your news briefing.",
+    link: newsRequestPagePath(input.newsRequestId),
+    read: false as const,
+    dedupeKey: buildDedupeKey(
+      `${PIPELINE_NOTIFICATION_TYPES.RESEARCH_FAILED}:news-rerun`,
+      `${input.newsRequestId}:${input.eventId}`,
     ),
   };
 }

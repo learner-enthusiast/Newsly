@@ -44,6 +44,9 @@ type NewsResultsViewProps = {
   onSaveToggle?: (storyId: string, nextSaved: boolean) => Promise<void>;
   onRetry?: () => void;
   retrying?: boolean;
+  onRerun?: () => void;
+  rerunBusy?: boolean;
+  rerunStartedAtMs?: number | null;
 };
 
 export function NewsResultsView({
@@ -60,6 +63,9 @@ export function NewsResultsView({
   onSaveToggle,
   onRetry,
   retrying,
+  onRerun,
+  rerunBusy,
+  rerunStartedAtMs = null,
 }: NewsResultsViewProps) {
   const request = data?.newsRequest;
   const stories = data?.stories ?? [];
@@ -72,10 +78,13 @@ export function NewsResultsView({
   const listRef = useRef<HTMLDivElement>(null);
 
   const filteredStories = filterStoriesByCategoryTab(stories, categoryTab);
+  const isRerunning = request?.isRerunning === true;
   const briefing = useNewsBriefingProgress(
     request?.id ?? newsId,
     request?.createdAt ?? "1970-01-01T00:00:00.000Z",
     request?.status ?? "pending",
+    isRerunning,
+    rerunStartedAtMs,
   );
 
   useLayoutEffect(() => {
@@ -225,15 +234,18 @@ export function NewsResultsView({
             request={request}
             storyCountFound={storyCountFound}
             headerRef={headerRef}
+            onRerun={onRerun}
+            rerunBusy={rerunBusy}
           />
 
           <div className="lg:hidden">{rightSidebar}</div>
 
-          {isPending || briefing.catchingUp ? (
+          {isPending || isRerunning || briefing.catchingUp ? (
             <NewsGenerationWaitPanel
               percent={briefing.percent}
               overdue={briefing.overdue}
-              catchingUp={briefing.catchingUp && !isPending}
+              catchingUp={briefing.catchingUp && !isPending && !isRerunning}
+              mode={isRerunning ? "rerun" : "initial"}
             />
           ) : null}
 

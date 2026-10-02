@@ -6,10 +6,23 @@ import {
 } from "./newsRequestPollingLogic";
 
 describe("shouldScheduleNextPoll", () => {
-  it("continues only while pending", () => {
-    assert.equal(shouldScheduleNextPoll("pending"), true);
-    assert.equal(shouldScheduleNextPoll("success"), false);
-    assert.equal(shouldScheduleNextPoll("failed"), false);
+  it("continues while pending or rerunning", () => {
+    assert.equal(
+      shouldScheduleNextPoll({ status: "pending", isRerunning: false }),
+      true,
+    );
+    assert.equal(
+      shouldScheduleNextPoll({ status: "success", isRerunning: true }),
+      true,
+    );
+    assert.equal(
+      shouldScheduleNextPoll({ status: "success", isRerunning: false }),
+      false,
+    );
+    assert.equal(
+      shouldScheduleNextPoll({ status: "failed", isRerunning: false }),
+      false,
+    );
   });
 });
 

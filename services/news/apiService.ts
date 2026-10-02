@@ -1,6 +1,6 @@
 import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
 import { inngest } from "@/clients/inngestClient";
-import { NEWS_PIPELINE_EVENT } from "@/inngest";
+import { enqueueNewsRerunPipeline, NEWS_PIPELINE_EVENT } from "@/inngest";
 import {
   appendNewsRequestLoadingLog,
   createNewsRequest,
@@ -172,6 +172,7 @@ function serializeNewsRequest(
     language: config.language,
     sources: config.sources,
     loadingLogs: request.loadingLogs,
+    isRerunning: request.isRerunning,
     createdAt: request.createdAt.toISOString(),
     completedAt: request.completedAt?.toISOString() ?? null,
   };
@@ -594,8 +595,55 @@ export async function getNewsRequestResult(
     userId,
   );
 
+  const createdStoryCount =
+    stories.length > 0
+      ? stories.length
+      : (await countStoriesByNewsRequestIds([newsRequest.id])).get(
+          newsRequest.id,
+        ) ?? 0;
+
   return {
-    newsRequest: serializeNewsRequest(newsRequest),
+    newsRequest: serializeNewsRequest(newsRequest, createdStoryCount),
+    stories,
+  };
+}
+
+const RERUN_INITIAL_LOG = "Refreshing your briefing.";
+
+/** Start incremental rerun: flag request, reset progress logs, enqueue Inngest. */
+export async function startNewsRequestRerun(
+  userId: string,
+  newsRequestId: string,
+) {
+  const newsRequest = await getNewsRequestByIdForUser(newsRequestId, userId);
+  if (!newsRequest) {
+    return null;
+  }
+  if (newsRequest.status !== "success") {
+    return { error: "not_ready" as const };
+  }
+  if (newsRequest.isRerunning) {
+    return { error: "already_rerunning" as const };
+  }
+
+  await patchNewsRequest(newsRequest.id, {
+    isRerunning: true,
+    loadingLogs: [RERUN_INITIAL_LOG],
+  });
+
+  await enqueueNewsRerunPipeline(newsRequest.id);
+
+  const updated = await getNewsRequestByIdForUser(newsRequestId, userId);
+  if (!updated) {
+    return null;
+  }
+
+  const stories = await loadStoriesIfReady(updated.id, updated.status, userId);
+  const createdStoryCount =
+    (await countStoriesByNewsRequestIds([updated.id])).get(updated.id) ?? 0;
+
+  return {
+    newsRequest: serializeNewsRequest(updated, createdStoryCount),
     stories,
   };
 }

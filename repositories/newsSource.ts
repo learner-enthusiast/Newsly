@@ -3,6 +3,7 @@ import { prisma } from "@/db";
 
 const newsSourceIdSchema = z.uuid("id must be a uuid");
 const newsStoryIdSchema = z.uuid("newsStoryId must be a uuid");
+const newsRequestIdSchema = z.uuid("newsRequestId must be a uuid");
 
 const newsSourceWriteSchema = z.object({
   newsStoryId: newsStoryIdSchema,
@@ -37,6 +38,17 @@ export async function getNewsSourceById(id: string) {
 export async function listNewsSourcesByNewsStoryId(newsStoryId: string) {
   return prisma.newsSource.findMany({
     where: { newsStoryId: newsStoryIdSchema.parse(newsStoryId) },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function listNewsSourcesByNewsRequestId(newsRequestId: string) {
+  return prisma.newsSource.findMany({
+    where: {
+      newsStory: {
+        newsRequestId: newsRequestIdSchema.parse(newsRequestId),
+      },
+    },
     orderBy: { createdAt: "asc" },
   });
 }

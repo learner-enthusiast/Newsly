@@ -81,6 +81,7 @@ model NewsRequest {
   sources     String[]          @default([])
   createdAt   DateTime          @default(now()) @map("created_at")
   completedAt DateTime?         @map("completed_at")
+  isRerunning Boolean           @default(false) @map("is_rerunning")
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   stories     NewsStory[]
@@ -217,6 +218,7 @@ model ChatMessage {
   loadingLogs   String[] @default([]) @map("loading_logs")
   isAStoryRequest Boolean @default(false) @map("is_a_story_request")
   newsStoryId     String? @map("news_story_id") @db.Uuid
+  isRerunning     Boolean @default(false) @map("is_rerunning")
 
   chatSession ChatSession           @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
   embedding   ChatMessageEmbedding?

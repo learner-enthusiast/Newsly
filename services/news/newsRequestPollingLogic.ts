@@ -1,8 +1,11 @@
 import type { NewsRequestStatus } from "@/services/news/newsRequestTypes";
 
-/** Keep polling while the backend status is `pending` (in-flight generation). */
-export function shouldScheduleNextPoll(status: NewsRequestStatus): boolean {
-  return status === "pending";
+/** Keep polling while generation or an incremental rerun is in flight. */
+export function shouldScheduleNextPoll(input: {
+  status: NewsRequestStatus;
+  isRerunning: boolean;
+}): boolean {
+  return input.status === "pending" || input.isRerunning === true;
 }
 
 /** Stop polling and surface a hard error (missing request or auth). */

@@ -25,6 +25,13 @@ export const USER_FACING_LOG_MARKERS: Array<{
   { logIncludes: "Checking sources", completedThroughStep: 2 },
   { logIncludes: "Organizing the news", completedThroughStep: 3 },
   { logIncludes: "Preparing your briefing", completedThroughStep: 4 },
+  { logIncludes: "Refreshing your briefing", completedThroughStep: 0 },
+  { logIncludes: "Finding new developments", completedThroughStep: 1 },
+  { logIncludes: "Checking new sources", completedThroughStep: 2 },
+  { logIncludes: "Comparing with existing stories", completedThroughStep: 3 },
+  { logIncludes: "Updating stories", completedThroughStep: 3 },
+  { logIncludes: "Adding new stories", completedThroughStep: 3 },
+  { logIncludes: "Your briefing has been refreshed", completedThroughStep: 4 },
 ];
 
 export type NewsProgressStepState = "done" | "active" | "pending";
@@ -45,6 +52,7 @@ export function activeProgressStepLabel(
 export function deriveProgressSteps(
   loadingLogs: string[] | undefined,
   status: "pending" | "failed" | "success",
+  isRerunning = false,
 ): NewsProgressStepView[] {
   let maxCompleted = -1;
   for (const line of loadingLogs ?? []) {
@@ -56,12 +64,12 @@ export function deriveProgressSteps(
     }
   }
 
-  if (status === "success") {
+  if (status === "success" && !isRerunning) {
     maxCompleted = NEWS_PROGRESS_STEPS.length - 1;
   }
 
   const activeIndex =
-    status === "pending"
+    status === "pending" || isRerunning
       ? Math.min(maxCompleted + 1, NEWS_PROGRESS_STEPS.length - 1)
       : -1;
 

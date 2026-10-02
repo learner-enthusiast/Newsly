@@ -25,6 +25,7 @@ const newsRequestWriteSchema = z.object({
   customQuery: z.string().min(1).nullable().optional(),
   language: z.string().min(1).nullable().optional(),
   sources: z.array(z.string().min(1).max(200)).optional(),
+  isRerunning: z.boolean().optional(),
 });
 
 const newsRequestPutSchema = newsRequestWriteSchema.omit({ userId: true });
@@ -111,6 +112,16 @@ export async function patchNewsRequest(id: string, input: NewsRequestPatchInput)
   return prisma.newsRequest.update({
     where: { id: newsRequestIdSchema.parse(id) },
     data: newsRequestPatchSchema.parse(input),
+  });
+}
+
+export async function setNewsRequestIsRerunning(
+  id: string,
+  isRerunning: boolean,
+) {
+  return prisma.newsRequest.update({
+    where: { id: newsRequestIdSchema.parse(id) },
+    data: { isRerunning: z.boolean().parse(isRerunning) },
   });
 }
 

@@ -10,6 +10,10 @@
  *
  * newsPipelineFunction (`newsPipeline.ts`)
  *   Event: `news/pipeline.requested`
+ *
+ * newsRerunPipelineFunction (`reRunPipeline.ts`)
+ *   Event: `news/pipeline.rerun.requested`
+ *   Data: `{ newsId }` — incremental refresh when `NewsRequest.isRerunning` is true.
  *   Input: `userId`, `newsRequestId`, generation fields (scope, location, categories,
  *   storyCount, sources, language, …)
  *   Outcome: Multiple SYSTEM `NewsStory` + `NewsSource` rows per request; request
@@ -75,6 +79,14 @@ export {
 } from "./newsPipeline";
 
 export {
+  NEWS_RERUN_PIPELINE_EVENT,
+  newsRerunPipelineEventDataSchema,
+  newsRerunPipelineFunction,
+  enqueueNewsRerunPipeline,
+  type NewsRerunPipelineEventData,
+} from "./reRunPipeline";
+
+export {
   CHAT_PIPELINE_EVENT,
   chatPipelineEventDataSchema,
   chatPipelineFunction,
@@ -122,12 +134,14 @@ import { chatPipelineFunction } from "./newsNewchatPipeline";
 import { chatMessageEmbeddingFunction } from "./chatMessageEmbeddingPipeline";
 import { messageChatPipelineFunction } from "./chatPipeline";
 import { newsPipelineFunction } from "./newsPipeline";
+import { newsRerunPipelineFunction } from "./reRunPipeline";
 import { researchSourceDescriptionFunction } from "./researchSourceDescriptionPipeline";
 import { chatPotentialStoryTopicsFunction } from "./chatPotentialStoryTopicsPipeline";
 import { chatStoryPipelineFunction } from "./chatstoryPipeline";
 
 export const inngestFunctions = [
   newsPipelineFunction,
+  newsRerunPipelineFunction,
   chatPipelineFunction,
   messageChatPipelineFunction,
   chatStoryPipelineFunction,

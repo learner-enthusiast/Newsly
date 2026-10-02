@@ -36,6 +36,7 @@ export type SerializedNewsRequest = {
   language: string | null;
   sources: string[];
   loadingLogs: string[];
+  isRerunning: boolean;
   createdAt: string;
   completedAt: string | null;
   /** Stories actually created for this request. */

@@ -704,6 +704,25 @@ export function isTradingRecommendationArticle(input: {
  * Keep articles whose Serp `publishedAt` matches the request day (or undated rows).
  * Drops out-of-window dated hits (e.g. next-day publish for a prior request date).
  */
+/** Keep undated rows and articles published on/after the rerun boundary. */
+export function filterArticlesPublishedOnOrAfterBoundary(
+  articles: NormalizedArticleLink[],
+  boundary: Date,
+): NormalizedArticleLink[] {
+  const boundaryMs = boundary.getTime();
+  const filtered = articles.filter((article) => {
+    if (!article.publishedAt) {
+      return true;
+    }
+    const parsed = Date.parse(article.publishedAt);
+    if (Number.isNaN(parsed)) {
+      return true;
+    }
+    return parsed >= boundaryMs - 86_400_000;
+  });
+  return filtered.map((article, index) => ({ ...article, index }));
+}
+
 export function filterArticlesNearRequestDate(
   articles: NormalizedArticleLink[],
   requestDateIso: string,

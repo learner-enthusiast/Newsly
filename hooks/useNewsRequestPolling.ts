@@ -85,7 +85,12 @@ export function useNewsRequestPolling(newsRequestId: string | undefined) {
         setPollWarning(null);
         setError(null);
         setData(payload);
-        if (shouldScheduleNextPoll(payload.newsRequest.status)) {
+        if (
+          shouldScheduleNextPoll({
+            status: payload.newsRequest.status,
+            isRerunning: payload.newsRequest.isRerunning,
+          })
+        ) {
           timer = setTimeout(poll, NEWS_REQUEST_POLL_MS);
         }
       } catch (pollError) {

@@ -25,26 +25,35 @@ type NewsGenerationWaitPanelProps = {
   percent: number;
   overdue: boolean;
   catchingUp: boolean;
+  mode?: "initial" | "rerun";
 };
 
 export function NewsGenerationWaitPanel({
   percent,
   overdue,
   catchingUp,
+  mode = "initial",
 }: NewsGenerationWaitPanelProps) {
   const rounded = Math.round(percent);
+  const isRerun = mode === "rerun";
 
   return (
     <Card className="shadow-editorial">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 font-display text-xl">
-          {catchingUp ? "Your briefing is ready" : "Preparing your briefing"}
+          {catchingUp
+            ? "Your briefing is ready"
+            : isRerun
+              ? "Refreshing your briefing"
+              : "Preparing your briefing"}
           <Spinner className="text-primary" />
         </CardTitle>
         <CardDescription>
           {catchingUp
             ? "Finishing the progress bar, then your stories will appear."
-            : "News generation takes approximately 5 minutes. You can wait here, or look at other news and come back — this bar picks up from when the request was created."}
+            : isRerun
+              ? "We're searching for new developments and updating your stories. You can stay on this page — progress updates live in the sidebar."
+              : "News generation takes approximately 5 minutes. You can wait here, or look at other news and come back — this bar picks up from when the request was created."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
@@ -64,7 +73,7 @@ export function NewsGenerationWaitPanel({
           />
         ) : null}
 
-        {!catchingUp ? (
+        {!catchingUp && !isRerun ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Button
               variant="brand-accent"
@@ -87,7 +96,7 @@ export function NewsGenerationWaitPanel({
           </div>
         ) : null}
 
-        {!catchingUp ? (
+        {!catchingUp && !isRerun ? (
           <p className="text-sm text-muted-foreground">
             Have a topic in mind related to financial markets? Open chat and ask
             — this briefing will keep running in the background.

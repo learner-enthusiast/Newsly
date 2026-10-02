@@ -8,6 +8,7 @@ import {
 type NewsRequestProgressProps = {
   loadingLogs: string[];
   status: "pending" | "failed" | "success";
+  isRerunning?: boolean;
   title?: string;
 };
 
@@ -24,9 +25,10 @@ function StepIcon({ state }: { state: NewsProgressStepView["state"] }) {
 export function NewsRequestProgress({
   loadingLogs,
   status,
+  isRerunning = false,
   title = "Generating your news briefing",
 }: NewsRequestProgressProps) {
-  const steps = deriveProgressSteps(loadingLogs, status);
+  const steps = deriveProgressSteps(loadingLogs, status, isRerunning);
 
   return (
     <section

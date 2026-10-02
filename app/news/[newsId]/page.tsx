@@ -15,7 +15,7 @@ import {
   resolveVoteMutation,
 } from "@/services/news/storyVoteLogic";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export default function NewsResultPage() {
@@ -40,6 +40,14 @@ export default function NewsResultPage() {
   } = useNewsRequestPolling(newsId);
 
   const [retrying, setRetrying] = useState(false);
+  const [rerunBusy, setRerunBusy] = useState(false);
+  const [rerunStartedAtMs, setRerunStartedAtMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (data?.newsRequest.isRerunning === false) {
+      setRerunStartedAtMs(null);
+    }
+  }, [data?.newsRequest.isRerunning]);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [deepDiveStoryId, setDeepDiveStoryId] = useState<string | null>(null);
   const [votingStoryId, setVotingStoryId] = useState<string | null>(null);
@@ -221,6 +229,34 @@ export default function NewsResultPage() {
     [setData],
   );
 
+  async function onRerun() {
+    if (!newsId) {
+      return;
+    }
+    setRerunBusy(true);
+    try {
+      const response = await fetch(`/api/news/${newsId}/rerun`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as NewsRequestResultPayload & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to start refresh");
+      }
+      setRerunStartedAtMs(Date.now());
+      setData({
+        newsRequest: payload.newsRequest,
+        stories: payload.stories ?? data?.stories ?? [],
+      });
+      restartPolling();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start refresh");
+    } finally {
+      setRerunBusy(false);
+    }
+  }
+
   async function onRetry() {
     if (!newsId) {
       return;
@@ -288,6 +324,9 @@ export default function NewsResultPage() {
           onSaveToggle={onSaveToggle}
           onRetry={onRetry}
           retrying={retrying}
+          onRerun={onRerun}
+          rerunBusy={rerunBusy}
+          rerunStartedAtMs={rerunStartedAtMs}
         />
       ) : null}
     </>
