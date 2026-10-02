@@ -18,7 +18,12 @@ export type ChatYoutubeEvidenceRow = {
   title: string;
   sourceType: "youtube";
   content: string;
+  imageUrl: string | null;
 };
+
+function youtubeThumbnailUrl(videoId: string): string {
+  return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+}
 
 function videoIdFromRow(row: YoutubeVideoSearchResult): string | null {
   const direct = row.video_id?.trim();
@@ -125,6 +130,7 @@ export async function fetchChatYoutubeEvidence(input: {
           transcript,
           CHAT_YOUTUBE_TRANSCRIPT_MAX_CHARS,
         ),
+        imageUrl: youtubeThumbnailUrl(video.videoId),
       });
     }
 

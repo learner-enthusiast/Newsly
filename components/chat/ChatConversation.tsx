@@ -7,6 +7,7 @@ import { ChatWelcome } from "@/components/chat/ChatWelcome";
 import { isChatAssistantProgressPlaceholder } from "@/services/chat/chatAssistantProgress";
 import { isAssistantRole } from "@/services/chat/chatUiUtils";
 import type { SerializedChatMessageListItem } from "@/services/chat/chatMessagePagination";
+import type { ResearchSourceImageLookup } from "@/services/chat/chatResearchSourceImages";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,7 @@ type ChatConversationProps = {
   showWelcome: boolean;
   storyTitle?: string | null;
   storyCreation?: ChatStoryCreationPayload | null;
+  researchSourceImages?: ResearchSourceImageLookup;
   onPrompt: (prompt: string) => void;
   onRetry?: () => void;
   composerDisabled?: boolean;
@@ -51,6 +53,7 @@ export function ChatConversation({
   showWelcome,
   storyTitle,
   storyCreation,
+  researchSourceImages,
   onPrompt,
   onRetry,
   composerDisabled,
@@ -117,6 +120,7 @@ export function ChatConversation({
       onAtBottomChange={onAtBottomChange}
       bindScrollToBottom={bindScrollToBottom}
       storyCreation={storyCreation}
+      researchSourceImages={researchSourceImages}
     />
   );
 }

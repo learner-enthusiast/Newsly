@@ -154,7 +154,9 @@ import {
   resolveShouldCreateStoryFromEvent,
 } from "@/services/chat/messageStoryCreation";
 import { todayIsoDateUtc } from "@/services/chat/researchPrompt";
-import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
+import { enrichSelectedArticlesWithSerpImages } from "@/services/chat/enrichSelectedArticlesWithSerpImages";
+import { resolveArticleImageUrl } from "@/services/news/articleImageUrl";
+import { scrapeUrlsWithFirecrawlRaw } from "@/services/firecrawl/scrapeUrls";
 import {
   canonicalResearchUrl,
   type NormalizedSerpHit,
@@ -673,11 +675,15 @@ export const messageChatPipelineFunction = inngest.createFunction(
             maxArticles: 6,
             abortSignal: AbortSignal.timeout(120_000),
           });
+          const withImages = enrichSelectedArticlesWithSerpImages(
+            selected,
+            serpHits,
+          );
           pipelineLog("run-article-synthesizer", "done", {
             durationMs: elapsed(),
-            selected: selected.length,
+            selected: withImages.length,
           });
-          return toJsonSafeStepOutput(selected);
+          return toJsonSafeStepOutput(withImages);
         }),
         step.run("preload-session-research-sources", async () => {
           const elapsed = createStepTimer();
@@ -756,6 +762,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
                   title: video.title,
                   content: video.content.slice(0, 50_000),
                   sourceType: video.sourceType,
+                  imageUrl: video.imageUrl,
                 });
                 return mapResearchSourceForChatModel(row);
               },
@@ -789,7 +796,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
               count: scrapeTargets.length,
             });
 
-            const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
+            const scrapedBundles = await scrapeUrlsWithFirecrawlRaw(
               scrapeTargets.map((article) => article.url),
             );
 
@@ -797,7 +804,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
 
             const cleanedRows = await Promise.all(
               scrapeTargets.map(async (article, index) => {
-                const rawScrape = scrapedMarkdown[index]?.trim() ?? "";
+                const rawScrape = scrapedBundles[index]?.markdown?.trim() ?? "";
                 if (!rawScrape) {
                   pipelineLog(
                     "firecrawl-and-save-research",
@@ -825,9 +832,14 @@ export const messageChatPipelineFunction = inngest.createFunction(
                     );
                     return null;
                   }
+                  const imageUrl = resolveArticleImageUrl({
+                    firecrawlPayload: scrapedBundles[index]?.raw,
+                    serpImageUrl: article.imageUrl ?? null,
+                  });
                   return {
                     article,
                     content: cleaned.cleanedContent.trim(),
+                    imageUrl,
                   };
                 } catch {
                   pipelineLog(
@@ -848,7 +860,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
             savedArticles = await mapWithConcurrency(
               validArticles,
               RESEARCH_SOURCE_INSERT_CONCURRENCY,
-              async ({ article, content }) => {
+              async ({ article, content, imageUrl }) => {
                 const row = await createResearchSource({
                   chatSessionId: input.chatSessionId,
                   url: article.url,
@@ -856,6 +868,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
                   title: article.title,
                   content: content.slice(0, 50_000),
                   sourceType: article.sourceType,
+                  imageUrl,
                 });
 
                 return mapResearchSourceForChatModel(row);

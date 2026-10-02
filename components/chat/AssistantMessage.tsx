@@ -8,6 +8,10 @@ import { formatMessageTimestamp } from "@/services/chat/chatUiUtils";
 import { parseAssistantMessage } from "@/services/chat/parseAssistantMessage";
 import { cn } from "@/lib/utils";
 import { ChatStoryCreationCard } from "@/components/chat/ChatStoryCreationCard";
+import {
+  resolveResearchSourceImageUrl,
+  type ResearchSourceImageLookup,
+} from "@/services/chat/chatResearchSourceImages";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { Bot } from "lucide-react";
 
@@ -15,6 +19,7 @@ type AssistantMessageProps = {
   content: string;
   createdAt: string;
   storyCreation?: ChatStoryCreationPayload | null;
+  researchSourceImages?: ResearchSourceImageLookup;
   className?: string;
 };
 
@@ -22,6 +27,7 @@ export function AssistantMessage({
   content,
   createdAt,
   storyCreation = null,
+  researchSourceImages = {},
   className,
 }: AssistantMessageProps) {
   const parsed = parseAssistantMessage(content);
@@ -55,7 +61,14 @@ export function AssistantMessage({
         {cardLinks.length > 0 ? (
           <div className="flex flex-wrap gap-3" data-chat-news-cards>
             {cardLinks.map((link) => (
-              <ChatNewsCard key={link.url} link={link} />
+              <ChatNewsCard
+                key={link.url}
+                link={link}
+                imageUrl={resolveResearchSourceImageUrl(
+                  link.url,
+                  researchSourceImages,
+                )}
+              />
             ))}
           </div>
         ) : null}

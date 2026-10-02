@@ -12,6 +12,7 @@ const researchSourceWriteSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
   sourceType: z.string().min(1),
+  imageUrl: z.string().url().nullable().optional(),
 });
 
 const researchSourcePutSchema = researchSourceWriteSchema.omit({
@@ -55,6 +56,17 @@ export async function updateResearchSourceDescription(
 export async function listResearchSourcesByChatSessionId(chatSessionId: string) {
   return prisma.researchSource.findMany({
     where: { chatSessionId: chatSessionIdSchema.parse(chatSessionId) },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+/** Lightweight rows for UI source-card thumbnails (avoids loading large `content`). */
+export async function listResearchSourceImagesByChatSessionId(
+  chatSessionId: string,
+) {
+  return prisma.researchSource.findMany({
+    where: { chatSessionId: chatSessionIdSchema.parse(chatSessionId) },
+    select: { url: true, imageUrl: true },
     orderBy: { createdAt: "asc" },
   });
 }

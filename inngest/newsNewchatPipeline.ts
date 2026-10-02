@@ -110,7 +110,9 @@ import {
   fetchAndNormalizeSerp,
   roleForChatModel,
 } from "@/services/chat/chatSerpResearch";
-import { scrapeUrlsWithFirecrawl } from "@/services/firecrawl/scrapeUrls";
+import { enrichSelectedArticlesWithSerpImages } from "@/services/chat/enrichSelectedArticlesWithSerpImages";
+import { resolveArticleImageUrl } from "@/services/news/articleImageUrl";
+import { scrapeUrlsWithFirecrawlRaw } from "@/services/firecrawl/scrapeUrls";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import { researchUrlKeysFromSources } from "@/services/chat/dedupeResearchArticles";
 import { mergeDirectFirecrawlTargets } from "@/services/chat/directUrlResearch";
@@ -453,11 +455,15 @@ export const chatPipelineFunction = inngest.createFunction(
             maxArticles: 6,
             abortSignal: AbortSignal.timeout(120_000),
           });
+          const withImages = enrichSelectedArticlesWithSerpImages(
+            selected,
+            serpHits,
+          );
           pipelineLog("select-articles", "done", {
             durationMs: elapsed(),
-            selected: selected.length,
+            selected: withImages.length,
           });
-          return toJsonSafeStepOutput(selected);
+          return toJsonSafeStepOutput(withImages);
         }),
         step.run("preload-existing-research-sources", async () => {
           const elapsed = createStepTimer();
@@ -501,7 +507,7 @@ export const chatPipelineFunction = inngest.createFunction(
             return toJsonSafeStepOutput([]);
           }
 
-          const scrapedMarkdown = await scrapeUrlsWithFirecrawl(
+          const scrapedBundles = await scrapeUrlsWithFirecrawlRaw(
             toScrape.map((article) => article.url),
           );
 
@@ -509,11 +515,16 @@ export const chatPipelineFunction = inngest.createFunction(
             toScrape,
             RESEARCH_SOURCE_INSERT_CONCURRENCY,
             async (article, index) => {
-              let content = scrapedMarkdown[index]?.trim() ?? "";
+              let content = scrapedBundles[index]?.markdown?.trim() ?? "";
 
               if (!content) {
                 content = article.title;
               }
+
+              const imageUrl = resolveArticleImageUrl({
+                firecrawlPayload: scrapedBundles[index]?.raw,
+                serpImageUrl: article.imageUrl ?? null,
+              });
 
               const saved = await createResearchSource({
                 chatSessionId: input.chatSessionId,
@@ -522,6 +533,7 @@ export const chatPipelineFunction = inngest.createFunction(
                 title: article.title,
                 content: content.slice(0, 50_000),
                 sourceType: article.sourceType,
+                imageUrl,
               });
 
               return {

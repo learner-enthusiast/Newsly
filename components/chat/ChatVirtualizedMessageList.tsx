@@ -7,6 +7,7 @@ import { CHAT_LOAD_OLDER_SCROLL_THRESHOLD_PX } from "@/services/chat/chatMessage
 import type { SerializedChatMessageListItem } from "@/services/chat/chatMessagePagination";
 import { deriveStoryCreationPayloadForMessage } from "@/services/chat/chatStoryRequestMessage";
 import { isAssistantRole } from "@/services/chat/chatUiUtils";
+import type { ResearchSourceImageLookup } from "@/services/chat/chatResearchSourceImages";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import {
   prefersReducedMotion,
@@ -44,14 +45,17 @@ type ChatVirtualizedMessageListProps = {
   onAtBottomChange?: (atBottom: boolean) => void;
   bindScrollToBottom?: (scrollToBottom: () => void) => void;
   storyCreation?: ChatStoryCreationPayload | null;
+  researchSourceImages?: ResearchSourceImageLookup;
 };
 
 function MessageRow({
   message,
   storyCreation,
+  researchSourceImages,
 }: {
   message: SerializedChatMessageListItem;
   storyCreation?: ChatStoryCreationPayload | null;
+  researchSourceImages?: ResearchSourceImageLookup;
 }) {
   if (isAssistantRole(message.role)) {
     const inlineStoryCreation = deriveStoryCreationPayloadForMessage(
@@ -63,6 +67,7 @@ function MessageRow({
         content={message.content}
         createdAt={message.createdAt}
         storyCreation={inlineStoryCreation}
+        researchSourceImages={researchSourceImages}
       />
     );
   }
@@ -92,6 +97,7 @@ export function ChatVirtualizedMessageList({
   onAtBottomChange,
   bindScrollToBottom,
   storyCreation,
+  researchSourceImages,
 }: ChatVirtualizedMessageListProps) {
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(
     null,
@@ -399,7 +405,11 @@ export function ChatVirtualizedMessageList({
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <MemoMessageRow message={message} storyCreation={storyCreation} />
+              <MemoMessageRow
+                message={message}
+                storyCreation={storyCreation}
+                researchSourceImages={researchSourceImages}
+              />
             </div>
           );
         })}

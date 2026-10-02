@@ -1,3 +1,4 @@
+import { extractSerpRowImageUrl } from "@/services/news/articleImageUrl";
 import { z } from "zod";
 
 const looseRow = z.looseObject({
@@ -21,6 +22,7 @@ export const normalizedSerpHitSchema = z.object({
   date: z.string().min(1).optional(),
   engine: z.string().min(1),
   index: z.number().int().min(0),
+  imageUrl: z.string().url().nullable().optional(),
 });
 
 export type NormalizedSerpHit = z.infer<typeof normalizedSerpHitSchema>;
@@ -113,6 +115,7 @@ function hitsFromPayload(payload: unknown, engine: string, limit: number) {
       source: publisherName(row.source),
       date: rowDate(row),
       engine,
+      imageUrl: extractSerpRowImageUrl(row) ?? undefined,
     });
   }
 

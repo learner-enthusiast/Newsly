@@ -433,6 +433,7 @@ export function ChatLayout({
                     : null
                 }
                 storyCreation={state.storyCreation}
+                researchSourceImages={state.researchSourceImages ?? {}}
                 onPrompt={handlePrompt}
                 onRetry={() => {
                   const lastUser = [...visibleMessages]

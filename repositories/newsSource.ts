@@ -41,6 +41,14 @@ export async function listNewsSourcesByNewsStoryId(newsStoryId: string) {
   });
 }
 
+export async function listNewsSourceImagesByNewsStoryId(newsStoryId: string) {
+  return prisma.newsSource.findMany({
+    where: { newsStoryId: newsStoryIdSchema.parse(newsStoryId) },
+    select: { url: true, imageUrl: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export async function listNewsSourcesByIdsForStory(
   newsStoryId: string,
   ids: string[],

@@ -10,7 +10,12 @@ import {
   createChatSession,
   getChatSessionByIdForUser,
 } from "@/repositories/chatSession";
-import { listNewsSourcesByNewsStoryId } from "@/repositories/newsSource";
+import { listResearchSourceImagesByChatSessionId } from "@/repositories/researchSource";
+import {
+  listNewsSourceImagesByNewsStoryId,
+  listNewsSourcesByNewsStoryId,
+} from "@/repositories/newsSource";
+import { buildResearchSourceImageLookup } from "@/services/chat/chatResearchSourceImages";
 import {
   getLatestChatOriginStoryForSession,
   getNewsStoryById,
@@ -220,24 +225,38 @@ export async function getNewsStoryChatState(
     return null;
   }
 
-  const recentMessages = await listRecentChatMessagesByChatSessionId(
-    chatSessionId,
-    CHAT_MESSAGES_PAGE_SIZE,
-  );
-  const latestStory = await getLatestChatOriginStoryForSession({
-    chatSessionId: session.id,
-    ownerId: userId,
-  });
+  const [recentMessages, latestStory, researchSources] = await Promise.all([
+    listRecentChatMessagesByChatSessionId(chatSessionId, CHAT_MESSAGES_PAGE_SIZE),
+    getLatestChatOriginStoryForSession({
+      chatSessionId: session.id,
+      ownerId: userId,
+    }),
+    listResearchSourceImagesByChatSessionId(session.id),
+  ]);
+
   const status = deriveChatSessionStatus(recentMessages, latestStory);
   const storyCreation = deriveStoryCreationForChatState(
     recentMessages,
     latestStory,
   );
 
+  const researchSourceImages = buildResearchSourceImageLookup(researchSources);
+
+  if (session.newsStoryId) {
+    const storySources = await listNewsSourceImagesByNewsStoryId(
+      session.newsStoryId,
+    );
+    Object.assign(
+      researchSourceImages,
+      buildResearchSourceImageLookup(storySources),
+    );
+  }
+
   return {
     chatSessionId: session.id,
     status,
     storyCreation,
+    researchSourceImages,
     chatSession: {
       id: session.id,
       title: session.title,

@@ -61,6 +61,7 @@ export const selectedResearchArticleSchema = z.object({
   domain: z.string().min(1),
   title: z.string().min(1),
   sourceType: z.string().min(1),
+  imageUrl: z.string().url().nullable().optional(),
 });
 
 export type SelectedResearchArticle = z.infer<typeof selectedResearchArticleSchema>;

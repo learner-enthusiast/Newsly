@@ -235,6 +235,7 @@ model ResearchSource {
   description   String?
   content       String   @db.Text
   sourceType    String   @map("source_type")
+  imageUrl      String?  @map("image_url") @db.Text
   createdAt     DateTime @default(now()) @map("created_at")
 
   chatSession       ChatSession            @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)

@@ -3,25 +3,48 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ParsedMarkdownLink } from "@/services/chat/parseAssistantMessage";
+import { cn } from "@/lib/utils";
 import { ExternalLink } from "lucide-react";
+import { useState } from "react";
 
 type ChatNewsCardProps = {
   link: ParsedMarkdownLink;
+  imageUrl?: string | null;
   category?: string | null;
   publishedLabel?: string | null;
 };
 
 export function ChatNewsCard({
   link,
+  imageUrl = null,
   category,
   publishedLabel,
 }: ChatNewsCardProps) {
+  const trimmedImage = imageUrl?.trim() || null;
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const showImage =
+    Boolean(trimmedImage) && failedImageUrl !== trimmedImage;
+
   return (
     <article className="w-full max-w-xs overflow-hidden rounded-xl border border-border/60 bg-card shadow-paper">
       <div
-        className="mx-3 mt-3 aspect-[4/3] rounded-lg bg-linear-to-br from-[#fde2d2]/80 via-muted/40 to-secondary/50"
-        aria-hidden
-      />
+        className={cn(
+          "relative mx-3 mt-3 aspect-[4/3] overflow-hidden rounded-lg bg-linear-to-br from-[#fde2d2]/80 via-muted/40 to-secondary/50",
+          showImage && "bg-muted",
+        )}
+      >
+        {showImage ? (
+          // eslint-disable-next-line @next/next/no-img-element -- remote publisher thumbnails
+          <img
+            src={trimmedImage!}
+            alt=""
+            className="size-full object-cover"
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailedImageUrl(trimmedImage)}
+          />
+        ) : null}
+      </div>
       <div className="space-y-2 p-3 pt-2">
         {category ? (
           <Badge variant="outline" className="text-[10px]">
