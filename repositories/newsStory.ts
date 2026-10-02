@@ -30,6 +30,7 @@ const newsStoryWriteSchema = z.object({
   importanceScore: z.coerce.number().nullable().optional(),
   newsSourceIds: z.array(newsSourceIdSchema).optional(),
   imageUrl: z.string().url().nullable().optional(),
+  loadingLogs: z.array(z.string()).optional(),
 });
 
 export const newsStorySourceUrlSchema = z.object({
@@ -96,6 +97,23 @@ export async function createUserChatNewsStoryShell(input: {
       summary: "Research and synthesis in progress.",
       content: "Story generation is in progress.",
       category: "general",
+      loadingLogs: ["Story generation started."],
+    },
+  });
+}
+
+export async function appendNewsStoryLoadingLog(
+  storyId: string,
+  message: string,
+) {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return prisma.newsStory.update({
+    where: { id: newsStoryIdSchema.parse(storyId) },
+    data: {
+      loadingLogs: { push: trimmed },
     },
   });
 }
@@ -103,10 +121,14 @@ export async function createUserChatNewsStoryShell(input: {
 /** @deprecated alias */
 export const createPendingChatNewsStory = createUserChatNewsStoryShell;
 
-export async function markChatNewsStoryFailed(storyId: string, errorMessage: string) {
-  return prisma.newsStory.updateMany({
+export async function markChatNewsStoryFailed(
+  storyId: string,
+  errorMessage: string,
+) {
+  const parsedId = newsStoryIdSchema.parse(storyId);
+  const result = await prisma.newsStory.updateMany({
     where: {
-      id: newsStoryIdSchema.parse(storyId),
+      id: parsedId,
       isUserCreated: true,
       publishStatus: "draft",
       generationError: null,
@@ -115,9 +137,14 @@ export async function markChatNewsStoryFailed(storyId: string, errorMessage: str
       generationError: errorMessage.slice(0, 2000),
       title: "Story generation failed",
       summary: "We could not finish this story.",
-      content: "Story generation failed. You can try creating a new story from chat.",
+      content:
+        "Story generation failed. You can try creating a new story from chat.",
     },
   });
+  if (result.count > 0) {
+    await appendNewsStoryLoadingLog(parsedId, "Story generation failed.");
+  }
+  return result;
 }
 
 export async function getChatNewsStoryForPipeline(input: {
@@ -284,7 +311,9 @@ export async function getNewsStoryWithSourcesById(id: string) {
     story.newsSourceIds.length > 0
       ? story.newsSourceIds
           .map((sourceId) => byId.get(sourceId))
-          .filter((source): source is (typeof sources)[number] => source != null)
+          .filter(
+            (source): source is (typeof sources)[number] => source != null,
+          )
       : sources;
 
   return { ...story, sources: ordered };
@@ -337,7 +366,9 @@ export async function getPublishedNewsStoryWithSources(storyId: string) {
     story.newsSourceIds.length > 0
       ? story.newsSourceIds
           .map((sourceId) => byId.get(sourceId))
-          .filter((source): source is (typeof sources)[number] => source != null)
+          .filter(
+            (source): source is (typeof sources)[number] => source != null,
+          )
       : sources;
 
   return {
@@ -473,7 +504,9 @@ export async function getNewsStoryWithSourcesForPage(
     story.newsSourceIds.length > 0
       ? story.newsSourceIds
           .map((sourceId) => byId.get(sourceId))
-          .filter((source): source is (typeof sources)[number] => source != null)
+          .filter(
+            (source): source is (typeof sources)[number] => source != null,
+          )
       : sources;
 
   return {
@@ -518,7 +551,9 @@ function mapStoryRowWithSources<
     story.newsSourceIds.length > 0
       ? story.newsSourceIds
           .map((sourceId) => byId.get(sourceId))
-          .filter((source): source is (typeof sources)[number] => source != null)
+          .filter(
+            (source): source is (typeof sources)[number] => source != null,
+          )
       : sources;
 
   return {
@@ -588,7 +623,11 @@ export async function listTrendingNewsStories(input: {
         },
       ],
     },
-    orderBy: [{ upvotes: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
+    orderBy: [
+      { upvotes: "desc" },
+      { publishedAt: "desc" },
+      { createdAt: "desc" },
+    ],
     take: limit,
     select: trendingStorySelect,
   });

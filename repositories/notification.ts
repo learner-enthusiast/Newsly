@@ -42,6 +42,11 @@ export async function getNotificationByIdForUser(id: string, userId: string) {
   });
 }
 
+export type NotificationCursorInput = {
+  createdAt: Date;
+  id: string;
+};
+
 export async function listNotificationsByUserId(
   userId: string,
   options?: {
@@ -49,17 +54,60 @@ export async function listNotificationsByUserId(
     limit?: number;
   },
 ) {
-  const parsedUserId = userIdSchema.parse(userId);
-  const limit = Math.min(Math.max(1, options?.limit ?? 50), 100);
+  const page = await listNotificationsCursorPage({
+    userId,
+    read: options?.read,
+    limit: options?.limit ?? 50,
+  });
+  return page.notifications;
+}
 
-  return prisma.notification.findMany({
+export async function listNotificationsCursorPage(input: {
+  userId: string;
+  read?: boolean;
+  limit: number;
+  before?: NotificationCursorInput;
+}) {
+  const parsedUserId = userIdSchema.parse(input.userId);
+  const take = Math.min(Math.max(1, input.limit), 100);
+
+  const rows = await prisma.notification.findMany({
     where: {
       userId: parsedUserId,
-      ...(options?.read === undefined ? {} : { read: options.read }),
+      ...(input.read === undefined ? {} : { read: input.read }),
+      ...(input.before
+        ? { createdAt: { lte: input.before.createdAt } }
+        : {}),
     },
-    orderBy: { createdAt: "desc" },
-    take: limit,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: take + 2,
   });
+
+  const before = input.before;
+  const olderThanCursor = before
+    ? rows.filter((row) => {
+        const timeDiff =
+          row.createdAt.getTime() - before.createdAt.getTime();
+        if (timeDiff !== 0) {
+          return timeDiff < 0;
+        }
+        return row.id < before.id;
+      })
+    : rows;
+
+  const hasMore = olderThanCursor.length > take;
+  const pageDesc = hasMore ? olderThanCursor.slice(0, take) : olderThanCursor;
+  const notifications = pageDesc;
+  const oldest = notifications.at(-1);
+
+  return {
+    notifications,
+    hasMore,
+    nextCursor:
+      hasMore && oldest
+        ? { createdAt: oldest.createdAt, id: oldest.id }
+        : null,
+  };
 }
 
 export async function countUnreadNotificationsForUser(userId: string) {

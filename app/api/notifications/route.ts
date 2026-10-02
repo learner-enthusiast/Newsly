@@ -3,13 +3,17 @@ import { requireAuthenticatedUser } from "@/lib/auth";
 import {
   countUnreadNotificationsForUser,
   createNotification,
-  listNotificationsByUserId,
+  listNotificationsCursorPage,
 } from "@/repositories/notification";
 import {
   notificationCreateBodySchema,
   notificationListQuerySchema,
   serializeNotification,
 } from "@/services/notifications/notificationApiSchemas";
+import {
+  decodeNotificationCursor,
+  type NotificationListCursor,
+} from "@/services/notifications/notificationPagination";
 
 export async function GET(request: Request) {
   const user = await requireAuthenticatedUser();
@@ -21,6 +25,7 @@ export async function GET(request: Request) {
   const parsed = notificationListQuerySchema.safeParse({
     read: searchParams.get("read") ?? undefined,
     limit: searchParams.get("limit") ?? undefined,
+    before: searchParams.get("before") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -31,16 +36,42 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [rows, unreadCount] = await Promise.all([
-      listNotificationsByUserId(user.id, {
+    let beforeCursor: NotificationListCursor | undefined;
+    if (parsed.data.before) {
+      const decoded = decodeNotificationCursor(parsed.data.before);
+      if (!decoded) {
+        return NextResponse.json(
+          { error: "Invalid before cursor" },
+          { status: 400 },
+        );
+      }
+      beforeCursor = decoded;
+    }
+
+    const [page, unreadCount] = await Promise.all([
+      listNotificationsCursorPage({
+        userId: user.id,
         read: parsed.data.read,
         limit: parsed.data.limit,
+        before: beforeCursor
+          ? {
+              createdAt: new Date(beforeCursor.createdAt),
+              id: beforeCursor.id,
+            }
+          : undefined,
       }),
       countUnreadNotificationsForUser(user.id),
     ]);
 
     return NextResponse.json({
-      notifications: rows.map(serializeNotification),
+      notifications: page.notifications.map(serializeNotification),
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor
+        ? {
+            createdAt: page.nextCursor.createdAt.toISOString(),
+            id: page.nextCursor.id,
+          }
+        : null,
       unreadCount,
     });
   } catch (error) {

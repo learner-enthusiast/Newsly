@@ -28,13 +28,16 @@ model User {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   savedStories          String[]  @default([]) @map("saved_stories") @db.Uuid
+  plan                  UserPlan  @default(FREE)
 
-  newsRequests   NewsRequest[]
-  chatSessions   ChatSession[]
-  scripts        Script[]
-  newsStoryVotes NewsStoryVote[]
-  notifications  Notification[]
+  newsRequests     NewsRequest[]
+  chatSessions     ChatSession[]
+  scripts          Script[]
+  newsStoryVotes   NewsStoryVote[]
+  notifications    Notification[]
   ownedNewsStories NewsStory[]
+  subscription     Subscription?
+  payments         Payment[]
 
   @@map("users")
 }
@@ -79,7 +82,6 @@ model NewsRequest {
   createdAt   DateTime          @default(now()) @map("created_at")
   completedAt DateTime?         @map("completed_at")
 
-
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   stories     NewsStory[]
   loadingLogs String[]    @default([]) @map("loading_logs")
@@ -101,24 +103,25 @@ model NewsStory {
   title           String
   description     String?
   slug            String
-  summary         String              @db.Text
-  content         String              @db.Text
+  summary         String        @db.Text
+  content         String        @db.Text
   category        String
   location        String?
-  publishedAt     DateTime?           @map("published_at")
-  importanceScore Decimal?            @map("importance_score") @db.Decimal(10, 4)
-  upvotes         Int                 @default(0)
-  downvotes       Int                 @default(0)
-  createdAt       DateTime            @default(now()) @map("created_at")
-  updatedAt       DateTime            @updatedAt @map("updated_at")
-  newsSourceIds   String[]            @default([]) @map("news_source_ids") @db.Uuid
+  publishedAt     DateTime?     @map("published_at")
+  importanceScore Decimal?      @map("importance_score") @db.Decimal(10, 4)
+  upvotes         Int           @default(0)
+  downvotes       Int           @default(0)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  newsSourceIds   String[]      @default([]) @map("news_source_ids") @db.Uuid
   imageUrl        String?       @map("image_url") @db.Text
+  loadingLogs     String[]      @default([]) @map("loading_logs")
 
-  newsRequest       NewsRequest?  @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
-  originChatSession ChatSession?  @relation("ChatStoryOrigin", fields: [chatSessionId], references: [id], onDelete: SetNull)
-  owner             User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  newsRequest       NewsRequest?    @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
+  originChatSession ChatSession?    @relation("ChatStoryOrigin", fields: [chatSessionId], references: [id], onDelete: SetNull)
+  owner             User?           @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   sources           NewsSource[]
-  chatSessions      ChatSession[] @relation("ChatSessionLinkedStory")
+  chatSessions      ChatSession[]   @relation("ChatSessionLinkedStory")
   votes             NewsStoryVote[]
 
   @@unique([newsRequestId, slug])
@@ -177,26 +180,26 @@ model NewsStoryVote {
 }
 
 model ChatSession {
-  id              String   @id @default(uuid()) @db.Uuid
-  userId          String   @map("user_id")
-  newsStoryId     String?  @map("news_story_id") @db.Uuid
-  newsSourceId    String[] @default([]) @map("news_source_id") @db.Uuid
-  title           String?
-  topic           String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  isFromNewsStory Boolean  @default(false) @map("is_from_news_story")
-  isBookmarked    Boolean  @default(false) @map("is_bookmarked")
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id")
+  newsStoryId      String?  @map("news_story_id") @db.Uuid
+  newsSourceId     String[] @default([]) @map("news_source_id") @db.Uuid
+  title            String?
+  topic            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  isFromNewsStory  Boolean  @default(false) @map("is_from_news_story")
+  isBookmarked     Boolean  @default(false) @map("is_bookmarked")
   potentialStories String[] @default([]) @map("potential_stories")
 
-  user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  newsStory             NewsStory?                 @relation("ChatSessionLinkedStory", fields: [newsStoryId], references: [id], onDelete: SetNull)
-  originStories         NewsStory[]                @relation("ChatStoryOrigin")
-  messages              ChatMessage[]
-  researchSources       ResearchSource[]
-  scripts               Script[]
-  resourceEmbeddings  ChatResourceEmbedding[]
-  messageEmbeddings ChatMessageEmbedding[]
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newsStory          NewsStory?              @relation("ChatSessionLinkedStory", fields: [newsStoryId], references: [id], onDelete: SetNull)
+  originStories      NewsStory[]             @relation("ChatStoryOrigin")
+  messages           ChatMessage[]
+  researchSources    ResearchSource[]
+  scripts            Script[]
+  resourceEmbeddings ChatResourceEmbedding[]
+  messageEmbeddings  ChatMessageEmbedding[]
 
   @@index([userId])
   @@index([userId, isBookmarked])
@@ -211,8 +214,9 @@ model ChatMessage {
   content       String   @db.Text
   createdAt     DateTime @default(now()) @map("created_at")
   scriptId      String?  @map("script_id") @db.Uuid
+  loadingLogs   String[] @default([]) @map("loading_logs")
 
-  chatSession ChatSession            @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  chatSession ChatSession           @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
   embedding   ChatMessageEmbedding?
 
   @@index([chatSessionId])
@@ -273,15 +277,15 @@ model Script {
 }
 
 model Notification {
-  id          String   @id @default(uuid()) @db.Uuid
-  userId      String   @map("user_id")
-  type        String
-  title       String
-  message     String?
-  link        String?
-  read        Boolean  @default(false)
-  dedupeKey   String?  @map("dedupe_key")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  message   String?
+  link      String?
+  read      Boolean  @default(false)
+  dedupeKey String?  @map("dedupe_key")
+  createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -292,11 +296,11 @@ model Notification {
 }
 
 model ChatMessageEmbedding {
-  id            String   @id @default(uuid()) @db.Uuid
-  messageId     String   @unique @map("message_id") @db.Uuid
-  chatSessionId String   @map("chat_session_id") @db.Uuid
+  id            String                      @id @default(uuid()) @db.Uuid
+  messageId     String                      @unique @map("message_id") @db.Uuid
+  chatSessionId String                      @map("chat_session_id") @db.Uuid
   embedding     Unsupported("vector(1536)")
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt     DateTime                    @default(now()) @map("created_at")
 
   message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
   chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)

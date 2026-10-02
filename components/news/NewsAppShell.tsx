@@ -42,11 +42,10 @@ const NAV_ITEMS: NavItem[] = [
     exact: false,
   },
   {
-    href: "/news",
-    label: "Settings",
+    href: "/pricing",
+    label: "Pro & billing",
     icon: Settings,
     exact: false,
-    disabled: true,
   },
 ];
 

@@ -1,8 +1,7 @@
 "use client";
 
-import { NotificationItem } from "@/components/notifications/NotificationItem";
+import { VirtualizedNotificationList } from "@/components/notifications/VirtualizedNotificationList";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { SerializedNotification } from "@/services/notifications/notificationApiSchemas";
 import { BellOff, Loader2 } from "lucide-react";
@@ -14,6 +13,11 @@ type NotificationPopoverProps = {
   error: string | null;
   markingId: string | null;
   onSelect: (notification: SerializedNotification) => void;
+  hasMoreOlder: boolean;
+  loadingOlder: boolean;
+  listFooterError: string | null;
+  onLoadOlder: () => void;
+  onRetryLoadOlder: () => void;
 };
 
 export function NotificationPopover({
@@ -23,9 +27,14 @@ export function NotificationPopover({
   error,
   markingId,
   onSelect,
+  hasMoreOlder,
+  loadingOlder,
+  listFooterError,
+  onLoadOlder,
+  onRetryLoadOlder,
 }: NotificationPopoverProps) {
   return (
-    <div className="flex w-[min(100vw-2rem,22rem)] flex-col gap-0 p-0 overflow-y-auto">
+    <div className="flex w-[min(100vw-2rem,22rem)] flex-col gap-0 overflow-hidden p-0">
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <p className="text-sm font-medium">Notifications</p>
         {unreadCount > 0 ? (
@@ -50,24 +59,17 @@ export function NotificationPopover({
           <p className="text-sm text-muted-foreground">No notifications yet</p>
         </div>
       ) : (
-        <ScrollArea className="max-h-[min(24rem,70vh)]">
-          <div className="flex flex-col gap-0.5 p-1">
-            {notifications.map((notification) => (
-              <NotificationItem
-                key={notification.id}
-                notification={notification}
-                onSelect={onSelect}
-                disabled={markingId === notification.id}
-              />
-            ))}
-          </div>
-        </ScrollArea>
+        <VirtualizedNotificationList
+          notifications={notifications}
+          markingId={markingId}
+          onSelect={onSelect}
+          hasMoreOlder={hasMoreOlder}
+          loadingOlder={loadingOlder}
+          olderError={listFooterError}
+          onLoadOlder={onLoadOlder}
+          onRetryOlder={onRetryLoadOlder}
+        />
       )}
-      {error && notifications.length > 0 ? (
-        <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }

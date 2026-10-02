@@ -21,6 +21,7 @@ import {
   isUserStoryGenerating,
 } from "@/services/news/newsStoryAccess";
 import { listChatSessionsForUser } from "@/services/chat/chatSessionCrud";
+import { isChatAssistantProgressPlaceholder } from "@/services/chat/chatAssistantProgress";
 import { z } from "zod";
 
 export const newsStoryChatBodySchema = z.object({
@@ -92,6 +93,10 @@ function deriveChatSessionStatus(
   const latestReply = repliesAfterLastUser.at(-1)!;
   if (latestReply.content.startsWith("Research pipeline failed:")) {
     return "failed";
+  }
+
+  if (isChatAssistantProgressPlaceholder(latestReply.content)) {
+    return "initializing";
   }
 
   return "ready";

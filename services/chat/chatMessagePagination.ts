@@ -9,6 +9,7 @@ export type SerializedChatMessageListItem = {
   role: string;
   content: string;
   createdAt: string;
+  loadingLogs: string[];
 };
 
 export type ChatMessageListCursor = {

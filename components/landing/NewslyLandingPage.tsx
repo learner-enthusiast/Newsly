@@ -12,6 +12,7 @@ import { HeadlineContext } from "@/components/landing/HeadlineContext";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { LandingStoryMotion } from "@/components/landing/LandingStoryMotion.client";
 import { PhilosophySection } from "@/components/landing/PhilosophySection";
+import { PricingSection } from "@/components/landing/PricingSection";
 import { SourceTrail } from "@/components/landing/SourceTrail";
 import { TrendingSection } from "@/components/landing/TrendingSection";
 
@@ -37,6 +38,7 @@ export function NewslyLandingPage() {
       <BrowseToUnderstand />
       <TrendingSection />
       <PhilosophySection />
+      <PricingSection />
       <FinalCTA />
     </main>
   );

@@ -20,6 +20,7 @@ export const notificationListQuerySchema = z.object({
       value === undefined ? undefined : value === "true",
     ),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  before: z.string().min(1).optional(),
 });
 
 export type SerializedNotification = {

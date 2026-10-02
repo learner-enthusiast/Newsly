@@ -20,6 +20,9 @@ export function NewslyDashboardPage() {
           <Button variant="outline" size="lg" className="rounded-full" nativeButton={false} render={<Link href="/chat" />}>
             Open chat
           </Button>
+          <Button variant="sketch-outline" nativeButton={false} render={<Link href="/pricing" />}>
+            Plans & Pro
+          </Button>
         </div>
       </section>
       <TrendingSection />

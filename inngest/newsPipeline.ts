@@ -822,6 +822,7 @@ export const newsPipelineFunction = inngest.createFunction(
             importanceScore: story.importanceScore,
             newsSourceIds: [],
             imageUrl: storyImageUrl,
+            loadingLogs: ["Story added to your briefing."],
           });
 
           const newsSourceIds: string[] = [];

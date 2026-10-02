@@ -2,17 +2,16 @@
 
 import { ChatStoryCreationCard } from "@/components/chat/ChatStoryCreationCard";
 import { ChatDeepDiveBanner } from "@/components/chat/ChatDeepDiveBanner";
-import { ChatLoading } from "@/components/chat/ChatLoading";
+import { ChatResearchProgressPanel } from "@/components/chat/ChatResearchProgressPanel";
 import { ChatVirtualizedMessageList } from "@/components/chat/ChatVirtualizedMessageList";
 import { ChatWelcome } from "@/components/chat/ChatWelcome";
-import {
-  hasAssistantReplyAfterLastUser,
-} from "@/services/chat/chatUiUtils";
+import { isChatAssistantProgressPlaceholder } from "@/services/chat/chatAssistantProgress";
+import { isAssistantRole } from "@/services/chat/chatUiUtils";
 import type { SerializedChatMessageListItem } from "@/services/chat/chatMessagePagination";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import type { RefObject } from "react";
+import { type RefObject, useMemo } from "react";
 
 export type ConversationMessage = SerializedChatMessageListItem;
 
@@ -57,11 +56,17 @@ export function ChatConversation({
   onRetry,
   composerDisabled,
 }: ChatConversationProps) {
-  const awaitingAssistantReply =
-    status === "initializing" &&
-    !hasAssistantReplyAfterLastUser(messages);
-
-  const showResearching = awaitingAssistantReply;
+  const displayMessages = useMemo(
+    () =>
+      messages.filter(
+        (message) =>
+          !(
+            isAssistantRole(message.role) &&
+            isChatAssistantProgressPlaceholder(message.content)
+          ),
+      ),
+    [messages],
+  );
 
   if (showWelcome && messages.length === 0 && !loadingInitial) {
     return (
@@ -80,7 +85,7 @@ export function ChatConversation({
         <ChatStoryCreationCard storyCreation={storyCreation} />
       ) : null}
 
-      {showResearching ? <ChatLoading variant="researching" /> : null}
+      <ChatResearchProgressPanel messages={messages} status={status} />
 
       {status === "failed" ? (
         <Card className="border-destructive/30 bg-destructive/5 p-4 text-sm">
@@ -103,7 +108,7 @@ export function ChatConversation({
 
   return (
     <ChatVirtualizedMessageList
-      messages={messages}
+      messages={displayMessages}
       scrollRef={scrollRef}
       loadingInitial={loadingInitial}
       loadingOlder={loadingOlder}

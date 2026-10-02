@@ -77,6 +77,7 @@ import type { ValidatedSerpToolCall } from "@/Agents/chat/smallDeterminerAgent";
 import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import {
+  appendNewsStoryLoadingLog,
   applyChatStorySynthesis,
   getChatNewsStoryForPipeline,
   markChatNewsStoryFailed,
@@ -167,6 +168,7 @@ export const chatStoryPipelineFunction = inngest.createFunction(
           publishStatus: row.publishStatus,
         });
       }
+      await appendNewsStoryLoadingLog(input.storyId, "Story pipeline started.");
       return toJsonSafeStepOutput({ skip: false as const, publishStatus: row.publishStatus });
     });
 
@@ -187,6 +189,13 @@ export const chatStoryPipelineFunction = inngest.createFunction(
         abortSignal: AbortSignal.timeout(120_000),
       });
       return toJsonSafeStepOutput(result);
+    });
+
+    await step.run("append-story-log-gap", async () => {
+      await appendNewsStoryLoadingLog(
+        input.storyId,
+        "Research gap analysis complete.",
+      );
     });
 
     const extraSerpHits = await step.run("optional-additional-serp", async () => {
@@ -286,6 +295,10 @@ export const chatStoryPipelineFunction = inngest.createFunction(
       return toJsonSafeStepOutput(story);
     });
 
+    await step.run("append-story-log-synthesized", async () => {
+      await appendNewsStoryLoadingLog(input.storyId, "Story draft synthesized.");
+    });
+
     await step.run("persist-story-and-sources", async () => {
       const imageByUrl = new Map<string, string | null>();
       for (const source of synthesized.sources) {
@@ -331,6 +344,10 @@ export const chatStoryPipelineFunction = inngest.createFunction(
           ? new Date(synthesized.publishedAt)
           : null,
       });
+      await appendNewsStoryLoadingLog(
+        input.storyId,
+        "Story saved — ready for review.",
+      );
     });
 
     await step.run("create-completion-notification", async () => {

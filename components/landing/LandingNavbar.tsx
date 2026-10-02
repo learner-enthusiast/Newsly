@@ -7,5 +7,6 @@
 export const LANDING_NAV_LINKS = [
   { href: "/newsStory", label: "Explore" },
   { href: "#inside", label: "How it works" },
+  { href: "#pricing", label: "Pricing" },
   { href: "/about", label: "About" },
 ] as const;

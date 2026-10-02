@@ -1,3 +1,5 @@
+import { isCompletedAssistantReplyContent } from "@/services/chat/chatAssistantProgress";
+
 export type ChatSessionSummary = {
   id: string;
   title: string;
@@ -93,7 +95,7 @@ export function isAssistantRole(role: string): boolean {
 }
 
 export function hasAssistantReplyAfterLastUser(
-  messages: { role: string }[],
+  messages: { role: string; content?: string }[],
 ): boolean {
   let lastUserIndex = -1;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -105,7 +107,11 @@ export function hasAssistantReplyAfterLastUser(
   if (lastUserIndex === -1) {
     return false;
   }
-  return messages
-    .slice(lastUserIndex + 1)
-    .some((message) => isAssistantRole(message.role));
+  return messages.slice(lastUserIndex + 1).some((message) => {
+    if (!isAssistantRole(message.role)) {
+      return false;
+    }
+    const content = message.content ?? "";
+    return content.trim() !== "" && isCompletedAssistantReplyContent(content);
+  });
 }

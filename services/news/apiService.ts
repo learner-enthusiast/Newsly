@@ -39,9 +39,7 @@ import {
   type PublishStatus,
   type SerializedNewsRequest,
 } from "@/services/news/newsRequestTypes";
-import {
-  findUserNewsRequest,
-} from "@/repositories/user";
+import { findUserNewsRequest } from "@/repositories/user";
 import { z } from "zod";
 import { resolveCoordsFromFirstAutocompleteHit } from "@/services/location/autocompleteServerCache";
 
@@ -128,15 +126,14 @@ function serializeStory(
   viewerUserId: string | null = null,
 ) {
   return attachSavedFieldToStory(
-    attachVoteFieldsToStory(
-      serializeStoryBase(story, viewerUserId),
-      userVote,
-    ),
+    attachVoteFieldsToStory(serializeStoryBase(story, viewerUserId), userVote),
     userSaved,
   );
 }
 
-function readSearchQueries(searchQuery: unknown): SerializedNewsRequest["searchQueries"] {
+function readSearchQueries(
+  searchQuery: unknown,
+): SerializedNewsRequest["searchQueries"] {
   const parsed = newsSearchQuerySchema.safeParse(searchQuery);
   if (!parsed.success) {
     return null;
@@ -180,12 +177,12 @@ function serializeNewsRequest(
 }
 
 async function serializeNewsRequestsWithStoryCounts(
-  rows: Array<NonNullable<Awaited<ReturnType<typeof getNewsRequestByIdForUser>>>>,
+  rows: Array<
+    NonNullable<Awaited<ReturnType<typeof getNewsRequestByIdForUser>>>
+  >,
 ) {
   const counts = await countStoriesByNewsRequestIds(rows.map((row) => row.id));
-  return rows.map((row) =>
-    serializeNewsRequest(row, counts.get(row.id) ?? 0),
-  );
+  return rows.map((row) => serializeNewsRequest(row, counts.get(row.id) ?? 0));
 }
 
 async function loadStoriesIfReady(
@@ -335,7 +332,11 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
       };
     }
 
-    const stories = await loadStoriesIfReady(existing.id, existing.status, userId);
+    const stories = await loadStoriesIfReady(
+      existing.id,
+      existing.status,
+      userId,
+    );
     return {
       newsRequest: serializeNewsRequest(existing),
       stories,
@@ -577,7 +578,10 @@ export async function listViewerUserCreatedNewsStories(input: {
 export const listViewerSavedNewsStories = listViewerBookmarkedNewsStories;
 
 /** Poll news request status and stories for the owning user. */
-export async function getNewsRequestResult(userId: string, newsRequestId: string) {
+export async function getNewsRequestResult(
+  userId: string,
+  newsRequestId: string,
+) {
   const newsRequest = await getNewsRequestByIdForUser(newsRequestId, userId);
   if (!newsRequest) {
     return null;
@@ -596,7 +600,10 @@ export async function getNewsRequestResult(userId: string, newsRequestId: string
 }
 
 /** Re-run pipeline for a failed request owned by the user. */
-export async function retryFailedNewsRequest(userId: string, newsRequestId: string) {
+export async function retryFailedNewsRequest(
+  userId: string,
+  newsRequestId: string,
+) {
   const newsRequest = await getNewsRequestByIdForUser(newsRequestId, userId);
   if (!newsRequest || newsRequest.status !== "failed") {
     return null;

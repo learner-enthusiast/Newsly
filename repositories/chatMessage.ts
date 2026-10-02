@@ -12,6 +12,7 @@ const chatMessageWriteSchema = z.object({
   role: z.string().min(1),
   content: z.string().min(1),
   scriptId: scriptIdSchema.nullable().optional(),
+  loadingLogs: z.array(z.string()).optional(),
 });
 
 const chatMessagePutSchema = chatMessageWriteSchema.omit({ chatSessionId: true });
@@ -20,6 +21,22 @@ const chatMessagePatchSchema = chatMessagePutSchema.partial();
 export type ChatMessageCreateInput = z.input<typeof chatMessageWriteSchema>;
 export type ChatMessagePutInput = z.input<typeof chatMessagePutSchema>;
 export type ChatMessagePatchInput = z.input<typeof chatMessagePatchSchema>;
+
+export async function appendChatMessageLoadingLog(
+  messageId: string,
+  message: string,
+) {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return prisma.chatMessage.update({
+    where: { id: chatMessageIdSchema.parse(messageId) },
+    data: {
+      loadingLogs: { push: trimmed },
+    },
+  });
+}
 
 export async function createChatMessage(input: ChatMessageCreateInput) {
   const saved = await prisma.chatMessage.create({
@@ -122,6 +139,7 @@ export async function listChatMessagesCursorPage(input: {
       role: true,
       content: true,
       createdAt: true,
+      loadingLogs: true,
     },
   });
 

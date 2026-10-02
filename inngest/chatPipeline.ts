@@ -116,11 +116,14 @@ import {
 import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import {
+  appendChatMessageLoadingLog,
   findAssistantReplyAfterUserMessage,
   createChatMessage,
   getUserChatMessageForSession,
   listRecentChatMessagesByChatSessionId,
+  patchChatMessage,
 } from "@/repositories/chatMessage";
+import { appendNewsStoryLoadingLog } from "@/repositories/newsStory";
 import { CHAT_PIPELINE_RECENT_MESSAGE_LIMIT } from "@/services/chat/recentChatMessagesForPipeline";
 import { getChatSessionById } from "@/repositories/chatSession";
 import { autoRenameUserChatFromFirstMessage } from "@/services/chat/chatSessionCrud";
@@ -170,6 +173,10 @@ import {
   chatResearchFailedNotification,
   tryCreatePipelineNotification,
 } from "@/services/notifications/pipelineNotifications";
+import {
+  CHAT_ASSISTANT_PROGRESS_PLACEHOLDER,
+  isChatAssistantProgressPlaceholder,
+} from "@/services/chat/chatAssistantProgress";
 import { NonRetriableError } from "inngest";
 import { z } from "zod";
 
@@ -198,6 +205,7 @@ const pipelineLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 const VECTOR_RESEARCH_LIMIT = 8;
 const VECTOR_MIN_SIMILARITY = 0.72;
 const RESEARCH_SOURCE_INSERT_CONCURRENCY = 4;
+const ASSISTANT_PROGRESS_PLACEHOLDER = CHAT_ASSISTANT_PROGRESS_PLACEHOLDER;
 
 function createStepTimer(): () => number {
   const startedAt = Date.now();
@@ -303,7 +311,10 @@ export const messageChatPipelineFunction = inngest.createFunction(
       },
     );
 
-    if (existingAssistant) {
+    if (
+      existingAssistant &&
+      !isChatAssistantProgressPlaceholder(existingAssistant.content)
+    ) {
       pipelineLog("run", "skipped", { reason: "assistant already exists" });
       await step.run("create-completion-notification", async () => {
         const session = await getChatSessionById(input.chatSessionId);
@@ -324,6 +335,26 @@ export const messageChatPipelineFunction = inngest.createFunction(
 
     try {
       const pipelineStartedAt = Date.now();
+
+      const assistantProgress = await step.run(
+        "ensure-assistant-progress-message",
+        async () => {
+          const again = await findAssistantReplyAfterUserMessage(
+            input.chatSessionId,
+            input.chatMessageId,
+          );
+          if (again) {
+            return toJsonSafeStepOutput({ id: again.id });
+          }
+          const saved = await createChatMessage({
+            chatSessionId: input.chatSessionId,
+            role: "agent",
+            content: ASSISTANT_PROGRESS_PLACEHOLDER,
+            loadingLogs: ["Pipeline started."],
+          });
+          return toJsonSafeStepOutput({ id: saved.id });
+        },
+      );
 
       const [chatContext, researchInventory] = await Promise.all([
         step.run("fetch-chat-context", async () => {
@@ -467,16 +498,26 @@ export const messageChatPipelineFunction = inngest.createFunction(
       if ("blocked" in determinerParsed && determinerParsed.blocked) {
         const blockedMessage = await step.run(
           "save-guardrail-message",
-          async () =>
-            createChatMessage({
-              chatSessionId: input.chatSessionId,
-              role: "agent",
+          async () => {
+            await appendChatMessageLoadingLog(
+              assistantProgress.id,
+              "Request blocked by guardrails.",
+            );
+            return patchChatMessage(assistantProgress.id, {
               content:
                 "I can't run that research request because it falls outside stock-market and economic research guardrails.",
-            }),
+            });
+          },
         );
         return toJsonSafeStepOutput({ assistantMessageId: blockedMessage.id });
       }
+
+      await step.run("append-assistant-log-determiner", async () => {
+        await appendChatMessageLoadingLog(
+          assistantProgress.id,
+          "Research plan ready.",
+        );
+      });
 
       const determinerOutcome = determinerParsed as SmallDeterminerRunResult;
       let determiner = determinerOutcome.determiner;
@@ -833,6 +874,13 @@ export const messageChatPipelineFunction = inngest.createFunction(
         },
       );
 
+      await step.run("append-assistant-log-sources", async () => {
+        await appendChatMessageLoadingLog(
+          assistantProgress.id,
+          "Sources collected.",
+        );
+      });
+
       const researchContext = mergeResearchSourcesForChatModel(
         existingResearchRows,
         newResearchRows,
@@ -880,26 +928,42 @@ export const messageChatPipelineFunction = inngest.createFunction(
           },
         });
 
+        await step.run("append-story-log-queued", async () => {
+          await appendNewsStoryLoadingLog(
+            storyShell.storyId,
+            "Evidence gathered; story pipeline queued.",
+          );
+        });
+
         const storyHandoff = await step.run(
           "save-story-status-message",
           async () => {
+            const storyStatusContent =
+              "I'm researching and writing your news story. You'll be notified when it's ready to review.";
             const again = await findAssistantReplyAfterUserMessage(
               input.chatSessionId,
               input.chatMessageId,
             );
             if (again) {
+              await appendChatMessageLoadingLog(
+                again.id,
+                "Story research queued.",
+              );
+              const updated = await patchChatMessage(again.id, {
+                content: storyStatusContent,
+              });
               return toJsonSafeStepOutput({
                 storyId: storyShell.storyId,
                 status: "PENDING" as const,
-                assistantMessageId: again.id,
+                assistantMessageId: updated.id,
               });
             }
 
             const message = await createChatMessage({
               chatSessionId: input.chatSessionId,
               role: "agent",
-              content:
-                "I'm researching and writing your news story. You'll be notified when it's ready to review.",
+              content: storyStatusContent,
+              loadingLogs: ["Story research queued."],
             });
 
             return toJsonSafeStepOutput({
@@ -947,12 +1011,18 @@ export const messageChatPipelineFunction = inngest.createFunction(
             input.chatMessageId,
           );
           if (again) {
-            pipelineLog("save-assistant-message", "skipped", { id: again.id });
-            return toJsonSafeStepOutput({
+            pipelineLog("save-assistant-message", "update existing", {
               id: again.id,
-              role: again.role,
-              content: again.content,
-              createdAt: again.createdAt.toISOString(),
+            });
+            await appendChatMessageLoadingLog(again.id, "Reply generated.");
+            const saved = await patchChatMessage(again.id, {
+              content: assistantMarkdown,
+            });
+            return toJsonSafeStepOutput({
+              id: saved.id,
+              role: saved.role,
+              content: saved.content,
+              createdAt: saved.createdAt.toISOString(),
             });
           }
 
@@ -961,6 +1031,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
             chatSessionId: input.chatSessionId,
             role: "agent",
             content: assistantMarkdown,
+            loadingLogs: ["Reply generated."],
           });
           pipelineLog("save-assistant-message", "done", { id: saved.id });
           return toJsonSafeStepOutput({
@@ -1015,12 +1086,17 @@ export const messageChatPipelineFunction = inngest.createFunction(
             input.chatMessageId,
           );
           if (again) {
-            return toJsonSafeStepOutput({ id: again.id });
+            await appendChatMessageLoadingLog(again.id, "Pipeline failed.");
+            const saved = await patchChatMessage(again.id, {
+              content: `Research pipeline failed: ${message}`,
+            });
+            return toJsonSafeStepOutput({ id: saved.id });
           }
           const saved = await createChatMessage({
             chatSessionId: input.chatSessionId,
             role: "agent",
             content: `Research pipeline failed: ${message}`,
+            loadingLogs: ["Pipeline failed."],
           });
           return toJsonSafeStepOutput({ id: saved.id });
         });

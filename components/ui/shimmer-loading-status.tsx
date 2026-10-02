@@ -43,6 +43,14 @@ export const CHAT_LOADING_MESSAGES = [
   "Following the research trail…",
 ] as const;
 
+export const CHAT_RESEARCH_OVERDUE_MESSAGES = [
+  "Will be done any moment…",
+  "Filtering the stories…",
+  "Doing deeper research…",
+  "Cross-checking sources…",
+  "Almost there…",
+] as const;
+
 export const TRENDING_LOADING_MESSAGES = [
   "Finding what’s trending…",
   "Tallying community upvotes…",

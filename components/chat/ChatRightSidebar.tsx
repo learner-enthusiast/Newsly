@@ -1,7 +1,9 @@
 "use client";
 
 import { CHAT_DEMO_TRENDING_TOPICS } from "@/components/chat/chatConstants";
+import { VirtualizedPotentialStoryTopicsList } from "@/components/chat/VirtualizedPotentialStoryTopicsList";
 import { animateSuggestionRefresh } from "@/components/chat/useChatMotion";
+import type { SerializedPotentialStoryTopic } from "@/services/chat/potentialStoryTopicsPagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -11,8 +13,13 @@ import { useLayoutEffect, useRef } from "react";
 type ChatPromptOptions = { shouldCreateStory?: boolean };
 
 type ChatRightSidebarProps = {
-  potentialStoryTopics?: string[];
+  potentialStoryTopics?: SerializedPotentialStoryTopic[];
   potentialTopicsLoading?: boolean;
+  potentialTopicsHasMore?: boolean;
+  potentialTopicsLoadingMore?: boolean;
+  potentialTopicsLoadMoreError?: string | null;
+  onLoadMorePotentialTopics?: () => void;
+  onRetryLoadMorePotentialTopics?: () => void;
   actions: string[];
   questions: string[];
   isRefreshing?: boolean;
@@ -24,6 +31,11 @@ type ChatRightSidebarProps = {
 export function ChatRightSidebar({
   potentialStoryTopics = [],
   potentialTopicsLoading = false,
+  potentialTopicsHasMore = false,
+  potentialTopicsLoadingMore = false,
+  potentialTopicsLoadMoreError = null,
+  onLoadMorePotentialTopics,
+  onRetryLoadMorePotentialTopics,
   actions,
   questions,
   isRefreshing = false,
@@ -62,34 +74,20 @@ export function ChatRightSidebar({
                 : "Story ideas appear here shortly after the assistant finishes a reply."}
             </p>
           ) : (
-            <div
-              className="max-h-[15rem] overflow-y-auto overscroll-y-contain pr-0.5"
-              aria-label="Potential story topics list"
-            >
-              <ol className="space-y-2 text-sm">
-                {potentialStoryTopics.map((topic, index) => (
-                  <li key={`${index}-${topic}`}>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-auto w-full justify-start gap-2 whitespace-normal py-1.5 text-left font-normal"
-                      disabled={disabled}
-                      onClick={() =>
-                        onPrompt(`Create a story about: ${topic}`, {
-                          shouldCreateStory: true,
-                        })
-                      }
-                    >
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      <span>{topic}</span>
-                    </Button>
-                  </li>
-                ))}
-              </ol>
-            </div>
+            <VirtualizedPotentialStoryTopicsList
+              topics={potentialStoryTopics}
+              disabled={disabled}
+              hasMore={potentialTopicsHasMore}
+              loadingMore={potentialTopicsLoadingMore}
+              loadMoreError={potentialTopicsLoadMoreError}
+              onLoadMore={() => {
+                onLoadMorePotentialTopics?.();
+              }}
+              onRetryLoadMore={() => {
+                onRetryLoadMorePotentialTopics?.();
+              }}
+              onPrompt={onPrompt}
+            />
           )}
         </CardContent>
       </Card>

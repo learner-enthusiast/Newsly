@@ -9,7 +9,7 @@ import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { animateNewMessage, useChatEntrance } from "@/components/chat/useChatMotion";
 import { useChatUiSuggestions } from "@/hooks/useChatUiSuggestions";
 import { useChatMessagePages } from "@/hooks/useChatMessagePages";
-import { usePotentialStoryTopics } from "@/hooks/usePotentialStoryTopics";
+import { usePotentialStoryTopicPages } from "@/hooks/usePotentialStoryTopicPages";
 import {
   createOptimisticUserMessage,
   mergeOptimisticChatMessages,
@@ -199,7 +199,7 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
       ? suggestionsRefreshKey
       : null;
 
-  const potentialStoryTopicsState = usePotentialStoryTopics(
+  const potentialStoryTopicsState = usePotentialStoryTopicPages(
     chatSessionId,
     potentialStoryTopicsFetchKey,
   );
@@ -498,7 +498,16 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
   const rightSidebar = (
     <ChatRightSidebar
       potentialStoryTopics={potentialStoryTopicsState.topics}
-      potentialTopicsLoading={potentialStoryTopicsState.isLoading}
+      potentialTopicsLoading={potentialStoryTopicsState.isLoadingInitial}
+      potentialTopicsHasMore={potentialStoryTopicsState.hasMore}
+      potentialTopicsLoadingMore={potentialStoryTopicsState.loadingMore}
+      potentialTopicsLoadMoreError={potentialStoryTopicsState.loadMoreError}
+      onLoadMorePotentialTopics={() => {
+        void potentialStoryTopicsState.loadMoreTopics();
+      }}
+      onRetryLoadMorePotentialTopics={() => {
+        void potentialStoryTopicsState.retryLoadMore();
+      }}
       actions={uiSuggestions.actions}
       questions={uiSuggestions.questions}
       isRefreshing={uiSuggestions.isRefreshing}
@@ -567,7 +576,22 @@ export function ChatLayout({ chatSessionId }: { chatSessionId: string }) {
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <ChatRightSidebar
                   potentialStoryTopics={potentialStoryTopicsState.topics}
-                  potentialTopicsLoading={potentialStoryTopicsState.isLoading}
+                  potentialTopicsLoading={
+                    potentialStoryTopicsState.isLoadingInitial
+                  }
+                  potentialTopicsHasMore={potentialStoryTopicsState.hasMore}
+                  potentialTopicsLoadingMore={
+                    potentialStoryTopicsState.loadingMore
+                  }
+                  potentialTopicsLoadMoreError={
+                    potentialStoryTopicsState.loadMoreError
+                  }
+                  onLoadMorePotentialTopics={() => {
+                    void potentialStoryTopicsState.loadMoreTopics();
+                  }}
+                  onRetryLoadMorePotentialTopics={() => {
+                    void potentialStoryTopicsState.retryLoadMore();
+                  }}
                   actions={uiSuggestions.actions}
                   questions={uiSuggestions.questions}
                   isRefreshing={uiSuggestions.isRefreshing}

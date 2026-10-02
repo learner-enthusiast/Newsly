@@ -31,6 +31,11 @@ export function NotificationBell() {
     unreadCount,
     loading,
     error,
+    listFooterError,
+    loadingOlder,
+    hasMoreOlder,
+    loadOlderNotifications,
+    retryLoadOlder,
     markAsRead,
   } = useNotifications(true);
 
@@ -134,6 +139,15 @@ export function NotificationBell() {
             loading={loading}
             error={error}
             markingId={markingId}
+            hasMoreOlder={hasMoreOlder}
+            loadingOlder={loadingOlder}
+            listFooterError={listFooterError}
+            onLoadOlder={() => {
+              void loadOlderNotifications();
+            }}
+            onRetryLoadOlder={() => {
+              void retryLoadOlder();
+            }}
             onSelect={(notification) => {
               void handleSelect(notification);
             }}

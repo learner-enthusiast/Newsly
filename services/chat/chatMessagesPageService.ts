@@ -23,12 +23,14 @@ function serializeRow(row: {
   role: string;
   content: string;
   createdAt: Date;
+  loadingLogs: string[];
 }): SerializedChatMessageListItem {
   return {
     id: row.id,
     role: row.role,
     content: row.content,
     createdAt: row.createdAt.toISOString(),
+    loadingLogs: row.loadingLogs ?? [],
   };
 }
 
