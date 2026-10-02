@@ -1,7 +1,25 @@
 /**
- * Story update decision agent (news rerun)
+ * Story update decision agent (rerun — rewrite vs attach-only)
  *
- * Decides whether new evidence materially updates an existing story.
+ * Role:
+ * For one existing story and a set of **newly matched** sources, judge whether the story body
+ * should be re-synthesized (`shouldUpdate: true`) or sources should merely be linked
+ * (`shouldUpdate: false`) when evidence is redundant or immaterial.
+ *
+ * Called from:
+ * - `inngest/reRunPipeline.ts` — inside `apply-rerun-outcomes` per `StoryMatcher` match
+ *
+ * Model: `NEWS_STORY_UPDATE_DECISION_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ * Conservative system prompt — avoids unnecessary full rewrites.
+ *
+ * Input:
+ * - `existingStory` — id, title, summary excerpt, content excerpt
+ * - `existingSources[]` — title, url, excerpt
+ * - `newEvidence[]` — same shape for newly discovered sources
+ *
+ * Output: `{ shouldUpdate: boolean, reason: string }` — reason surfaced in rerun result logs.
+ *
+ * Does not: call `NewsSynthesizerAgent` itself; pipeline branches on `shouldUpdate`.
  */
 
 import { createAIClient, type AIClientOptions } from "@/clients/AIClient";

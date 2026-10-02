@@ -65,6 +65,17 @@
  * - create-failure-notification — `CHAT_STORY_FAILED` / research failed variant
  *
  * Notification persistence errors are swallowed where wrapped in `tryCreatePipelineNotification`.
+ *
+ * ── Agents & model env vars ─────────────────────────────────────────────────
+ *
+ * | Stage              | Agent                    | Env override(s)                 |
+ * |--------------------|--------------------------|---------------------------------|
+ * | Gap planning       | `chatStoryResearchGapAgent` | `CHAT_STORY_RESEARCH_GAP_MODEL` |
+ * | Optional scrape    | `NewsContentCleanerAgent`   | `NEWS_CONTENT_CLEANER_MODEL`    |
+ * | Story synthesis    | `NewsSynthesizerAgent`      | `NEWS_SYNTHESIZER_MODEL`        |
+ *
+ * Upstream message chat already ran determiner, Serp, YouTube, and article selection; this
+ * worker only fills gaps and writes the single PENDING → READY user story.
  */
 
 import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";

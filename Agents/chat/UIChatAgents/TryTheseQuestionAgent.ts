@@ -1,12 +1,21 @@
 /**
- * Try These Questions agent
+ * Try These Questions agent (chat UI follow-ups)
  *
- * Suggests exactly 5 context-aware follow-up questions from recent chat history
- * only (no web search or external tools).
+ * Role:
+ * Propose exactly five natural follow-up questions the user might ask next, grounded only
+ * in provided chat history (starter prompts for the composer).
  *
- * Input: recentMessages (up to 20, oldest first); optional model, system, abortSignal.
+ * Called from:
+ * - Chat UI API (parallel to Quick Actions); not part of Inngest durable pipelines
  *
- * Output: { questions: [5 strings], model }
+ * Model: `TRY_THESE_QUESTIONS_MODEL` → `QUERY_ENHANCER_MODEL` → defaults.
+ * `TRY_THESE_QUESTIONS_COUNT` = 5; up to 20 recent messages formatted like enhancer input.
+ *
+ * Input: `recentMessages`; optional `model`, `system`, `abortSignal`.
+ *
+ * Output: `{ questions: string[5], model }` — questions are full sentences, no Markdown lists.
+ *
+ * Does not: browse, verify facts, or auto-send messages.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

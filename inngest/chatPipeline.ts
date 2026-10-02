@@ -99,6 +99,23 @@
  * exists yet. `NonRetriableError` skips this (e.g. missing session/message).
  *
  * onFailure → create-failure-notification — `CHAT_RESEARCH_FAILED` for session owner.
+ *
+ * ── Agents & model env vars ─────────────────────────────────────────────────
+ *
+ * | Stage              | Agent                         | Env override(s)                    |
+ * |--------------------|-------------------------------|------------------------------------|
+ * | Determiner bundle  | `smallDeterminerAgent`        | `DETERMINER_MODEL`                 |
+ * | Guardrails         | `guardrails` (via determiner) | `GUARDRAIL_MODEL`                  |
+ * | Query enhance      | `queryEnhancerAgent`          | `QUERY_ENHANCER_MODEL`             |
+ * | Vector recall query| `chatstorySimilarityQueryagent`| `CHAT_STORY_SIMILARITY_QUERY_MODEL`|
+ * | Serp URL pick      | `relevanceAgent` (chat path)  | `RELEVANCE_AGENT_MODEL`            |
+ * | Scrape selection   | `ArticleSythesizerAgent` → `ResearchArticleSelectorAgent` | selector env |
+ * | Scrape cleanup     | `NewsContentCleanerAgent`     | `NEWS_CONTENT_CLEANER_MODEL`       |
+ * | Assistant reply    | `chatModel`                   | `CHAT_MODEL`                       |
+ * | Session title      | `chatSessionTitleAgent`       | `CHAT_SESSION_TITLE_MODEL`         |
+ *
+ * Background (not awaited here): `researchSourceDescriptionAgent`, `chatMessageSummarizerVectorAgent`,
+ * `chatStoryIdentifierAgent` (potential topics). Story completion uses `chat/story.research.requested`.
  */
 
 import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";

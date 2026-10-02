@@ -17,6 +17,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { ProGatedNavLink } from "@/components/nav/ProGatedNavLink";
+import { SIGNED_IN_APP_NAV } from "@/components/nav/signedInAppNav";
 import { Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -56,53 +58,25 @@ export function SiteHeader() {
             className="hidden flex-1 items-center justify-center gap-5 md:flex"
             aria-label="App"
           >
-            {(
-              [
-                { href: "/", label: "Home", match: (p: string) => p === "/" },
-                {
-                  href: "/news",
-                  label: "News",
-                  match: (p: string) => p === "/news" || p.startsWith("/news/"),
-                },
-                {
-                  href: "/chat",
-                  label: "Chat",
-                  match: (p: string) => p === "/chat" || p.startsWith("/chat/"),
-                },
-                {
-                  href: "/newsStory/saved",
-                  label: "Saved",
-                  match: (p: string) =>
-                    p === "/newsStory/saved" || p.startsWith("/newsStory/saved/"),
-                },
-                {
-                  href: "/newsStory/bookmarks",
-                  label: "Bookmarks",
-                  match: (p: string) =>
-                    p === "/newsStory/bookmarks" ||
-                    p.startsWith("/newsStory/bookmarks/"),
-                },
-              ] as const
-            ).map((link) =>
-              "disabled" in link && link.disabled ? (
-                <span
-                  key={link.label}
-                  className="cursor-not-allowed text-sm text-muted-foreground/50"
-                >
-                  {link.label}
-                </span>
+            {SIGNED_IN_APP_NAV.map((item) =>
+              item.proOnly ? (
+                <ProGatedNavLink
+                  key={item.href}
+                  item={item}
+                  pathname={pathname}
+                />
               ) : (
                 <Link
-                  key={link.label}
-                  href={link.href}
-                  aria-current={link.match(pathname) ? "page" : undefined}
+                  key={item.href}
+                  href={item.href}
+                  aria-current={item.match(pathname) ? "page" : undefined}
                   className={
-                    link.match(pathname)
+                    item.match(pathname)
                       ? "text-sm font-medium text-foreground"
                       : "text-sm text-muted-foreground transition-colors hover:text-foreground"
                   }
                 >
-                  {link.label}
+                  {item.label}
                 </Link>
               ),
             )}

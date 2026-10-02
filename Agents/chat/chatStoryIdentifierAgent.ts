@@ -1,12 +1,22 @@
 /**
- * Potential story topic agent
+ * Potential story topic agent (`runPotentialStoryTopicAgent`)
  *
- * Analyzes recent chat turns and surfaces NEW candidate story subjects that are
- * not already listed in existingStoryTopics. Does not research, write stories,
- * or judge factual newsworthiness.
+ * Role:
+ * Read recent chat turns and propose **new** sidebar story subject labels for the session,
+ * excluding topics already in `ChatSession.potentialStories`. Labels power “Create story” UX.
  *
- * Input: messages (up to 10 recent); existingStoryTopics.
- * Output: { newStoryTopics } — 0 to 5 concise topic labels.
+ * Called from:
+ * - `inngest/chatPotentialStoryTopicsPipeline.ts` — background after normal assistant reply
+ * - Exported helpers: `dedupeNewStoryTopics`, `normalizeStoryTopicKey` for persistence layer
+ *
+ * Model: `POTENTIAL_STORY_TOPIC_MODEL` → `CHAT_STORY_IDENTIFIER_MODEL` →
+ * `CHAT_STORY_SIMILARITY_QUERY_MODEL` → defaults. Up to `POTENTIAL_STORY_TOPIC_MAX_COUNT` (5).
+ *
+ * Input: `messages` (≤10 recent, includes current user turn); `existingStoryTopics` string[].
+ *
+ * Output: `{ newStoryTopics }` — 0–5 concise labels (max `POTENTIAL_STORY_TOPIC_LABEL_MAX_CHARS`).
+ *
+ * Does not: search the web, create `NewsStory` rows, or run on guardrail/story-handoff paths.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

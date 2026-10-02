@@ -1,53 +1,45 @@
 "use client";
 
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { buttonVariants } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { ProGatedSidebarLink } from "@/components/nav/ProGatedSidebarLink";
+import { SIGNED_IN_APP_NAV } from "@/components/nav/signedInAppNav";
 import {
   Bookmark,
   Files,
   Home,
+  Layers,
+  LineChart,
   MessageSquare,
   Newspaper,
-  Search,
+  PieChart,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 
-type NavItem = {
-  href: string;
-  label: string;
-  icon: typeof Home;
-  exact: boolean;
-  disabled?: boolean;
+const SIDEBAR_ICONS: Record<string, LucideIcon> = {
+  "/": Home,
+  "/news": Newspaper,
+  "/chat": MessageSquare,
+  "/stockResearch": LineChart,
+  "/MfResearch": PieChart,
+  "/etfResearch": Layers,
+  "/newsStory/saved": Files,
+  "/newsStory/bookmarks": Bookmark,
 };
 
-const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Home", icon: Home, exact: true },
-  { href: "/news", label: "News", icon: Newspaper, exact: false },
-  { href: "/chat", label: "Chat", icon: MessageSquare, exact: false },
-  {
-    href: "/newsStory/saved",
-    label: "Saved",
-    icon: Files,
-    exact: false,
-  },
-  {
-    href: "/newsStory/bookmarks",
-    label: "Bookmarks",
-    icon: Bookmark,
-    exact: false,
-  },
+const SIDEBAR_EXTRA = [
   {
     href: "/pricing",
     label: "Pro & billing",
     icon: Settings,
-    exact: false,
+    match: (p: string) => p === "/pricing" || p.startsWith("/pricing/"),
   },
-];
+] as const;
 
 type NewsAppShellProps = {
   children: ReactNode;
@@ -55,13 +47,6 @@ type NewsAppShellProps = {
 
 export function NewsAppShell({ children }: NewsAppShellProps) {
   const pathname = usePathname();
-
-  function isActive(href: string, exact: boolean) {
-    if (exact) {
-      return pathname === href;
-    }
-    return pathname === href || pathname.startsWith(`${href}/`);
-  }
 
   return (
     <div className="flex min-h-0 flex-1 bg-background">
@@ -73,31 +58,22 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
           Newsly
         </Link>
         <div className="flex flex-col gap-1 p-3">
-          {NAV_ITEMS.map((item) => {
-            const active = !item.disabled && isActive(item.href, item.exact);
-            const Icon = item.icon;
-            const inner = (
-              <>
-                <Icon data-icon="inline-start" />
-                {item.label}
-              </>
-            );
-            if (item.disabled) {
+          {SIGNED_IN_APP_NAV.map((item) => {
+            const Icon = SIDEBAR_ICONS[item.href] ?? Home;
+            const active = item.match(pathname);
+            if (item.proOnly) {
               return (
-                <Button
-                  key={item.label}
-                  type="button"
-                  variant="ghost"
-                  className="w-full justify-start opacity-50"
-                  disabled
-                >
-                  {inner}
-                </Button>
+                <ProGatedSidebarLink
+                  key={item.href}
+                  item={item}
+                  icon={Icon}
+                  active={active}
+                />
               );
             }
             return (
               <Link
-                key={item.label}
+                key={item.href}
                 href={item.href}
                 className={cn(
                   buttonVariants({
@@ -107,7 +83,28 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
                   active && "bg-accent/35 font-medium",
                 )}
               >
-                {inner}
+                <Icon data-icon="inline-start" />
+                {item.label}
+              </Link>
+            );
+          })}
+          {SIDEBAR_EXTRA.map((item) => {
+            const active = item.match(pathname);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  buttonVariants({
+                    variant: active ? "secondary" : "ghost",
+                  }),
+                  "w-full justify-start",
+                  active && "bg-accent/35 font-medium",
+                )}
+              >
+                <Icon data-icon="inline-start" />
+                {item.label}
               </Link>
             );
           })}

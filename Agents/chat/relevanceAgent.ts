@@ -1,15 +1,24 @@
 /**
- * Relevance agent
+ * Relevance agent (Serp URL picker for chat)
  *
- * What it does: Looks at search results (flat Serp rows or raw engine payloads)
- * and picks which URLs are worth scraping with Firecrawl for the user’s question.
- * It does not answer the question or rewrite the query.
+ * Role:
+ * Given normalized or raw Serp payloads, choose which URLs merit a Firecrawl scrape for the
+ * user’s research question. Returns structured picks with short justifications.
  *
- * Input: userQuery; searchResults array; optional limit (default 10), model,
- * system, abortSignal.
+ * Called from:
+ * - Chat Serp research helpers (alongside or instead of full article selector on some paths)
+ * - Distinct from `ResearchArticleSelectorAgent` (news briefing uses selector + budgets)
  *
- * Output: { selected: [{ id, url, reason }] } — up to limit items, each with a
- * short reason tied to the query.
+ * Model: `RELEVANCE_AGENT_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ *
+ * Input:
+ * - `userQuery` — enhanced research prompt
+ * - `searchResults` — flat hits or nested engine JSON (organic/news/references keys)
+ * - Optional `limit` (default 10), `model`, `system`, `abortSignal`
+ *
+ * Output: `{ selected: [{ id, url, reason }] }` — canonical URLs, deduped tracking params.
+ *
+ * Does not: answer the user, rewrite the query, or fetch page bodies.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

@@ -1,15 +1,26 @@
 /**
- * Research article selector agent
+ * Research article selector agent (Serp links → scrape shortlist)
  *
- * What it does: Scores Serp link candidates against the user prompt, marks which
- * are relevant, ranks them, and returns the top share (topPercent) as scrape targets.
- * Used by the news pipeline and by the chat article synthesizer wrapper.
+ * Role:
+ * Score and rank Serp URL candidates against a research/briefing prompt; return the top
+ * `topPercent` of **relevant** links as Firecrawl targets. Core gate before expensive scrapes.
  *
- * Input: userPrompt; links (URL strings or objects with url, title, snippet,
- * source, sourceType); optional topPercent (default 50), model, system, abortSignal.
+ * Called from:
+ * - `inngest/newsPipeline.ts` — `select-articles`
+ * - `inngest/reRunPipeline.ts` — inside `research-new-evidence`
+ * - `Agents/chat/ArticleSythesizerAgent.ts` — chat wrapper with different defaults
  *
- * Output: Array of { url, domain, title, sourceType } for relevant links only,
- * ordered by rank.
+ * Model: `RESEARCH_ARTICLE_SELECTOR_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ * OpenAI structured output schema (all fields required). Dedupes tracking query params.
+ *
+ * Input:
+ * - `userPrompt` — briefing or chat research text
+ * - `links` — strings or `{ url, title, snippet, source, sourceType, selectionWeight, … }`
+ * - Optional `topPercent` (default 50), `model`, `system`, `abortSignal`
+ *
+ * Output: `SelectedResearchArticle[]` — relevant URLs only, ranked, domain parsed from URL.
+ *
+ * Does not: scrape pages, filter trading-tip articles (pipeline pre-filters), or synthesize stories.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

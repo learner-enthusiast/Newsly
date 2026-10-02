@@ -1,13 +1,25 @@
 /**
- * Query enhancer agent
+ * Query enhancer agent (conversational query rewrite)
  *
- * What it does: Fixes grammar/spelling and resolves conversational references in
- * the current user query using recent chat turns only when necessary. Does not
- * inherit unspecified facts (years, entities, etc.) from prior messages.
+ * Role:
+ * Produce a standalone research query from the current user message by fixing grammar and
+ * resolving pronouns/references **only when** recent chat context is required. Does not
+ * invent dates, tickers, or entities that the user did not supply in the current turn.
  *
- * Input: query; optional recentMessages (up to 10); model, system, abortSignal.
+ * Called from:
+ * - `runSmallDeterminerAgent` before Serp tool planning (skipped when `isNewsStory` deep dive)
+ * - `inngest/chatPipeline.ts` indirect via determiner step
  *
- * Output: A single enhanced query string (plain text).
+ * Model: `QUERY_ENHANCER_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ *
+ * Input:
+ * - `query` — raw user text for this turn
+ * - Optional `recentMessages` — up to 10 prior turns (`formatRecentMessagesForEnhancer`)
+ * - Optional `model`, `system`, `abortSignal`
+ *
+ * Output: Single enhanced query string (plain text, no JSON wrapper).
+ *
+ * Does not: choose Serp engines, scrape pages, or apply guardrails (runs after guardrails pass).
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

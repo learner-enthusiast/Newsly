@@ -1,7 +1,23 @@
 /**
- * Story research gap agent — decides what additional evidence is needed to
- * synthesize one chat-created news story. Does not repeat guardrails, query
- * enhancement, or story-intent detection.
+ * Story research gap agent (chat-origin story — extra Serp/scrape plan)
+ *
+ * Role:
+ * After the message chat pipeline gathered evidence, decide whether the pending user story
+ * still needs additional Serp calls, Firecrawl URLs, or YouTube fetches before synthesis.
+ *
+ * Called from:
+ * - `inngest/chatstoryPipeline.ts` — `story-research-gap` step only
+ *
+ * Model: `CHAT_STORY_RESEARCH_GAP_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ * Structured output: optional Serp tool calls compatible with `ValidatedSerpToolCall`.
+ *
+ * Input: Counts and summaries of prepared research rows, Serp hits, YouTube evidence,
+ * selected articles, plus story intent from upstream determiner snapshot.
+ *
+ * Output: `StoryResearchGapResult` — flags `needsAdditionalSerp`, planned tool calls,
+ * optional `firecrawlUrls`, YouTube needs, with reasoning text for logs.
+ *
+ * Does not: re-run guardrails, query enhancer, or write final story copy (synthesizer does).
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

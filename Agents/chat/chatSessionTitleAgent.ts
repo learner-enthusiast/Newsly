@@ -1,5 +1,20 @@
 /**
- * Chat session title agent — short sidebar label from the first user message.
+ * Chat session title agent (sidebar label)
+ *
+ * Role:
+ * Generate a short, human-readable `ChatSession.title` from the first user message in a
+ * general (non–news-story) session. Falls back to deterministic trim helper on model failure.
+ *
+ * Called from:
+ * - `inngest/chatPipeline.ts` — `auto-rename-user-chat` when `isFirstUserMessage`
+ *
+ * Model: `CHAT_SESSION_TITLE_MODEL` → `CHAT_MESSAGE_SUMMARIZER_VECTOR_MODEL` → defaults.
+ *
+ * Input: `message` (first user turn text); optional `model`, `system`, `abortSignal`.
+ *
+ * Output: Title string capped at `CHAT_SESSION_TITLE_MAX_LENGTH` (via schema + post-process).
+ *
+ * Does not: run on news-story deep-dive sessions or rename on later turns.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

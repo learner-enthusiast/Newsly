@@ -1,11 +1,23 @@
 /**
- * Conversation retrieval query agent
+ * Conversation retrieval query agent (pgvector query string)
  *
- * Produces one semantic-search query from the current user message and recent
- * chat context for pgvector retrieval of older messages in the same session.
+ * Role:
+ * Emit a single dense search query for similarity over **prior chat messages** in the same
+ * session (`chat_message_embeddings`). Complements determiner `existingResearchQuery` which
+ * targets `ResearchSource` descriptions instead.
  *
- * Input: currentUserMessage; optional recentMessages (~10 turns).
- * Output: { query: string }
+ * Called from:
+ * - Chat vector recall path when building semantic queries (see message chat pipeline /
+ *   determiner integration and related services)
+ *
+ * Model: `CHAT_STORY_SIMILARITY_QUERY_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ * Reuses `formatRecentMessagesForEnhancer` from query enhancer for context formatting.
+ *
+ * Input: `currentUserMessage`; optional `recentMessages` (~10 turns, chronological).
+ *
+ * Output: `{ query: string }` — short standalone retrieval phrase.
+ *
+ * Does not: embed vectors itself or fetch Serp results.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

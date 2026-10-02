@@ -1,14 +1,26 @@
 /**
- * Article synthesizer agent (chat)
+ * Article synthesizer agent (chat Serp → scrape shortlist)
  *
- * What it does: Thin wrapper for chat research — maps normalized Serp hits into
- * link rows and calls the research article selector to choose what to scrape next.
+ * Role:
+ * Adapter between chat Serp normalization and `ResearchArticleSelectorAgent` — builds link
+ * rows (title, snippet, source, AI-overview follow-up flag) with chat-specific system rules.
  *
- * Input: userPrompt; hits (normalized Serp list); optional topPercent (default 40),
- * maxArticles (default 6), model, abortSignal.
+ * Called from:
+ * - `inngest/chatPipeline.ts` — `run-article-synthesizer` after Serp branch
+ * - `inngest/newsNewchatPipeline.ts` — `select-articles` parallel step
+ * - Initial system briefing uses `ResearchArticleSelectorAgent` directly in `newsPipeline.ts`
  *
- * Output: Array of selected articles: { url, domain, title, sourceType }, capped
- * at maxArticles.
+ * Model: Delegates to selector — `RESEARCH_ARTICLE_SELECTOR_MODEL`.
+ *
+ * Input:
+ * - `userPrompt` — enhanced or raw research question
+ * - `hits` — normalized Serp rows (`normalizedSerpHitSchema`)
+ * - Optional `topPercent` (default 40), `maxArticles` (default 6), `abortSignal`
+ *
+ * Output: `SelectedResearchArticle[]` — `{ url, domain, title, sourceType }`, deduped URLs,
+ * capped at `maxArticles`.
+ *
+ * Does not: Firecrawl scrape, clean HTML, or call `ChatModel`.
  */
 
 import {

@@ -1,12 +1,21 @@
 /**
- * Google AI Overview search query generator
+ * Google AI Overview search query generator agent
  *
- * What it does: Reads plain-text from a Google AI Overview (daily news context) and
- * proposes 3–4 distinct Google web search queries to research the stories further.
+ * Role:
+ * When Serp returns a Google AI Overview block on the initial news search pass, generate
+ * 3–4 diverse follow-up **web news tab** queries to deepen coverage beyond overview snippets.
  *
- * Input: aiOverviewText; optional date, location, scope (local/world), model, system.
+ * Called from:
+ * - `services/news/newsSerpDiscovery.ts` — whenever merged Google search Serp returns
+ *   an AI Overview (initial briefing and rerun discovery share this path)
  *
- * Output: { queries: string[] } — 3–4 search strings suitable for engine=google.
+ * Model: `GAI_OVERVIEW_SEARCH_MODEL` → `NEWS_SYNTHESIZER_MODEL` → defaults.
+ *
+ * Input: `aiOverviewText` (≤50k chars); optional `date`, `location`, `scope` (`local`|`world`).
+ *
+ * Output: `{ queries: string[] }` — 3–4 distinct Google-search-ready strings.
+ *
+ * Does not: execute Serp itself; pipeline fetches each query via `searchGoogle` news tab.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

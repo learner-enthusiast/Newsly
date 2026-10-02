@@ -31,6 +31,9 @@
  * 3. persist-description-and-embedding
  *    `updateResearchSourceDescription` + `saveChatResourceEmbedding` (resource id =
  *    research source id, scoped to `chatSessionId`).
+ *
+ * Agent: `researchSourceDescriptionAgent` — model `RESEARCH_SOURCE_DESCRIPTION_MODEL`
+ * (fallback `OPENAI_MODEL` → `gpt-4o-mini`). Embedding model is configured in pgvector save path.
  */
 
 import { runResearchSourceDescriptionAgent } from "@/Agents/chat/researchSourceDescriptionAgent";

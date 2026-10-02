@@ -1,13 +1,24 @@
 /**
- * YouTube transcript news analysis agent
+ * YouTube transcript news analysis agent (one video → structured facts)
  *
- * What it does: Reads a YouTube transcript plus a task prompt, extracts factual
- * market/economic/news developments grounded in the transcript only, ranks them,
- * clusters major events, and proposes verification search queries. No web tools.
+ * Role:
+ * Parse a single video transcript under a research/briefing prompt; extract market/economy
+ * facts **grounded in transcript text only**, rank importance, cluster events, and suggest
+ * verification queries (not executed here).
  *
- * Input: transcript, prompt; optional model, system, abortSignal.
+ * Called from:
+ * - `analyzeYoutubeTranscriptsInParallel` in news/chat YouTube services
+ * - Upstream of `YoutubeTranscriptSynthesizeAgent` in briefing and rerun pipelines
  *
- * Output: summary, importantFacts, majorEvents, excludedTopics, overallImportance.
+ * Model: `YOUTUBE_TRANSCRIPT_AGENT_MODEL` → `NEWS_SYNTHESIZER_MODEL` → defaults.
+ * Long transcripts use head+tail truncation (`boundedTranscriptForModel`, 80k chars).
+ *
+ * Input: `transcript`, `prompt`; optional `title`, `videoId`, `model`, `abortSignal`.
+ *
+ * Output: `YoutubeTranscriptAnalysis` — summary, importantFacts, majorEvents,
+ * excludedTopics, overallImportance (exported Zod schema for downstream merge).
+ *
+ * Does not: fetch transcripts, browse the web, or write stories directly.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

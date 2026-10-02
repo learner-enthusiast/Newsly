@@ -1,16 +1,33 @@
 /**
- * Stock research guardrails
+ * Stock research guardrails (scope + safety classifier)
  *
- * What it does: Scope and safety classifier for financial, economic, trade,
- * commodity, company, and market research prompts — not an answerability check.
- * Fast local rules first, then a small LLM classifier when needed.
+ * Role:
+ * Decide whether a user prompt belongs in Newsly’s stock/market/economy research product.
+ * This is **not** an answerability or fact-check gate — only topic fit and basic safety.
  *
- * Input: userPrompt; optional chatHistory (last 20 prior turns); optional model,
- * system, abortSignal, rulesOnly (skip LLM).
+ * Called from:
+ * - `runSmallDeterminerAgent` on every chat research turn (unless `skipGuardrails`)
+ * - `inngest/chatPipeline.ts` and `inngest/newsNewchatPipeline.ts` via determiner
+ * - Not re-run in `chatstoryPipeline.ts` (story worker trusts upstream determiner)
  *
- * Output: GuardrailCheckResult — allowed true with category and reason, or allowed
- * false with category, reason, and userMessage for the UI. assertGuardrailAllowed
- * throws GuardrailBlockedError when blocked.
+ * Model: `GUARDRAIL_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`. Local regex/heuristic rules
+ * run first (`rulesOnly` skips the LLM entirely for tests or fast paths).
+ *
+ * Input:
+ * - `userPrompt` (trimmed, length bounds)
+ * - Optional `chatHistory` — last 20 prior turns for context (story-intent phrases, etc.)
+ * - Optional `model`, `system`, `abortSignal`, `rulesOnly`
+ *
+ * Output:
+ * - `GuardrailCheckResult`: `{ allowed, category, reason, userMessage? }`
+ * - `assertGuardrailAllowed` throws `GuardrailBlockedError` for pipeline early exit
+ *
+ * Behavior:
+ * - High-confidence off-topic blocks locally without a model call
+ * - Detects explicit “create a news story” product intent for downstream routing hints
+ * - LLM classifier used when local rules are inconclusive
+ *
+ * Does not: run Serp, scrape URLs, or generate assistant replies.
  */
 
 import {

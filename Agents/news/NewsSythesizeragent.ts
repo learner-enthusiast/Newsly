@@ -1,15 +1,27 @@
 /**
- * News synthesizer agent
+ * News synthesizer agent (scraped evidence → story clusters + copy)
  *
- * What it does: Takes many scraped articles from a daily news request, clusters
- * them into distinct market/economy stories, and writes story-level copy (title,
- * slug, summary, description, content, category, scores) with linked source URLs.
+ * Role:
+ * Cluster many scraped articles (and optional YouTube-derived facts) into distinct market/economy
+ * stories with titles, slugs, summaries, long-form content, categories, importance scores, and
+ * per-source linkage metadata for Prisma persistence.
  *
- * Input: newsRequestId; articles array (url, title, scraped content, sourceType,
- * etc.); optional location, userPrompt, model, system, abortSignal.
+ * Called from:
+ * - `inngest/newsPipeline.ts` — `synthesize-stories` (up to `storyCount` stories)
+ * - `inngest/reRunPipeline.ts` — single-story updates (`fixedStoryId`) and net-new stories
+ * - `inngest/chatstoryPipeline.ts` — one user story (`targetStoryCount: 1`)
  *
- * Output: Array of SynthesizedNewsStory objects — each story plus its sources
- * shaped for persisting NewsStory and NewsSource rows.
+ * Model: `NEWS_SYNTHESIZER_MODEL` default `gpt-5.4-mini` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ *
+ * Input:
+ * - `newsRequestId`, `articles[]` (`researchedArticleSchema`), optional `location`, `userPrompt`
+ * - Optional `youtubeTranscriptSynthesis` — weighted facts + overview (supporting evidence only)
+ * - `targetStoryCount`, optional `fixedStoryId` for in-place updates (rerun / chat story)
+ *
+ * Output: `SynthesizedNewsStory[]` — each with nested sources. Pipelines require
+ * `storyHasPrimaryArticleSource` (YouTube alone cannot anchor a system briefing story).
+ *
+ * Does not: run Serp or Firecrawl; drops trading-tip articles at synthesis boundary.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

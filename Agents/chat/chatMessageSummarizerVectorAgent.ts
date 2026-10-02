@@ -1,13 +1,22 @@
 /**
- * Conversation memory description agent
+ * Conversation memory description agent (chat turn → embedding text)
  *
- * Converts one chat message (user or assistant) into a semantic plain-text
- * description for embedding and pgvector similarity search. The original
- * message remains authoritative; the description is retrieval-only.
+ * Role:
+ * Produce a semantic paraphrase of one chat message suitable for embedding in
+ * `chat_message_embeddings`. Used to recall **past conversational context**, not as
+ * verified market evidence in news synthesis.
  *
- * Input: messageId, chatSessionId, role ("user" | "assistant"), message.
+ * Called from:
+ * - `inngest/chatMessageEmbeddingPipeline.ts` — after each saved user/agent message
  *
- * Output: { description } — strict JSON field from the model, returned as string.
+ * Model: `CHAT_MESSAGE_SUMMARIZER_VECTOR_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ *
+ * Input: `messageId`, `chatSessionId`, `role` (`user` | `assistant`), `message` body.
+ * Unsupported roles skipped via `chatRoleForMemoryDescription`.
+ *
+ * Output: `{ description }` from structured JSON; persisted by embedding pipeline.
+ *
+ * Does not: replace stored message text or run Serp.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

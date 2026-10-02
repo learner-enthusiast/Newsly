@@ -9,7 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@clerk/nextjs";
+import { useIsProSubscriber } from "@/hooks/useIsProSubscriber";
+import type { UserPlan } from "@/services/billing/userPlan";
 import { useEffect, useState } from "react";
 
 type Catalog = {
@@ -27,13 +28,12 @@ type Catalog = {
 };
 
 type PricingPageContentProps = {
-  initialPlan: "FREE" | "PRO" | null;
+  initialPlan: UserPlan | null;
 };
 
 export function PricingPageContent({ initialPlan }: PricingPageContentProps) {
-  const { isSignedIn } = useAuth();
+  const { isPro, plan } = useIsProSubscriber({ initialPlan });
   const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [plan, setPlan] = useState<"FREE" | "PRO" | null>(initialPlan);
 
   useEffect(() => {
     void fetch("/api/billing/catalog")
@@ -42,23 +42,7 @@ export function PricingPageContent({ initialPlan }: PricingPageContentProps) {
       .catch(() => setCatalog(null));
   }, []);
 
-  useEffect(() => {
-    if (!isSignedIn) {
-      setPlan(null);
-      return;
-    }
-    void fetch("/api/me")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((user: { plan?: "FREE" | "PRO" } | null) => {
-        if (user?.plan) {
-          setPlan(user.plan);
-        }
-      })
-      .catch(() => undefined);
-  }, [isSignedIn]);
-
   const proProduct = catalog?.products.find((p) => p.productId === "PRO_MONTHLY");
-  const isPro = plan === "PRO";
 
   return (
     <div className="grid gap-6 md:grid-cols-2">

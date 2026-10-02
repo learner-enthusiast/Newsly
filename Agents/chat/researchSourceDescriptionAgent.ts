@@ -1,13 +1,21 @@
 /**
- * Research source description agent
+ * Research source description agent (scrape → indexable summary)
  *
- * What it does: Summarizes a scraped chat research article into a short plain-text
- * description (about 10–15 lines) for storage and vector search indexing.
+ * Role:
+ * Turn one Firecrawl/YouTube `ResearchSource` body into a compact plain-text description
+ * stored on the row and embedded in `chat_resource_embeddings` for pgvector recall.
  *
- * Input: title, url, domain, content (scraped body); optional model, system,
- * abortSignal.
+ * Called from:
+ * - `inngest/researchSourceDescriptionPipeline.ts` — `summarize-source` step
  *
- * Output: A single description string.
+ * Model: `RESEARCH_SOURCE_DESCRIPTION_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`.
+ * Content truncated to `CONTENT_EXCERPT_CHARS` before the model call.
+ *
+ * Input: `title`, `url`, `domain`, `content` (scraped markdown/text); optional overrides.
+ *
+ * Output: Single description string (~10–15 lines, no Markdown headings).
+ *
+ * Does not: block chat pipelines; errors fail the background index function only.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

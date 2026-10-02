@@ -1,15 +1,27 @@
 /**
- * News new-chat agent
+ * News new-chat agent (story → research brief)
  *
- * What it does: Builds a long research prompt for “deep dive” on a saved news
- * story by combining the story fields, linked news sources (including scraped
- * text when present), and the user’s research request. No web search here.
+ * Role:
+ * Compose a long, self-contained research prompt when the user opens chat from a published
+ * system briefing story (`isFromNewsStory`). Merges story metadata, summary/content excerpts,
+ * and linked `NewsSource` scraped text into one determiner-ready brief.
  *
- * Input: newsStoryId; newsStory object; newsSources array (same story); researchRequest
- * string; optional model, system, abortSignal.
+ * Called from:
+ * - `inngest/newsNewchatPipeline.ts` — `build-research-prompt` when `newsStoryId` set
  *
- * Output: { newsStoryId, researchPrompt } — a detailed text brief for downstream
- * determiner/Serp/chat steps.
+ * Model: `NEWS_NEW_CHAT_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`. Structured output is not
+ * used — returns a plain research prompt string assembled with model assistance where needed.
+ *
+ * Input:
+ * - `newsStoryId`, `newsStory` (Prisma-shaped context), `newsSources[]` for that story
+ * - `researchRequest` — user intent (default `DEFAULT_NEWS_RESEARCH_REQUEST`)
+ * - Optional `model`, `system`, `abortSignal`
+ *
+ * Output: `{ newsStoryId, researchPrompt }` fed to `runSmallDeterminerAgent` and Serp steps.
+ *
+ * Does not: search the web, mutate DB rows, or produce the final chat reply (`chatModel`).
+ *
+ * Entrypoint: `runNewsNewChatAgent` / `createNewsNewChatAgent` for injected clients.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

@@ -111,6 +111,21 @@
  *
  * Chat-origin stories (`chatSessionId`, PENDING → READY) are handled by
  * `chat/story.research.requested`, not this pipeline.
+ *
+ * ── Agents & model env vars ─────────────────────────────────────────────────
+ *
+ * | Step                         | Agent / module                         | Env override(s)              |
+ * |------------------------------|----------------------------------------|------------------------------|
+ * | AI Overview follow-up queries| `GAIOverviewSearchGeneratorAgents`     | `GAI_OVERVIEW_SEARCH_MODEL`  |
+ * | Article / YouTube selection  | `ResearchArticleSelectorAgent`         | `RESEARCH_ARTICLE_SELECTOR_MODEL` |
+ * | YouTube pick (pre-transcript)| `YoutubeVideoAgent`                    | `YOUTUBE_VIDEO_AGENT_MODEL`  |
+ * | Per-video transcript analysis| `YoutubeTranscriptAgent`               | `YOUTUBE_TRANSCRIPT_AGENT_MODEL` |
+ * | Transcript fact merge        | `YoutubeTranscriptSynthesizeAgent`     | `YOUTUBE_TRANSCRIPT_SYNTHESIZE_MODEL` |
+ * | Firecrawl body cleanup       | `NewsContentCleanerAgent`              | `NEWS_CONTENT_CLEANER_MODEL` |
+ * | Story clustering + copy      | `NewsSynthesizerAgent`                 | `NEWS_SYNTHESIZER_MODEL`     |
+ *
+ * Non-LLM: `Agents/news/searchPlanner.ts` and `services/news/newsSearchPlanning.ts` build Serp
+ * query strings. Default model fallback chain: per-agent env → `OPENAI_MODEL` → `gpt-4o-mini`.
  */
 
 import { runGaiOverviewSearchGeneratorAgent } from "@/Agents/news/GAIOverviewSearchGeneratorAgents";

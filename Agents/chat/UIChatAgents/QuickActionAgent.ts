@@ -1,10 +1,21 @@
 /**
- * Quick Actions agent (chat UI)
+ * Quick Actions agent (chat UI chips)
  *
- * Input: up to the last 20 chat messages (conversation history only).
- * Output: exactly 5 concise next-step research actions as plain strings.
+ * Role:
+ * Suggest exactly five short, tappable next-step research actions from recent conversation
+ * context (e.g. “Compare peers”, “Find primary sources”). Rendered in chat chrome, not Inngest.
  *
- * Does not browse, search, or fact-check — interprets provided messages only.
+ * Called from:
+ * - Chat UI API routes that load session history (see `QuickActionAgent` consumers in app/api)
+ *
+ * Model: `QUICK_ACTION_AGENT_MODEL` → `CHAT_MODEL` → defaults. Uses last
+ * `QUICK_ACTION_MESSAGE_LIMIT` (20) messages, 800 chars each.
+ *
+ * Input: `messages` — `{ role, content }[] chronological.
+ *
+ * Output: Five plain-string action labels (structured JSON validated, then mapped to strings).
+ *
+ * Does not: execute Serp, mutate DB, or run inside message chat Inngest pipeline.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

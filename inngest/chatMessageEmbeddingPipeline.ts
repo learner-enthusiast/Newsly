@@ -32,6 +32,9 @@
  *    `saveChatMessageEmbedding` upsert keyed by `messageId`.
  *
  * Early return `{ skipped: true }` when role is not indexable.
+ *
+ * Agent: `chatMessageSummarizerVectorAgent` — `CHAT_MESSAGE_SUMMARIZER_VECTOR_MODEL`.
+ * Summaries are retrieval-only; not used as verified evidence in news synthesis.
  */
 
 import {

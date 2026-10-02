@@ -1,15 +1,27 @@
 /**
- * Chat model agent
+ * Chat model agent (final assistant Markdown)
  *
- * What it does: Produces the final user-facing assistant reply for the research
- * chat — Markdown that answers the current prompt using optional Serp/scrape
- * context and recent session history.
+ * Role:
+ * Synthesize the user-visible research answer for one chat turn using optional Serp hits,
+ * scraped `ResearchSource` bodies, YouTube excerpts, and recent session history.
  *
- * Input: prompt (current user message); chatHistory (up to 10 messages); optional
- * serpData (research prompt, hits, scraped sources, etc.); model, system,
- * abortSignal.
+ * Called from:
+ * - `inngest/chatPipeline.ts` — `generate-assistant-reply` (normal path)
+ * - `inngest/newsNewchatPipeline.ts` — `generate-assistant-reply` (story deep dive)
+ * - Not used on chat→story handoff (status message only) or guardrail blocks
  *
- * Output: One Markdown string for the assistant bubble (no JSON wrapper).
+ * Model: `CHAT_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`. Large Serp payload capped
+ * (`SERP_DATA_MAX_CHARS`) to stay within context limits.
+ *
+ * Input:
+ * - `prompt` — current user question or full research brief
+ * - `chatHistory` — up to 10 prior turns, oldest first (`sliceChatHistoryForModel`)
+ * - Optional `serpData` — structured bundle: research prompt, normalized hits, sources
+ * - Optional `model`, `system`, `abortSignal`
+ *
+ * Output: Markdown string (`chatModelMarkdownSchema`, max 100k chars) for `ChatMessage` agent role.
+ *
+ * Does not: persist messages, run tools, or create `NewsStory` rows.
  */
 
 import {

@@ -1,19 +1,34 @@
 /**
- * Small determiner agent
+ * Small determiner agent (chat research orchestration brain)
  *
- * What it does: Runs stock-research guardrails first, optionally improves the user
- * prompt via the query enhancer (except on news-story deep dives), then decides
- * whether live Serp searches are needed and plans validated Google/Serp tool calls.
- * When the user supplies direct article URLs, plans `firecrawlUrls` for Firecrawl scrapes.
+ * Role:
+ * Single entry point for **chat** research planning: guardrails → optional query enhancement →
+ * structured JSON plan for pgvector recall, Serp tool calls, YouTube fetches, and direct URL scrapes.
  *
- * Input: userPrompt; optional isNewsStory, recentMessages, model, tools catalog,
- * skipGuardrails, guardrailModel, system, abortSignal.
+ * Called from:
+ * - `inngest/chatPipeline.ts` — `run-determiner` on every follow-up message
+ * - `inngest/newsNewchatPipeline.ts` — first deep-dive turn (`isNewsStory` skips enhancer)
  *
- * Output: { guardrail, determiner } — guardrail is allow/block with category and
- * reason; determiner includes useExistingResearch, existingResearchQuery (a
- * semantic query for ResearchSource.description, or null), useTools, reasoning,
- * and optional validated Serp calls. Story creation is decided by the client
- * (`shouldCreateStory` on the message pipeline event), not the determiner.
+ * Model: `DETERMINER_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`. Guardrails may use
+ * `guardrailModel` / `GUARDRAIL_MODEL`; enhancer uses `QUERY_ENHANCER_MODEL`.
+ *
+ * Input:
+ * - `userPrompt` — research question (may already be a long brief from `newsNewChatAgent`)
+ * - `isNewsStory` — when true, skip query enhancer; widen allowed research context
+ * - Optional `recentMessages`, `skipGuardrails`, tool catalog override, `abortSignal`
+ *
+ * Output: `{ guardrail, determiner }`
+ * - `guardrail`: allow/block from `runStockResearchGuardrails`
+ * - `determiner`: `useExistingResearch`, `existingResearchQuery` (for pgvector on
+ *   `ResearchSource.description`), `useTools`, `reasoning`, validated Serp calls
+ *   (`searchGoogle`, `searchGoogleNews`, …), optional `firecrawlUrls` (direct links)
+ *
+ * Does not:
+ * - Execute Serp, Firecrawl, or YouTube (pipelines consume the plan)
+ * - Set `shouldCreateStory` (client flag on `chat/message.research.requested` event)
+ *
+ * Related: `chatstorySimilarityQueryagent` can refine vector queries; story gap agent runs later
+ * on the chat-story pipeline only.
  */
 
 import {

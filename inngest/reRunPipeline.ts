@@ -1,10 +1,103 @@
 /**
- * Incremental News Rerun Pipeline
+ * Incremental news rerun pipeline (Inngest) — refresh an existing system briefing
  *
  * Event: `news/pipeline.rerun.requested`
- * Data: `{ newsId: string }` — NewsRequest UUID
  *
- * Does not replace `news/pipeline.requested` (`newsPipeline.ts`).
+ * Event data (`newsRerunPipelineEventDataSchema`):
+ * - `newsId` — `NewsRequest` UUID (same id as the fulfilled briefing)
+ *
+ * Trigger:
+ * - User/API sets `NewsRequest.isRerunning = true`, then `enqueueNewsRerunPipeline(newsId)`.
+ * - Complements but does **not** replace the initial `news/pipeline.requested` run in
+ *   `newsPipeline.ts` (no second request row; mutates existing `NewsStory` / `NewsSource`).
+ *
+ * Function id: `news-rerun-pipeline`
+ * Timeout: 45 minutes (`timeouts.finish`)
+ * Concurrency: `{ limit: 1, key: "event.data.newsId" }` — at most one rerun per briefing.
+ *
+ * Purpose:
+ * Discover **new** web/YouTube evidence since the last successful completion, attach sources
+ * that were missed before, and optionally rewrite existing stories or add net-new stories when
+ * material developments appear. Leaves the request `status` as-is (typically still `success`).
+ *
+ * Config:
+ * - Reloads generation fields from the persisted `NewsRequest` via
+ *   `newsGenerationConfigFromNewsRequest`.
+ * - `rerunConfigFromRequest` sets `date` to **today (UTC)** for query freshness while keeping
+ *   scope, categories, custom query, story count, language, and domain `sources`.
+ *
+ * Known-source dedupe (incremental semantics):
+ * - `load-previous-context` — existing stories, per-story scraped articles, canonical URL keys,
+ *   known YouTube video ids, and `boundaryIso` (time window for “new since last run”).
+ * - `fetch-and-normalize-serp` — Serp discovery in `mode: { kind: "rerun", boundary }`; then
+ *   `partitionNewNormalizedArticles` drops URLs already on the briefing.
+ * - YouTube branch skips videos in `knownYoutubeVideoIds`.
+ *
+ * Shared search/scrape helpers with `newsPipeline.ts`:
+ * - `planNewsSearchExecution`, `fetchAndNormalizeNewsSerpDiscovery`
+ * - `buildArticleSelectionPrompt`, `articleCandidateBudget`, `maxArticlesToScrape`
+ * - Firecrawl scrape + `runNewsContentCleanerAgent`
+ * - YouTube: `selectYoutubeVideosForNewsResearch`, transcript fetch/analyze,
+ *   `runYoutubeTranscriptSynthesizeAgent`, `buildYoutubeArticlesForSynthesizer`
+ *
+ * Agents (see `Agents/news/*` headers for model env vars):
+ * - `ResearchArticleSelectorAgent` — rank new Serp links for scrape
+ * - `NewsContentCleanerAgent` — Firecrawl markdown → article body
+ * - `YoutubeVideoAgent` / `YoutubeTranscriptAgent` / `YoutubeTranscriptSynthesizeAgent` — supporting evidence
+ * - `StoryMatcherAgent` — map new evidence → existing story ids or new-topic candidates
+ * - `StoryUpdateDecisionAgent` — per matched story, decide full rewrite vs attach-only
+ * - `NewsSynthesizerAgent` — single-story updates (`fixedStoryId`) and net-new stories
+ *
+ * ── Happy-path steps ───────────────────────────────────────────────────────
+ *
+ * 1. load-news-request
+ *    Load row by `newsId`; skip entire run when `isRerunning` is false. Else return owner,
+ *    timestamps, and serialized request payload for config rebuild.
+ *
+ * 2. reset-rerun-loading-logs
+ *    Replace `NewsRequest.loadingLogs` with rerun-specific progress copy (UI wait panel).
+ *
+ * 3. load-previous-context
+ *    Append “Finding new developments.” Build rerun snapshot: stories, sources by story id,
+ *    known URL/video index, Serp date boundary.
+ *
+ * 4. plan-search-queries
+ *    `planNewsSearchExecution(config)` — same tiered plans as initial news pipeline.
+ *
+ * 5. fetch-and-normalize-serp
+ *    Append “Checking new sources.” Run Serp per plan with rerun boundary filter; dedupe against
+ *    known URLs; pass through YouTube payload (≤10 videos). Tracks `skippedKnown` count.
+ *
+ * 6. research-new-evidence (single consolidated step — articles + YouTube)
+ *    - Articles: selector → Firecrawl → cleaner; primary story sources (`isPrimaryStorySource`).
+ *    - YouTube: select → transcripts → parallel analyze → synthesize facts; supporting only.
+ *    Output: `researched`, `youtubeEvidence`, `youtubeArticles`, `youtubeSynthesis`, counts.
+ *
+ * 7. complete-no-new-evidence (branch when article + YouTube evidence count is 0)
+ *    Append refresh copy, clear `isRerunning`, notify “no new sources”, return empty result.
+ *
+ * 8. story-match
+ *    Append “Comparing with existing stories.” Build evidence cards (800-char excerpts).
+ *    `runStoryMatcherAgent` → `{ matches[], newStoryCandidates[] }`. If no existing stories,
+ *    all evidence becomes one new candidate bucket.
+ *
+ * 9. apply-rerun-outcomes
+ *    Append “Updating stories.” For each match:
+ *    - `runStoryUpdateDecisionAgent` — if `shouldUpdate`, re-synthesize with combined articles +
+ *      YouTube synthesis input and patch story + new `NewsSource` rows; else attach sources only.
+ *    Re-run matcher on new-story candidates when needed to avoid duplicates; synthesize net-new
+ *    stories with primary article requirement (`storyHasPrimaryArticleSource`). Returns
+ *    `NewsRerunPipelineResult` (`updatedStories`, `unchangedStories`, `newStories`, `newSources`).
+ *
+ * 10. complete-rerun
+ *     Clear `isRerunning`; idempotent `newsPipelineRerunCompletedNotification` with summary counts.
+ *
+ * ── Failure path ────────────────────────────────────────────────────────────
+ *
+ * onFailure → rerun-on-failure-reset-flag — Always clears `isRerunning`; sends rerun failed
+ * notification when the request row still exists. Does not mark the original briefing `failed`.
+ *
+ * Return: `NewsRerunPipelineResult` (or `{ skipped: true, skipReason }` when guard skipped).
  */
 
 import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";

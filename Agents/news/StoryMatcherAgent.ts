@@ -1,7 +1,23 @@
 /**
- * Story matcher agent (news rerun)
+ * Story matcher agent (rerun evidence → story mapping)
  *
- * Maps newly researched evidence to existing NewsStory rows or new story candidates.
+ * Role:
+ * Given **new** evidence items (articles + YouTube) and existing briefing stories, decide which
+ * evidence belongs to which story id, and which unmatched bundles should become new story candidates.
+ *
+ * Called from:
+ * - `inngest/reRunPipeline.ts` — `story-match` and a second pass on new-story candidates
+ *
+ * Model: `NEWS_STORY_MATCHER_MODEL` → `OPENAI_MODEL` → `gpt-4o-mini`. Structured JSON:
+ * `matches[]` (storyId + resourceIds + reason) and `newStoryCandidates[]` (resourceIds, topic, reason).
+ *
+ * Input:
+ * - `existingStories` — `{ id, title, summary, category }`
+ * - `newEvidence` — `{ resourceId, kind: article|youtube, title, excerpt, url? }`
+ *
+ * Output: Same shape as model schema; pipeline uses stable `resourceId` keys from rerun helpers.
+ *
+ * Does not: scrape Serp, rewrite story copy, or run on initial `newsPipeline` creation pass.
  */
 
 import { createAIClient, type AIClientOptions } from "@/clients/AIClient";

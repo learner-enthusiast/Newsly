@@ -75,6 +75,18 @@
  * onFailure → create-failure-notification
  *     `deepDiveFailedNotification` vs `chatResearchFailedNotification` based on
  *     `session.isFromNewsStory`.
+ *
+ * ── Agents & model env vars ─────────────────────────────────────────────────
+ *
+ * | Stage           | Agent                         | Env override(s)              |
+ * |-----------------|-------------------------------|------------------------------|
+ * | Research brief  | `newsNewChatAgent` (story path)| `NEWS_NEW_CHAT_MODEL`        |
+ * | Determiner      | `smallDeterminerAgent`        | `DETERMINER_MODEL`, `GUARDRAIL_MODEL` |
+ * | Scrape selection| `ArticleSythesizerAgent`      | `RESEARCH_ARTICLE_SELECTOR_MODEL` |
+ * | Scrape cleanup  | `NewsContentCleanerAgent`     | `NEWS_CONTENT_CLEANER_MODEL` |
+ * | Assistant reply | `chatModel`                   | `CHAT_MODEL`                 |
+ *
+ * No pgvector recall, query enhancer skip when `isNewsStory`, no potential-story-topic worker.
  */
 
 import { runArticleSynthesizerAgent } from "@/Agents/chat/ArticleSythesizerAgent";

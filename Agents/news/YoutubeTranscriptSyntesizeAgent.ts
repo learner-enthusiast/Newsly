@@ -1,12 +1,23 @@
 /**
- * YouTube transcript synthesis agent (pre–news synthesizer)
+ * YouTube transcript synthesis agent (multi-video → synthesizer facts)
  *
- * What it does: Merges per-video YoutubeTranscriptAgent outputs into at most 10
- * weighted, detailed facts for the news synthesizer. Does not fetch transcripts.
+ * Role:
+ * Merge per-video `YoutubeTranscriptAgent` analyses into a single bundle of at most 10
+ * weighted facts plus a short overview for `NewsSynthesizerAgent`. YouTube remains
+ * **supporting** evidence — stories still need primary article sources in pipelines.
  *
- * Input: prompt; analyses (videoId, title, analysis per video).
+ * Called from:
+ * - `inngest/newsPipeline.ts` — `synthesize-youtube-transcript-facts`
+ * - `inngest/reRunPipeline.ts` — inside `research-new-evidence`
  *
- * Output: facts[] (max 10) with weight 1–100 and detailedContext for story clustering.
+ * Model: `YOUTUBE_TRANSCRIPT_SYNTHESIZE_MODEL` → `YOUTUBE_TRANSCRIPT_AGENT_MODEL` → defaults.
+ * Sends compact analysis summaries (`compactAnalysesForSynthesis`), not raw transcripts again.
+ *
+ * Input: `prompt`; `analyses[]` — `{ videoId, title, analysis }` per selected video.
+ *
+ * Output: `{ facts[], overview, model }` — facts include weight 1–100 and `detailedContext`.
+ *
+ * Does not: download transcripts or cluster final news stories.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

@@ -769,6 +769,42 @@
     }
   }
 
+  .pro-badge-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: -40% -60%;
+    background: linear-gradient(
+      105deg,
+      transparent 35%,
+      color-mix(in srgb, #fff 70%, #fde68a) 50%,
+      transparent 65%
+    );
+    animation: pro-badge-shine 2.8s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes pro-badge-shine {
+    0%,
+    72% {
+      transform: translateX(-120%) skewX(-18deg);
+      opacity: 0;
+    }
+    78% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(120%) skewX(-18deg);
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pro-badge-shimmer::after {
+      animation: none;
+      opacity: 0;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .sketch-loader-orbit,
     .sketch-loader-core,

@@ -1,14 +1,22 @@
 /**
- * News search planner (not an LLM agent)
+ * News search planner (deterministic Serp query builder — not an LLM)
  *
- * What it does: Builds the Serp search query string and locale hints for a daily
- * news request from structured inputs — local vs world scope, date, location, and
- * news vs web search channel. Pure string rules; no model call.
+ * Role:
+ * Compose Google News vs web news-tab query strings plus `gl`/`hl` hints from structured
+ * briefing inputs. Keeps local vs world wording, date tokens, and location phrases consistent.
  *
- * Input: type LOCAL or WORLD; date (YYYY-MM-DD); channel news or search; location
- * required when type is LOCAL.
+ * Called from:
+ * - `services/news/newsSearchPlanning.ts` / `planNewsSearchExecution` used by
+ *   `inngest/newsPipeline.ts` and `inngest/reRunPipeline.ts`
  *
- * Output: { query, channel, suggestedGl, suggestedHl, input } ready for Serp APIs.
+ * Model: None — pure TypeScript string rules validated by Zod.
+ *
+ * Input: `type` `LOCAL`|`WORLD`; `date` (YYYY-MM-DD); `channel` `news`|`search`;
+ * `location` required when `LOCAL`.
+ *
+ * Output: `{ query, channel, suggestedGl, suggestedHl, input }` consumed by Serp clients.
+ *
+ * Does not: execute Serp, rank articles, or replace `buildNewsSearchExecutionPlans` tier logic.
  */
 
 import { z } from "zod";

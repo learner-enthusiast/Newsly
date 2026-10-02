@@ -1,12 +1,23 @@
 /**
- * News content cleaner agent
+ * News content cleaner agent (Firecrawl markdown → article body)
  *
- * Strips webpage noise from Firecrawl markdown before the News Synthesizer.
- * Does not summarize, rewrite facts, or rank — only extracts the article body.
+ * Role:
+ * Extract the main news/article text from noisy webpage markdown (nav, ads, comments).
+ * Validates that the page looks like a real article before synthesis or DB storage.
  *
- * Input: location, date (YYYY-MM-DD), raw scraped content; optional model, system.
+ * Called from:
+ * - `inngest/newsPipeline.ts` — post-Firecrawl scrape step
+ * - `inngest/reRunPipeline.ts` — `research-new-evidence`
+ * - `inngest/chatPipeline.ts`, `newsNewchatPipeline.ts`, `chatstoryPipeline.ts` — chat scrapes
  *
- * Output: { cleanedContent, isValidArticle, model }
+ * Model: `NEWS_CONTENT_CLEANER_MODEL` → `RESEARCH_ARTICLE_SELECTOR_MODEL` → defaults.
+ * Raw input capped at `MAX_RAW_CONTENT_CHARS`; cleaned output capped separately.
+ *
+ * Input: `location`, `date` (YYYY-MM-DD), `content` (Firecrawl markdown); optional overrides.
+ *
+ * Output: `{ cleanedContent, isValidArticle, model }` — pipeline drops invalid/empty rows.
+ *
+ * Does not: summarize for the user, change facts, or cluster stories.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";

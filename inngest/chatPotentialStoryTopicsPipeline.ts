@@ -38,6 +38,11 @@
  *    (merge + dedupe); no-op when agent returns empty array.
  *
  * Returns `{ chatSessionId, addedTopics, potentialStories }` for observability.
+ *
+ * Agent: `runPotentialStoryTopicAgent` in `chatStoryIdentifierAgent.ts` —
+ * `POTENTIAL_STORY_TOPIC_MODEL` (fallback `CHAT_STORY_IDENTIFIER_MODEL`,
+ * `CHAT_STORY_SIMILARITY_QUERY_MODEL`). UI helpers: `QuickActionAgent`, `TryTheseQuestionAgent`
+ * are separate API routes, not this Inngest function.
  */
 
 import { runPotentialStoryTopicAgent } from "@/Agents/chat/chatStoryIdentifierAgent";

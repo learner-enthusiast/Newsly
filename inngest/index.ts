@@ -13,12 +13,12 @@
  *
  * newsRerunPipelineFunction (`reRunPipeline.ts`)
  *   Event: `news/pipeline.rerun.requested`
- *   Data: `{ newsId }` — incremental refresh when `NewsRequest.isRerunning` is true.
- *   Input: `userId`, `newsRequestId`, generation fields (scope, location, categories,
- *   storyCount, sources, language, …)
- *   Outcome: Multiple SYSTEM `NewsStory` + `NewsSource` rows per request; request
- *   `success` | `failed`; briefing completion notification.
- *   See file header for Serp / YouTube / Firecrawl / synthesizer step list.
+ *   Data: `{ newsId }` — `NewsRequest` UUID; runs only when `isRerunning` is true.
+ *   Outcome: Incremental Serp/YouTube discovery since last completion; may update existing
+ *   stories, add sources, or create net-new stories; clears `isRerunning`; rerun completion
+ *   notification. Does not re-run the full initial briefing or flip request to `failed` on error.
+ *   Agents: StoryMatcher, StoryUpdateDecision, NewsSynthesizer (+ shared news scrape agents).
+ *   See file header for step-by-step rerun semantics and dedupe boundary.
  *
  * chatPipelineFunction (`newsNewchatPipeline.ts`)
  *   Event: `chat/pipeline.requested`

@@ -1,13 +1,22 @@
 /**
- * YouTube video selection agent (pre-transcript)
+ * YouTube video selection agent (Serp metadata → video ids)
  *
- * What it does: Ranks YouTube SERP video metadata for a news/research prompt and
- * returns 0–4 video IDs (plus rank/score/reason) for a separate transcript pipeline.
- * Does not fetch transcripts or call Serp/Firecrawl.
+ * Role:
+ * Rank YouTube SERP rows against the briefing/chat research prompt and pick up to
+ * `MAX_SELECTED` (4) videos for transcript fetch and analysis. Supporting evidence only.
  *
- * Input: prompt; videos (≤10 Serp YouTube rows).
+ * Called from:
+ * - `inngest/newsPipeline.ts` — `select-youtube-videos`
+ * - Rerun/chat paths via `selectYoutubeVideosForNewsResearch` service wrapper
  *
- * Output: selectedVideos ordered by rank.
+ * Model: `YOUTUBE_VIDEO_AGENT_MODEL` → `RESEARCH_ARTICLE_SELECTOR_MODEL` → defaults.
+ * Input capped at `MAX_VIDEOS_IN` (10) Serp rows; extracts ids from watch/youtu.be URLs.
+ *
+ * Input: `prompt`; `videos` — Serp YouTube result objects (title, link, channel, …).
+ *
+ * Output: `{ selectedVideos: [{ videoId, rank, score, reason }] }` ordered by rank.
+ *
+ * Does not: download transcripts, call Serp, or write DB rows.
  */
 
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
