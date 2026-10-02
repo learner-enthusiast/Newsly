@@ -248,9 +248,14 @@ Clerk handles sign-in/sign-up. Each authenticated request upserts a local `User`
 
 See [Billing and Pro Subscription](#billing-and-pro-subscription).
 
-### Upstox API client (optional)
+### Upstox market data (optional, server-only)
 
-`clients/upstoxClient.ts` wraps Upstox Developer API (OAuth token exchange, orders, market quotes, etc.) for future Pro research surfaces. Configure `UPSTOX_*` in `.env`; not wired into a user-facing pipeline in this repo yet.
+Read-only **Analytics Token** integration for Pro financial research (no user OAuth, no trading):
+
+- `clients/upstoxClient.ts` — HTTP client (`Authorization: Bearer UPSTOX_ANALYTICS_TOKEN`)
+- `services/upstox/*` — quotes, historical candles (V3), fundamentals, FII/DII, OI, max pain, PCR, option chain
+
+Set `UPSTOX_ANALYTICS_TOKEN` in `.env.local`. Verify with `pnpm upstox:test`. Tests: `pnpm test:upstox`.
 
 ### UI suggestion helpers
 
@@ -1593,7 +1598,7 @@ Values are never committed. Required variables cause a startup error when missin
 | `NEXT_PUBLIC_RAZORPAY_KEY_ID` | No | If set, must match `RAZORPAY_KEY_ID` |
 | `RAZORPAY_WEBHOOK_SECRET` | No | Defaults to `RAZORPAY_KEY_SECRET` |
 | `BILLING_PRO_MONTHLY_PAISE` | No | Default `19900` (₹199) |
-| `UPSTOX_CLIENT_ID`, `UPSTOX_CLIENT_SECRET`, `UPSTOX_ACCESS_TOKEN`, `UPSTOX_ENV`, `UPSTOX_API_BASE_URL` | No | Optional Upstox client (`clients/upstoxClient.ts`) |
+| `UPSTOX_ANALYTICS_TOKEN` | No | Server-only read-only market data (`clients/upstoxClient.ts`, `services/upstox/*`) |
 
 \* Razorpay is optional for local dev unless you exercise `/pricing` checkout.
 

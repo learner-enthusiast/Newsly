@@ -1,516 +1,367 @@
 /**
- * Upstox Developer API v2 HTTP client
+ * Server-only HTTP client for Upstox REST APIs (Analytics Token).
  *
- * Docs: https://upstox.com/developer/api-documentation/api-overview
- * Auth: OAuth 2.0 authorization code → Bearer access token on API calls.
+ * Fallback transport for officially supported Analytics Token APIs that are not
+ * exposed (or not complete) in the installed `upstox-js-sdk`. Prefer the SDK via
+ * `services/upstox/upstoxSdk.ts` for all other calls.
+ *
+ * No business logic — use services/upstox/* for Newsly-facing APIs.
  */
 
-import { z } from "zod";
-
-export const UPSTOX_LIVE_API_BASE_URL = "https://api.upstox.com/v2";
-export const UPSTOX_SANDBOX_API_BASE_URL = "https://sandbox.upstox.com/v2";
-
-export const UPSTOX_AUTHORIZATION_DIALOG_PATH =
-  "/login/authorization/dialog" as const;
-export const UPSTOX_TOKEN_PATH = "/login/authorization/token" as const;
-
-const DEFAULT_TIMEOUT_MS = 30_000;
-const MAX_INSTRUMENT_KEYS_QUOTES = 500;
-const MAX_INSTRUMENT_KEYS_OHLC_LTP = 1000;
-
-/** e.g. NSE_EQ|INE669E01016 */
-export const upstoxInstrumentKeySchema = z
-  .string()
-  .min(3)
-  .regex(
-    /^[A-Z0-9_]+\|[A-Z0-9.]+$/i,
-    "instrument_key must look like EXCHANGE_SEGMENT|ISIN or token id",
-  );
-
-const upstoxOhlcIntervalSchema = z.enum(["1d", "I1", "I30"]);
-
-const upstoxNewsCategorySchema = z.enum([
-  "instrument_keys",
-  "positions",
-  "holdings",
-]);
-
-const upstoxApiStatusSchema = z.enum(["success", "error", "partial_success"]);
-
-export const upstoxApiEnvelopeSchema = z.object({
-  status: upstoxApiStatusSchema,
-  data: z.unknown().optional(),
-  errors: z.unknown().optional(),
-});
-
-export type UpstoxApiEnvelope<T = unknown> = {
-  status: z.infer<typeof upstoxApiStatusSchema>;
-  data?: T;
-  errors?: unknown;
-};
-
-export const upstoxTokenResponseSchema = z.object({
-  access_token: z.string().min(1),
-  token_type: z.string().optional(),
-  expires_in: z.number().int().positive().optional(),
-  extended_token: z.string().optional(),
-});
-
-export type UpstoxTokenResponse = z.infer<typeof upstoxTokenResponseSchema>;
-
-export type UpstoxEnvironment = "live" | "sandbox";
-
-export type UpstoxClientOptions = {
-  /** Bearer token for API calls (defaults to UPSTOX_ACCESS_TOKEN). */
-  accessToken?: string;
-  /** Override full API root including `/v2`. */
-  baseUrl?: string;
-  environment?: UpstoxEnvironment;
-  fetchImpl?: typeof fetch;
-  timeoutMs?: number;
-};
-
-export type UpstoxAuthorizationUrlParams = {
-  clientId: string;
-  redirectUri: string;
-  state?: string;
-  /** Defaults to live authorization host (sandbox uses sandbox API host). */
-  environment?: UpstoxEnvironment;
-};
-
-export type UpstoxAuthorizationCodeExchangeParams = {
-  code: string;
-  redirectUri: string;
-  clientId?: string;
-  clientSecret?: string;
-  environment?: UpstoxEnvironment;
-};
-
-export type UpstoxRequestOptions = {
-  accessToken?: string;
-  query?: Record<string, string | number | boolean | undefined>;
-  signal?: AbortSignal;
-  timeoutMs?: number;
-};
+export type UpstoxErrorKind =
+  | "missing_token"
+  | "authentication"
+  | "invalid_request"
+  | "not_found"
+  | "rate_limit"
+  | "server"
+  | "timeout"
+  | "malformed";
 
 export class UpstoxApiError extends Error {
+  readonly kind: UpstoxErrorKind;
   readonly status: number;
-  readonly body: unknown;
+  readonly errorCode?: string;
 
-  constructor(message: string, status: number, body: unknown) {
-    super(message);
+  constructor(
+    message: string,
+    options: {
+      kind: UpstoxErrorKind;
+      status: number;
+      errorCode?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, { cause: options.cause });
     this.name = "UpstoxApiError";
-    this.status = status;
-    this.body = body;
+    this.kind = options.kind;
+    this.status = options.status;
+    this.errorCode = options.errorCode;
   }
 }
 
-function readTrimmedEnv(name: string): string | undefined {
-  const raw = process.env[name]?.trim();
-  return raw && raw.length > 0 ? raw : undefined;
-}
+export type UpstoxQueryValue =
+  | string
+  | number
+  | boolean
+  | undefined
+  | null
+  | string[];
 
-export function resolveUpstoxBaseUrl(input?: {
+export type UpstoxGetOptions = {
+  query?: Record<string, UpstoxQueryValue>;
+  timeoutMs?: number;
+  /** Skip retries for this request (used in tests). */
+  noRetry?: boolean;
+  /** Optional cancellation (merged with request timeout when both are set). */
+  signal?: AbortSignal;
+};
+
+export type UpstoxClientOptions = {
+  analyticsToken?: string;
   baseUrl?: string;
-  environment?: UpstoxEnvironment;
-}): string {
-  if (input?.baseUrl?.trim()) {
-    return input.baseUrl.replace(/\/+$/, "");
+  defaultTimeoutMs?: number;
+  fetchImpl?: typeof fetch;
+  maxRetries?: number;
+};
+
+const DEFAULT_BASE_URL = "https://api.upstox.com";
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_RETRIES = 2;
+
+function readAnalyticsToken(explicit?: string): string {
+  const token = (explicit ?? process.env.UPSTOX_ANALYTICS_TOKEN)?.trim();
+  if (!token) {
+    throw new UpstoxApiError(
+      "UPSTOX_ANALYTICS_TOKEN is not configured.",
+      { kind: "missing_token", status: 0 },
+    );
   }
-  const envOverride = readTrimmedEnv("UPSTOX_API_BASE_URL");
-  if (envOverride) {
-    return envOverride.replace(/\/+$/, "");
-  }
-  const envFlag = readTrimmedEnv("UPSTOX_ENV")?.toLowerCase();
-  const environment =
-    input?.environment ??
-    (envFlag === "sandbox" ? "sandbox" : ("live" as const));
-  return environment === "sandbox"
-    ? UPSTOX_SANDBOX_API_BASE_URL
-    : UPSTOX_LIVE_API_BASE_URL;
+  return token;
 }
 
-export function buildUpstoxAuthorizationUrl(
-  params: UpstoxAuthorizationUrlParams,
-): string {
-  const base = resolveUpstoxBaseUrl({ environment: params.environment });
-  const url = new URL(`${base}${UPSTOX_AUTHORIZATION_DIALOG_PATH}`);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", params.clientId);
-  url.searchParams.set("redirect_uri", params.redirectUri);
-  if (params.state?.trim()) {
-    url.searchParams.set("state", params.state.trim());
-  }
-  return url.toString();
-}
-
-function parseInstrumentKeys(keys: string[], max: number): string {
-  const parsed = keys.map((key) => upstoxInstrumentKeySchema.parse(key.trim()));
-  if (parsed.length === 0) {
-    throw new Error("At least one instrument_key is required");
-  }
-  if (parsed.length > max) {
-    throw new Error(`Upstox allows at most ${max} instrument keys per request`);
-  }
-  return parsed.join(",");
-}
-
-function buildQueryString(
-  query: Record<string, string | number | boolean | undefined>,
-): string {
+function buildQueryString(query: Record<string, UpstoxQueryValue>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
-    if (value === undefined) {
+    if (value == null) {
       continue;
     }
-    params.set(key, String(value));
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        params.append(key, item);
+      }
+    } else {
+      params.append(key, String(value));
+    }
   }
   const serialized = params.toString();
   return serialized ? `?${serialized}` : "";
 }
 
-async function readResponseBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text.trim()) {
-    return null;
+function classifyHttpError(status: number): UpstoxErrorKind {
+  if (status === 401 || status === 403) {
+    return "authentication";
   }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
+  if (status === 404) {
+    return "not_found";
   }
+  if (status === 429) {
+    return "rate_limit";
+  }
+  if (status === 400 || status === 422) {
+    return "invalid_request";
+  }
+  if (status >= 500) {
+    return "server";
+  }
+  return "invalid_request";
+}
+
+type UpstoxErrorBody = {
+  status?: string;
+  errors?: Array<{ errorCode?: string; message?: string }>;
+  message?: string;
+};
+
+function messageFromBody(body: UpstoxErrorBody, fallback: string): string {
+  const first = body.errors?.[0];
+  if (first?.message) {
+    return first.errorCode
+      ? `${first.errorCode}: ${first.message}`
+      : first.message;
+  }
+  if (body.message) {
+    return body.message;
+  }
+  return fallback;
+}
+
+function errorCodeFromBody(body: UpstoxErrorBody): string | undefined {
+  return body.errors?.[0]?.errorCode;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function mergeAbortSignals(
+  timeoutMs: number,
+  userSignal?: AbortSignal,
+): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  if (userSignal == null) {
+    return timeoutSignal;
+  }
+  const merged = new AbortController();
+  const abortFrom = (source: AbortSignal) => {
+    if (!merged.signal.aborted) {
+      merged.abort(source.reason);
+    }
+  };
+  if (timeoutSignal.aborted) {
+    abortFrom(timeoutSignal);
+    return merged.signal;
+  }
+  if (userSignal.aborted) {
+    abortFrom(userSignal);
+    return merged.signal;
+  }
+  timeoutSignal.addEventListener("abort", () => abortFrom(timeoutSignal), {
+    once: true,
+  });
+  userSignal.addEventListener("abort", () => abortFrom(userSignal), {
+    once: true,
+  });
+  return merged.signal;
 }
 
 export function createUpstoxClient(options: UpstoxClientOptions = {}) {
+  const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  const defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetchImpl ?? fetch;
-  const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const baseUrl = resolveUpstoxBaseUrl({
-    baseUrl: options.baseUrl,
-    environment: options.environment,
-  });
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
 
-  const resolveAccessToken = (override?: string): string => {
-    const token =
-      override?.trim() ??
-      options.accessToken?.trim() ??
-      readTrimmedEnv("UPSTOX_ACCESS_TOKEN");
-    if (!token) {
-      throw new Error(
-        "Upstox access token is required (pass accessToken or set UPSTOX_ACCESS_TOKEN)",
-      );
-    }
-    return token;
-  };
-
-  async function request<T = unknown>(
+  async function requestJson<T>(
+    method: "GET" | "POST",
     path: string,
-    init: RequestInit & UpstoxRequestOptions = {},
+    init: {
+      query?: Record<string, UpstoxQueryValue>;
+      body?: unknown;
+      timeoutMs?: number;
+      noRetry?: boolean;
+      signal?: AbortSignal;
+    },
   ): Promise<T> {
+    const token = readAnalyticsToken(options.analyticsToken);
     const timeoutMs = init.timeoutMs ?? defaultTimeoutMs;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const signal = init.signal
-      ? AbortSignal.any([init.signal, controller.signal])
-      : controller.signal;
-
     const queryString = init.query ? buildQueryString(init.query) : "";
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const url = `${baseUrl}${normalizedPath}${queryString}`;
+    const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}${queryString}`;
 
-    try {
-      const headers = new Headers(init.headers);
-      if (!headers.has("Accept")) {
-        headers.set("Accept", "application/json");
-      }
-      if (init.accessToken !== undefined || !headers.has("Authorization")) {
-        headers.set(
-          "Authorization",
-          `Bearer ${resolveAccessToken(init.accessToken)}`,
-        );
+    const requestSignal = mergeAbortSignals(timeoutMs, init.signal);
+
+    let lastError: unknown;
+
+    const attempts = init.noRetry ? 1 : maxRetries + 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(250 * 2 ** (attempt - 1));
       }
 
-      const response = await fetchImpl(url, {
-        ...init,
-        headers,
-        signal,
-      });
+      try {
+        const response = await fetchImpl(url, {
+          method,
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body:
+            method === "POST" && init.body != null
+              ? JSON.stringify(init.body)
+              : undefined,
+          signal: requestSignal,
+        });
 
-      const body = await readResponseBody(response);
+        const text = await response.text();
+        let parsed: unknown = null;
+        if (text.length > 0) {
+          try {
+            parsed = JSON.parse(text) as unknown;
+          } catch {
+            throw new UpstoxApiError("Upstox returned non-JSON response.", {
+              kind: "malformed",
+              status: response.status,
+            });
+          }
+        }
 
-      if (!response.ok) {
-        throw new UpstoxApiError(
-          `Upstox API ${response.status} ${response.statusText}`.trim(),
-          response.status,
-          body,
-        );
-      }
-
-      const envelope = upstoxApiEnvelopeSchema.safeParse(body);
-      if (envelope.success) {
-        if (envelope.data.status === "error") {
+        if (!response.ok) {
+          const body = (parsed ?? {}) as UpstoxErrorBody;
+          const kind = classifyHttpError(response.status);
           throw new UpstoxApiError(
-            "Upstox API returned status=error",
-            response.status,
-            body,
+            messageFromBody(body, `Upstox request failed (${response.status})`),
+            {
+              kind,
+              status: response.status,
+              errorCode: errorCodeFromBody(body),
+            },
           );
         }
-        return (envelope.data.data ?? body) as T;
-      }
 
-      return body as T;
-    } finally {
-      clearTimeout(timeout);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          "status" in parsed &&
+          (parsed as { status?: string }).status === "error"
+        ) {
+          const body = parsed as UpstoxErrorBody;
+          throw new UpstoxApiError(
+            messageFromBody(body, "Upstox API returned error status"),
+            {
+              kind: "invalid_request",
+              status: response.status,
+              errorCode: errorCodeFromBody(body),
+            },
+          );
+        }
+
+        return parsed as T;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof UpstoxApiError) {
+          if (
+            error.kind === "missing_token" ||
+            error.kind === "authentication" ||
+            error.kind === "invalid_request" ||
+            error.kind === "not_found" ||
+            error.kind === "malformed"
+          ) {
+            throw error;
+          }
+          if (
+            !init.noRetry &&
+            (error.kind === "rate_limit" || error.kind === "server") &&
+            attempt < attempts - 1
+          ) {
+            continue;
+          }
+          throw error;
+        }
+        if (error instanceof Error && error.name === "TimeoutError") {
+          const timeoutError = new UpstoxApiError("Upstox request timed out.", {
+            kind: "timeout",
+            status: 0,
+            cause: error,
+          });
+          if (!init.noRetry && attempt < attempts - 1) {
+            lastError = timeoutError;
+            continue;
+          }
+          throw timeoutError;
+        }
+        if (!init.noRetry && attempt < attempts - 1) {
+          continue;
+        }
+        throw new UpstoxApiError("Upstox network request failed.", {
+          kind: "server",
+          status: 0,
+          cause: error,
+        });
+      }
     }
-  }
 
-  async function requestWithoutAuth<T = unknown>(
-    path: string,
-    init: RequestInit & { timeoutMs?: number; signal?: AbortSignal } = {},
-  ): Promise<T> {
-    const timeoutMs = init.timeoutMs ?? defaultTimeoutMs;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const signal = init.signal
-      ? AbortSignal.any([init.signal, controller.signal])
-      : controller.signal;
-
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const url = `${baseUrl}${normalizedPath}`;
-
-    try {
-      const headers = new Headers(init.headers);
-      if (!headers.has("Accept")) {
-        headers.set("Accept", "application/json");
-      }
-
-      const response = await fetchImpl(url, { ...init, headers, signal });
-      const body = await readResponseBody(response);
-
-      if (!response.ok) {
-        throw new UpstoxApiError(
-          `Upstox API ${response.status} ${response.statusText}`.trim(),
-          response.status,
-          body,
-        );
-      }
-
-      return body as T;
-    } finally {
-      clearTimeout(timeout);
-    }
+    throw lastError instanceof Error
+      ? lastError
+      : new UpstoxApiError("Upstox request failed.", {
+          kind: "server",
+          status: 0,
+        });
   }
 
   return {
-    baseUrl,
-
-    buildAuthorizationUrl(params: Omit<UpstoxAuthorizationUrlParams, "environment">) {
-      return buildUpstoxAuthorizationUrl({
-        ...params,
-        environment: options.environment,
+    get<T>(path: string, options?: UpstoxGetOptions): Promise<T> {
+      return requestJson<T>("GET", path, {
+        query: options?.query,
+        timeoutMs: options?.timeoutMs,
+        noRetry: options?.noRetry,
+        signal: options?.signal,
       });
     },
 
-    async exchangeAuthorizationCode(
-      params: UpstoxAuthorizationCodeExchangeParams,
-    ): Promise<UpstoxTokenResponse> {
-      const clientId =
-        params.clientId?.trim() ?? readTrimmedEnv("UPSTOX_CLIENT_ID");
-      const clientSecret =
-        params.clientSecret?.trim() ?? readTrimmedEnv("UPSTOX_CLIENT_SECRET");
-      if (!clientId || !clientSecret) {
-        throw new Error(
-          "UPSTOX_CLIENT_ID and UPSTOX_CLIENT_SECRET are required for token exchange",
-        );
-      }
-
-      const tokenBase = resolveUpstoxBaseUrl({
-        environment: params.environment ?? options.environment,
-      });
-      const body = new URLSearchParams({
-        code: params.code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: params.redirectUri,
-        grant_type: "authorization_code",
-      });
-
-      const timeoutMs = defaultTimeoutMs;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-      try {
-        const response = await fetchImpl(`${tokenBase}${UPSTOX_TOKEN_PATH}`, {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body,
-          signal: controller.signal,
-        });
-
-        const json = await readResponseBody(response);
-        if (!response.ok) {
-          throw new UpstoxApiError(
-            `Upstox token exchange failed (${response.status})`,
-            response.status,
-            json,
-          );
-        }
-
-        return upstoxTokenResponseSchema.parse(json);
-      } finally {
-        clearTimeout(timeout);
-      }
-    },
-
-    request,
-
-    async getUserProfile(requestOptions: UpstoxRequestOptions = {}) {
-      return request<unknown>("/user/profile", {
-        method: "GET",
-        ...requestOptions,
+    post<T>(
+      path: string,
+      body?: unknown,
+      options?: Omit<UpstoxGetOptions, "query">,
+    ): Promise<T> {
+      return requestJson<T>("POST", path, {
+        body,
+        timeoutMs: options?.timeoutMs,
+        noRetry: options?.noRetry,
+        signal: options?.signal,
       });
     },
-
-    async getFullMarketQuote(input: {
-      instrumentKeys: string[];
-      accessToken?: string;
-      signal?: AbortSignal;
-    }) {
-      return request<Record<string, unknown>>("/market-quote/quotes", {
-        method: "GET",
-        accessToken: input.accessToken,
-        signal: input.signal,
-        query: {
-          instrument_key: parseInstrumentKeys(
-            input.instrumentKeys,
-            MAX_INSTRUMENT_KEYS_QUOTES,
-          ),
-        },
-      });
-    },
-
-    async getMarketQuoteOhlc(input: {
-      instrumentKeys: string[];
-      interval: z.infer<typeof upstoxOhlcIntervalSchema>;
-      accessToken?: string;
-      signal?: AbortSignal;
-    }) {
-      upstoxOhlcIntervalSchema.parse(input.interval);
-      return request<Record<string, unknown>>("/market-quote/ohlc", {
-        method: "GET",
-        accessToken: input.accessToken,
-        signal: input.signal,
-        query: {
-          instrument_key: parseInstrumentKeys(
-            input.instrumentKeys,
-            MAX_INSTRUMENT_KEYS_OHLC_LTP,
-          ),
-          interval: input.interval,
-        },
-      });
-    },
-
-    async getMarketQuoteLtp(input: {
-      instrumentKeys: string[];
-      accessToken?: string;
-      signal?: AbortSignal;
-    }) {
-      return request<Record<string, unknown>>("/market-quote/ltp", {
-        method: "GET",
-        accessToken: input.accessToken,
-        signal: input.signal,
-        query: {
-          instrument_key: parseInstrumentKeys(
-            input.instrumentKeys,
-            MAX_INSTRUMENT_KEYS_OHLC_LTP,
-          ),
-        },
-      });
-    },
-
-    async getHistoricalCandles(input: {
-      instrumentKey: string;
-      interval: string;
-      toDate: string;
-      fromDate?: string;
-      accessToken?: string;
-      signal?: AbortSignal;
-    }) {
-      const instrumentKey = encodeURIComponent(
-        upstoxInstrumentKeySchema.parse(input.instrumentKey.trim()),
-      );
-      const interval = encodeURIComponent(input.interval.trim());
-      const toDate = encodeURIComponent(input.toDate.trim());
-      const path = input.fromDate
-        ? `/historical-candle/${instrumentKey}/${interval}/${toDate}/${encodeURIComponent(input.fromDate.trim())}`
-        : `/historical-candle/${instrumentKey}/${interval}/${toDate}`;
-
-      return request<unknown>(path, {
-        method: "GET",
-        accessToken: input.accessToken,
-        signal: input.signal,
-      });
-    },
-
-    async getIntradayCandles(input: {
-      instrumentKey: string;
-      interval: string;
-      accessToken?: string;
-      signal?: AbortSignal;
-    }) {
-      const instrumentKey = encodeURIComponent(
-        upstoxInstrumentKeySchema.parse(input.instrumentKey.trim()),
-      );
-      const interval = encodeURIComponent(input.interval.trim());
-      return request<unknown>(
-        `/historical-candle/intraday/${instrumentKey}/${interval}`,
-        {
-          method: "GET",
-          accessToken: input.accessToken,
-          signal: input.signal,
-        },
-      );
-    },
-
-    async getNews(input: {
-      category: z.infer<typeof upstoxNewsCategorySchema>;
-      instrumentKeys?: string[];
-      pageNumber?: number;
-      pageSize?: number;
-      accessToken?: string;
-      signal?: AbortSignal;
-    }) {
-      const category = upstoxNewsCategorySchema.parse(input.category);
-      const instrumentKeys =
-        input.instrumentKeys && input.instrumentKeys.length > 0
-          ? parseInstrumentKeys(input.instrumentKeys, MAX_INSTRUMENT_KEYS_QUOTES)
-          : undefined;
-
-      if (category === "instrument_keys" && !instrumentKeys) {
-        throw new Error(
-          "instrumentKeys are required when news category is instrument_keys",
-        );
-      }
-
-      return request<unknown>("/news", {
-        method: "GET",
-        accessToken: input.accessToken,
-        signal: input.signal,
-        query: {
-          category,
-          instrument_keys: instrumentKeys,
-          page_number: input.pageNumber,
-          page_size: input.pageSize,
-        },
-      });
-    },
-
-    /** Raw GET without Bearer (e.g. future public metadata). */
-    requestWithoutAuth,
   };
 }
 
-/** Lazy singleton — requires UPSTOX_ACCESS_TOKEN when calling authenticated methods. */
-export const upstoxClient = createUpstoxClient();
+export type UpstoxHttpClient = ReturnType<typeof createUpstoxClient>;
+
+let cachedClient: UpstoxHttpClient | null = null;
+
+export function getUpstoxClient(): UpstoxHttpClient {
+  cachedClient ??= createUpstoxClient();
+  return cachedClient;
+}
+
+/** @internal Test hook — replace or clear the process-wide client singleton. */
+export function __setUpstoxClientForTests(
+  client: UpstoxHttpClient | null,
+): void {
+  cachedClient = client;
+}
+
+export function isUpstoxConfigured(): boolean {
+  const token = process.env.UPSTOX_ANALYTICS_TOKEN?.trim();
+  return Boolean(token && token.length > 0);
+}

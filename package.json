@@ -17,6 +17,8 @@
     "test:story-votes": "node --import tsx --test services/news/storyVoteLogic.test.ts",
     "test:news-generation": "node --import tsx --test services/news/newsGenerationRequest.test.ts services/news/newsSearchPlanning.test.ts services/news/newsRequestProgress.test.ts services/news/newsRequestPollingLogic.test.ts",
     "test:billing": "node --import tsx --test services/billing/razorpaySignature.test.ts",
+    "test:upstox": "node --import tsx --test clients/upstoxClient.test.ts services/upstox/upstoxServices.test.ts services/upstox/marketDataWebsocket.test.ts",
+    "upstox:test": "node --import tsx --import dotenv/config scripts/upstoxTest.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -61,6 +63,7 @@
     "shadcn": "^4.21.0",
     "sonner": "^2.0.8",
     "tw-animate-css": "^1.4.0",
+    "upstox-js-sdk": "^2.31.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
