@@ -66,8 +66,10 @@ Official docs: [Upstox Developer API](https://upstox.com/developer/api-documenta
 ## WebSocket (Market Data Feed V3)
 
 1. `authorizeMarketDataFeed()` → one-time `wss://` URL (`GET /v3/feed/market-data-feed/authorize`).
-2. Connect with `UpstoxMarketDataFeedClient` (uses `ws` + official [MarketDataFeed.proto](./proto/MarketDataFeed.proto)).
-3. Subscribe with JSON control messages (`sub`, `unsub`, `change_mode`); market payloads are **binary protobuf**.
+2. Connect with `UpstoxMarketDataFeedClient`, which wraps the SDK’s **`MarketDataStreamerV3`** (connect, subscribe, protobuf decode, reconnect).
+3. Subscribe with JSON control messages (`sub`, `unsub`, `change_mode`); live payloads are **binary protobuf** decoded inside the SDK.
+
+Official schema (reference only, not used by Newsly at runtime): [MarketDataFeed.proto](https://assets.upstox.com/feed/market-data-feed/v3/MarketDataFeed.proto).
 
 Modes: `ltpc`, `full`, `full_d30`, `option_greeks` (per Upstox docs).
 

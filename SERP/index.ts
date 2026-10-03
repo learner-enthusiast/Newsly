@@ -92,10 +92,18 @@ function withGoogleNewsParams(
     throw new Error("google_news: kgmid can only be used alone");
   }
 
-  return {
+  const merged = {
     ...params,
     ...(q ? { q } : {}),
   };
+
+  // SerpAPI: `q` and `so` are mutually exclusive on engine=google_news.
+  if (q) {
+    const { so: _so, ...withoutSo } = merged;
+    return withoutSo as GoogleNewsSearchParams;
+  }
+
+  return merged;
 }
 
 type GoogleFinanceSearchParams = SerpEngineSearchParams & {
@@ -541,7 +549,7 @@ const googleNewsInputSchema = z
     section_token: z.string().min(1).optional(),
     story_token: z.string().min(1).optional(),
     kgmid: z.string().min(1).optional(),
-    so: z.union([z.literal(0), z.literal(1)]).default(0),
+    so: z.union([z.literal(0), z.literal(1)]).optional(),
     gl: serpSharedInputShape.gl,
     hl: serpSharedInputShape.hl,
     no_cache: serpSharedInputShape.no_cache,
@@ -566,6 +574,12 @@ const googleNewsInputSchema = z
       ctx.addIssue({
         code: "custom",
         message: "Do not combine q with token parameters",
+      });
+    }
+    if (q && (data.so === 0 || data.so === 1)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Do not combine q with so (use so only with token parameters)",
       });
     }
     if (tokens.includes("kgmid") && tokens.some((t) => t !== "kgmid")) {
@@ -867,7 +881,7 @@ export const serpEngines = {
   searchGoogleNews: {
     description: [
       "Google News site (engine=google_news, news.google.com). Not the Google web News tab.",
-      "Input: q OR token params (topic_token, publication_token, section_token, story_token, kgmid alone); never q + tokens; optional so (0=relevance, 1=date), gl, hl.",
+      "Input: q OR token params (topic_token, publication_token, section_token, story_token, kgmid alone); never q + tokens; so (0=relevance, 1=date) only with token params — never with q; gl, hl.",
       "Output: news_results (title, link, iso_date, source.name), menu_links, related_topics, related_publications, search_metadata.",
       "Docs: https://serpapi.com/google-news-api",
     ].join(" "),

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { serpEngines } from "@/SERP/index";
 import {
   buildSmallDeterminerResultFromModelOutput,
   sanitizeSerpToolInput,
@@ -114,5 +115,24 @@ describe("sanitizeSerpToolInput", () => {
     });
     assert.equal(sanitized.q, "test");
     assert.equal("tbm" in sanitized, false);
+  });
+
+  it("strips so for searchGoogleNews when q is set", () => {
+    const sanitized = sanitizeSerpToolInput("searchGoogleNews", {
+      q: "Microsoft AI",
+      so: 1,
+    });
+    assert.equal(sanitized.q, "Microsoft AI");
+    assert.equal("so" in sanitized, false);
+    const parsed = serpEngines.searchGoogleNews.inputSchema.parse(sanitized);
+    assert.equal("so" in parsed, false);
+  });
+
+  it("keeps so for token-only searchGoogleNews", () => {
+    const sanitized = sanitizeSerpToolInput("searchGoogleNews", {
+      topic_token: "CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZxYUdjU0FtVkZHZ0FUVlFBSVAB",
+      so: 1,
+    });
+    assert.equal(sanitized.so, 1);
   });
 });

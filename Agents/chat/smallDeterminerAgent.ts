@@ -183,6 +183,13 @@ export function sanitizeSerpToolInput(
     delete next.tbm;
   }
 
+  if (tool === "searchGoogleNews") {
+    const q = typeof next.q === "string" ? next.q.trim() : "";
+    if (q.length > 0) {
+      delete next.so;
+    }
+  }
+
   if (typeof next.q === "string") {
     next.q = next.q.trim();
   }
