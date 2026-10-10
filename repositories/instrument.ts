@@ -80,7 +80,7 @@ function normalizeLookupQuery(query: string): string {
 }
 
 export async function getInstrumentByKey(instrumentKey: string) {
-  return prisma.instrument.findUnique({
+  return await prisma.instrument.findUnique({
     where: { instrumentKey: instrumentKeySchema.parse(instrumentKey) },
   });
 }
@@ -90,7 +90,7 @@ export async function findInstrumentsByTradingSymbol(
   input: InstrumentSymbolLookup,
 ) {
   const parsed = symbolLookupSchema.parse(input);
-  return prisma.instrument.findMany({
+  return await prisma.instrument.findMany({
     where: {
       segment: parsed.segment,
       instrumentType: parsed.instrumentType,
@@ -103,7 +103,7 @@ export async function findInstrumentByTradingSymbol(
   input: InstrumentSymbolLookup,
 ) {
   const parsed = symbolLookupSchema.parse(input);
-  return prisma.instrument.findFirst({
+  return await prisma.instrument.findFirst({
     where: {
       segment: parsed.segment,
       instrumentType: parsed.instrumentType,
@@ -116,7 +116,7 @@ export async function findInstrumentByTradingSymbol(
 export async function searchInstrumentsByName(input: InstrumentNameSearchInput) {
   const parsed = nameSearchSchema.parse(input);
   const q = normalizeLookupQuery(parsed.query);
-  return prisma.instrument.findMany({
+  return await prisma.instrument.findMany({
     where: {
       name: { startsWith: q, mode: "insensitive" },
       ...(parsed.segment ? { segment: parsed.segment } : {}),
@@ -135,7 +135,7 @@ export async function searchInstrumentsByShortName(
 ) {
   const parsed = nameSearchSchema.parse(input);
   const q = normalizeLookupQuery(parsed.query);
-  return prisma.instrument.findMany({
+  return await prisma.instrument.findMany({
     where: {
       shortName: { startsWith: q, mode: "insensitive" },
       ...(parsed.segment ? { segment: parsed.segment } : {}),
@@ -159,7 +159,7 @@ export async function searchInstrumentsByNameOrShortName(
     ? { instrumentType: parsed.instrumentType }
     : {};
 
-  return prisma.instrument.findMany({
+  return await prisma.instrument.findMany({
     where: {
       ...segmentFilter,
       ...typeFilter,
@@ -174,7 +174,7 @@ export async function searchInstrumentsByNameOrShortName(
 }
 
 export async function createInstrument(input: InstrumentCreateInput) {
-  return prisma.instrument.create({
+  return await prisma.instrument.create({
     data: toCreateData(instrumentWriteSchema.parse(input)),
   });
 }
@@ -182,7 +182,7 @@ export async function createInstrument(input: InstrumentCreateInput) {
 export async function upsertInstrument(input: InstrumentPutInput) {
   const data = instrumentPutSchema.parse(input);
   const { instrumentKey, ...update } = data;
-  return prisma.instrument.upsert({
+  return await prisma.instrument.upsert({
     where: { instrumentKey },
     create: toCreateData(data),
     update: toUpdateData(update),
@@ -192,7 +192,7 @@ export async function upsertInstrument(input: InstrumentPutInput) {
 export async function patchInstrument(input: InstrumentPatchInput) {
   const parsed = instrumentPatchSchema.parse(input);
   const { instrumentKey, ...data } = parsed;
-  return prisma.instrument.update({
+  return await prisma.instrument.update({
     where: { instrumentKey },
     data: toUpdateData(data as Prisma.InstrumentUpdateInput),
   });

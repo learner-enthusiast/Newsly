@@ -19,6 +19,7 @@
     "test:billing": "node --import tsx --test services/billing/razorpaySignature.test.ts",
     "test:upstox": "node --import tsx --test clients/upstoxClient.test.ts services/upstox/upstoxServices.test.ts services/upstox/marketDataWebsocket.test.ts",
     "upstox:test": "node --import tsx --import dotenv/config scripts/upstoxTest.ts",
+    "instruments:sync": "node --import tsx --import dotenv/config scripts/syncInstruments.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
