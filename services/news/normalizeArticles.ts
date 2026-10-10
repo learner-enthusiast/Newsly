@@ -40,6 +40,8 @@ export const normalizedArticleLinkSchema = z.object({
   fromAiOverviewFollowUp: z.boolean().optional(),
   /** Serp thumbnail/image when present (fallback after Firecrawl metadata). */
   imageUrl: z.string().url().nullable().optional(),
+  /** Request tier this candidate was found for (news pipeline funnel). */
+  region: z.enum(["local", "world"]).optional(),
 });
 
 export type NormalizedArticleLink = z.infer<typeof normalizedArticleLinkSchema>;
@@ -702,6 +704,12 @@ export function articlePublishedMatchesRequestDate(
   return false;
 }
 
+/**
+ * Patterns that only identify a tip page when they appear in the title/snippet.
+ * In article bodies they are common in ordinary market news ("brokerage raises
+ * target price", "intraday high", "stop-loss"), so body text is checked only
+ * against `TRADING_TIP_PAGE_PATTERNS`.
+ */
 const TRADING_RECOMMENDATION_PATTERNS: RegExp[] = [
   /\bstock\s+recommendations?\b/i,
   /\bmarket\s+trading\s+guide\b/i,
@@ -711,7 +719,7 @@ const TRADING_RECOMMENDATION_PATTERNS: RegExp[] = [
   /\bbuy\s+(?:at|above|below|price)\b/i,
   /\btarget\s+(?:price|of)\b/i,
   /\bstop[\s-]?loss\b/i,
-  /\bintraday\s+(?:call|trade|pick)?\b/i,
+  /\bintraday\s+(?:calls?|trades?|picks?)\b/i,
   /\boptions?\s+calls?\b/i,
   /\bmultibagger\b/i,
   /\bportfolio\s+(?:advice|pick|recommend)/i,
@@ -726,14 +734,72 @@ export function isTradingRecommendationArticle(input: {
   snippet?: string | null;
   scrapedContent?: string | null;
 }): boolean {
-  const title = input.title?.trim() ?? "";
-  const snippet = input.snippet?.trim() ?? "";
-  const scrapeHead = input.scrapedContent?.trim().slice(0, 4000) ?? "";
-  const haystack = [title, snippet, scrapeHead].filter(Boolean).join("\n");
-  if (!haystack) {
-    return false;
+  const headline = [input.title?.trim(), input.snippet?.trim()]
+    .filter(Boolean)
+    .join("\n");
+  if (
+    headline &&
+    TRADING_RECOMMENDATION_PATTERNS.some((pattern) => pattern.test(headline))
+  ) {
+    return true;
   }
-  return TRADING_RECOMMENDATION_PATTERNS.some((pattern) => pattern.test(haystack));
+  const scrapeHead = input.scrapedContent?.trim().slice(0, 4000) ?? "";
+  return (
+    scrapeHead.length > 0 &&
+    TRADING_TIP_PAGE_PATTERNS.some((pattern) => pattern.test(scrapeHead))
+  );
+}
+
+/** Body-text patterns that only appear on tip / buy-sell-call pages. */
+const TRADING_TIP_PAGE_PATTERNS: RegExp[] = [
+  /\bstocks?\s+to\s+(?:buy|sell)\b/i,
+  /\bstock\s+recommendations?\b/i,
+  /\b(?:buy|sell)\s+(?:call|recommendation)s?\b/i,
+  /\bintraday\s+(?:calls?|picks?)\b/i,
+  /\bmultibagger\b/i,
+  /\b(?:market\s+)?trading\s+guide\b/i,
+];
+
+function titleTokens(title: string | undefined): Set<string> {
+  return new Set(
+    (title ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length >= 3),
+  );
+}
+
+/**
+ * Drop candidates whose title is a near-copy of an earlier one (same wire story
+ * syndicated across outlets). Jaccard similarity on title words; keeps the first.
+ */
+export function dedupeNearDuplicateTitles<T extends { title?: string }>(
+  articles: T[],
+  threshold = 0.8,
+): T[] {
+  const kept: Array<{ article: T; tokens: Set<string> }> = [];
+  for (const article of articles) {
+    const tokens = titleTokens(article.title);
+    const duplicate =
+      tokens.size >= 4 &&
+      kept.some(({ tokens: other }) => {
+        if (other.size < 4) {
+          return false;
+        }
+        let shared = 0;
+        for (const token of tokens) {
+          if (other.has(token)) {
+            shared += 1;
+          }
+        }
+        return shared / (tokens.size + other.size - shared) >= threshold;
+      });
+    if (!duplicate) {
+      kept.push({ article, tokens });
+    }
+  }
+  return kept.map(({ article }) => article);
 }
 
 /**

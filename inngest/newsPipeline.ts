@@ -54,38 +54,36 @@
  *    Persist primary queries and `planPairs` (tier + news/search strings) on
  *    `NewsRequest.searchQuery`; append “Search queries planned.”
  *
- * 4. fetch-and-normalize-serp
- *    All in parallel: per tier plan Google News + Google (date range via `tbs`,
- *    `withGoogleRecencyFilter`) + YouTube; plus `buildNewsTopicSearchPlans` short
- *    topic queries (Google News + Google, 15s cap each, dropped when slow).
- *    Payloads are interleaved round-robin so every query reaches the candidate list.
- *    If merged Google search has `ai_overview`, run
- *    `runGaiOverviewSearchGeneratorAgent`, fetch extra `searchGoogle` (news tab)
- *    per generated query (shared `num`, `gl`, `hl`, local `location` when set),
- *    and append into the search payload.
- *    Normalize → request-day + previous-day window → drop trading-tip articles → apply
- *    selection-weight boost (1.3) for URLs found only on AI-overview follow-up.
- *    Append “Finding relevant stories.”
- *    Output: `{ articles, youtubeSerpPayload }` (≤10 video rows).
+ * Stage logic lives in `services/news/newsBriefingStages.ts` (shared with the
+ * dry-run `pnpm news:funnel`); each stage returns per-region funnel counts.
+ *
+ * 4. fetch-and-normalize-serp — `discoverNewsCandidates`
+ *    Per tier, in parallel: tier plan (Google News + Google with `tbs` date range +
+ *    YouTube), short topic queries (15s cap each), AI-overview follow-up; plus direct
+ *    publisher feeds from `config/newsSources.json` (RSS / news sitemaps, 5s timeout,
+ *    5 min cache; India feeds back the local tier for Indian locations).
+ *    Round-robin merge across sources → URL + near-duplicate-title dedupe →
+ *    request-day + previous-day window → tip/buy-sell junk filter.
  *
  * 5–8. YouTube branch (parallel with article branch after step 4)
  *    select-youtube-videos → fetch-youtube-transcripts → analyze-youtube-transcripts
  *    → synthesize-youtube-transcript-facts.
  *
  * 9–10. Article branch (parallel with YouTube branch after step 4)
- *    select-articles — prefer configured source domains, cap candidates with
- *    `articleCandidateBudget`, `runResearchArticleSelectorAgent`, cap scrapes with
- *    `maxArticlesToScrape`.
- *    scrape-selected-articles — Firecrawl, then `runNewsContentCleanerAgent`
- *    per page; drop empty/invalid/trading-tip scrapes; append “Checking sources.”
+ *    select-articles — `rankArticlesForScrape`: AI ranks the candidate budget by
+ *    relative importance (junk floor only, no pass/fail threshold); top
+ *    2× N (min 8) go to Firecrawl (15s cap each), the rest are a ranked reserve.
+ *    scrape-selected-articles — `scrapeAndCleanArticles` (Firecrawl + cleaner).
+ *    scrape-backfill-articles — only when cleaned articles < N + 1: one more batch
+ *    from the reserve.
  *
- * 11. synthesize-stories (after both branches)
- *     Append “Organizing the news.”
- *     `runNewsSynthesizerAgent` on cleaned Firecrawl articles plus YouTube rows
- *     from `buildYoutubeArticlesForSynthesizer`. YouTube is supporting evidence
- *     only (stories require primary article sources). Up to `storyCount` stories;
- *     location inferred from article content, not defaulted to request location.
- *     Model: `NEWS_SYNTHESIZER_MODEL` or `gpt-5.4-mini`.
+ * 11. synthesize-stories — `synthesizeNewsStories`
+ *     Ranks events by relative importance and returns the top N; if the first pass
+ *     yields fewer, one backfill pass over unused articles, then article-derived
+ *     fallback stories. Shortfall (genuinely too few articles) is logged.
+ *
+ * 11b. record-funnel — logs the funnel table and saves it on
+ *     `NewsRequest.searchQuery.funnel`.
  *
  * 12. persist-stories-and-sources
  *     Append “Preparing your briefing.”
@@ -130,75 +128,54 @@
  * query strings. Default model fallback chain: per-agent env → `OPENAI_MODEL` → `gpt-4o-mini`.
  */
 
-import { runGaiOverviewSearchGeneratorAgent } from "@/Agents/news/GAIOverviewSearchGeneratorAgents";
-import { runNewsContentCleanerAgent } from "@/Agents/news/NewsContentCleanerAgent";
-import {
-  runNewsSynthesizerAgent,
-  storyHasPrimaryArticleSource,
-} from "@/Agents/news/NewsSythesizeragent";
-import { runResearchArticleSelectorAgent } from "@/Agents/news/ResearchArticleSelectorAgent";
+import { storyHasPrimaryArticleSource } from "@/Agents/news/NewsSythesizeragent";
+import { runYoutubeTranscriptSynthesizeAgent } from "@/Agents/news/YoutubeTranscriptSyntesizeAgent";
+import { youtubeTranscriptAnalysisSchema } from "@/Agents/news/YoutubeTranscriptAgent";
 import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
+import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
+import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import {
   appendNewsRequestLoadingLog,
   getNewsRequestByIdForUser,
   patchNewsRequest,
 } from "@/repositories/newsRequest";
-import {
-  newsGenerationConfigFromNewsRequest,
-  newsGenerationConfigSchema,
-  newsPipelineGenerationEventSchema,
-} from "@/services/news/newsGenerationRequest";
-import {
-  articleCandidateBudget,
-  buildArticleSelectionPrompt,
-  buildNewsSearchExecutionPlans,
-  buildNewsTopicSearchPlans,
-  withGoogleRecencyFilter,
-  maxArticlesToScrape,
-  pickSerpSharedGeoFromSearchParams,
-  preferArticlesFromSources,
-  serpResultsPerEngine,
-} from "@/services/news/newsSearchPlanning";
 import { createNewsSource } from "@/repositories/newsSource";
 import {
   createNewsStory,
   listNewsStoriesByNewsRequestId,
   patchNewsStory,
 } from "@/repositories/newsStory";
-import { serpEngines } from "@/SERP/index";
-import {
-  resolveArticleImageUrl,
-  resolveNewsStoryImageUrl,
-} from "@/services/news/articleImageUrl";
-import { scrapeUrlsWithFirecrawlRaw } from "@/services/firecrawl/scrapeUrls";
 import { canonicalResearchUrl } from "@/services/chat/normalizeSerpResults";
-import { runYoutubeTranscriptSynthesizeAgent } from "@/Agents/news/YoutubeTranscriptSyntesizeAgent";
-import { youtubeTranscriptAnalysisSchema } from "@/Agents/news/YoutubeTranscriptAgent";
+import { resolveNewsStoryImageUrl } from "@/services/news/articleImageUrl";
+import {
+  buildRegionLookup,
+  discoverNewsCandidates,
+  formatFunnel,
+  mergeFunnels,
+  needsScrapeBackfill,
+  rankArticlesForScrape,
+  scrapeAndCleanArticles,
+  scrapeBackfillBatch,
+  synthesizeNewsStories,
+} from "@/services/news/newsBriefingStages";
+import {
+  newsGenerationConfigFromNewsRequest,
+  newsGenerationConfigSchema,
+  newsPipelineGenerationEventSchema,
+} from "@/services/news/newsGenerationRequest";
+import {
+  buildArticleSelectionPrompt,
+  buildNewsSearchExecutionPlans,
+  buildNewsTopicSearchPlans,
+} from "@/services/news/newsSearchPlanning";
+import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import {
   analyzeYoutubeTranscriptsInParallel,
   buildYoutubeArticlesForSynthesizer,
-  extractTopYoutubeVideoResults,
   fetchYoutubeTranscriptsByVideoIds,
   selectYoutubeVideosForNewsResearch,
 } from "@/services/news/youtubeResearch";
-import {
-  applySelectionWeightBoosts,
-  appendGoogleSearchSerpResults,
-  excludeTradingRecommendationArticles,
-  extractAiOverviewTextFromSerpPayload,
-  filterArticlesInRequestWindow,
-  followUpBoostedUrlKeys,
-  interleaveSerpPayloads,
-  isTradingRecommendationArticle,
-  mergeSerpPayloads,
-  normalizeSerpArticles,
-  serpPayloadHasAiOverview,
-  slimSerpPayloadForNormalize,
-  toJsonSafeStepOutput,
-  wrapAiOverviewFollowUpSerpPayload,
-} from "@/services/news/normalizeArticles";
-import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import {
   newsPipelineCompletedNotification,
   newsPipelineFailedNotification,
@@ -218,24 +195,6 @@ export const newsPipelineEventDataSchema = z
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;
 
 const PIPELINE_LOG_PREFIX = "[news-pipeline]";
-/** Topic queries are additive; drop a slow one rather than hold up the step. */
-const TOPIC_SERP_TIMEOUT_MS = 15_000;
-
-function resolveWithin<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(null);
-      },
-    );
-  });
-}
 const pipelineLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 
 const DEFAULT_NEWS_SYNTHESIZER_MODEL = "gpt-5.4-mini";
@@ -380,185 +339,22 @@ export const newsPipelineFunction = inngest.createFunction(
             tierPlans: plans.executionPlans.length,
             topicPlans: plans.topicPlans.length,
           });
-
-          const serpNum = serpResultsPerEngine(config.storyCount);
-          const settledValue = <T,>(result: PromiseSettledResult<T>) =>
-            result.status === "fulfilled" ? result.value : null;
-
-          // Tier plans (with AI overview + YouTube) and short topic queries all run
-          // in parallel; one failed/timed-out Serp call does not sink the run.
-          const [tierResults, topicResults] = await Promise.all([
-            Promise.all(
-              plans.executionPlans.map(async (plan) => {
-                const [newsPayload, searchPayload, ytPayload] =
-                  await Promise.allSettled([
-                    serpEngines.searchGoogleNews.fn({
-                      ...plan.googleNewsParams,
-                      num: serpNum,
-                    }),
-                    serpEngines.searchGoogle.fn({
-                      ...withGoogleRecencyFilter(
-                        plan.googleSearchParams,
-                        config.date,
-                      ),
-                      num: serpNum,
-                      trigger_ai_overview: true,
-                    }),
-                    serpEngines.searchYoutube.fn(plan.youtubeParams),
-                  ]);
-                return {
-                  news: settledValue(newsPayload),
-                  search: settledValue(searchPayload),
-                  youtube: settledValue(ytPayload),
-                };
-              }),
-            ),
-            Promise.all(
-              plans.topicPlans.map(async (plan) => {
-                const [news, search] = await Promise.all([
-                  resolveWithin(
-                    serpEngines.searchGoogleNews.fn(plan.googleNewsParams),
-                    TOPIC_SERP_TIMEOUT_MS,
-                  ),
-                  resolveWithin(
-                    serpEngines.searchGoogle.fn({
-                      ...plan.googleSearchParams,
-                      num: serpNum,
-                    }),
-                    TOPIC_SERP_TIMEOUT_MS,
-                  ),
-                ]);
-                return { news, search };
-              }),
-            ),
-          ]);
-
-          const googleNewsPayload: unknown = interleaveSerpPayloads([
-            ...tierResults.map((row) => row.news),
-            ...topicResults.map((row) => row.news),
-          ]);
-          const googleSearchPayload: unknown = interleaveSerpPayloads([
-            ...tierResults.map((row) => row.search),
-            ...topicResults.map((row) => row.search),
-          ]);
-          let youtubePayload: unknown = {};
-          for (const row of tierResults) {
-            youtubePayload = mergeSerpPayloads(youtubePayload, row.youtube);
-          }
-
-          let mergedGoogleSearchPayload: unknown = googleSearchPayload;
-          let followUpPayloads: unknown[] = [];
-          const primaryPlan = plans.executionPlans[0]!;
-          const primaryGl = plans.news.suggestedGl ?? plans.search.suggestedGl;
-          const serpShared = {
-            num: serpNum,
-            ...(primaryGl ? { gl: primaryGl } : {}),
-            hl: plans.news.suggestedHl ?? config.serpHl,
-            ...pickSerpSharedGeoFromSearchParams(
-              primaryPlan.googleSearchParams,
-            ),
-          };
-
-          if (serpPayloadHasAiOverview(googleSearchPayload)) {
-            const aiOverviewText =
-              extractAiOverviewTextFromSerpPayload(googleSearchPayload);
-            if (aiOverviewText) {
-              pipelineLog(
-                "fetch-and-normalize-serp",
-                "ai-overview detected, generating follow-up queries",
-                { overviewTextLength: aiOverviewText.length },
-              );
-              const generated = await runGaiOverviewSearchGeneratorAgent({
-                aiOverviewText,
-                date: config.date,
-                location: config.location ?? undefined,
-                scope: config.scope === "both" ? "world" : config.scope,
-                abortSignal: AbortSignal.timeout(120_000),
-              });
-              pipelineLog(
-                "fetch-and-normalize-serp",
-                "ai-overview follow-up queries ready",
-                {
-                  model: generated.model,
-                  queries: generated.queries.map((row) => ({
-                    q: row.query,
-                    rationale: row.rationale,
-                  })),
-                },
-              );
-
-              followUpPayloads = (
-                await Promise.all(
-                  generated.queries.map((row) =>
-                    serpEngines.searchGoogle.fn({
-                      q: row.query,
-                      tbm: "nws",
-                      ...serpShared,
-                    }),
-                  ),
-                )
-              ).map(wrapAiOverviewFollowUpSerpPayload);
-              pipelineLog(
-                "fetch-and-normalize-serp",
-                "ai-overview follow-up serp fetched",
-                { searchCount: followUpPayloads.length },
-              );
-
-              mergedGoogleSearchPayload = appendGoogleSearchSerpResults(
-                googleSearchPayload,
-                followUpPayloads,
-              );
-            } else {
-              pipelineLog(
-                "fetch-and-normalize-serp",
-                "ai-overview present but no extractable text; skipping follow-up serp",
-              );
-            }
-          }
-
-          // Budget scales with query count so later queries are not cut off.
-          const limitPerEngine = Math.min(
-            80,
-            serpNum *
-              (plans.executionPlans.length + plans.topicPlans.length),
-          );
-          const articles = normalizeSerpArticles({
-            googleNewsPayload: slimSerpPayloadForNormalize(
-              googleNewsPayload,
-              limitPerEngine,
-            ),
-            googleSearchPayload: slimSerpPayloadForNormalize(
-              mergedGoogleSearchPayload,
-              limitPerEngine,
-            ),
-            limitPerEngine,
+          const result = await discoverNewsCandidates({
+            config,
+            executionPlans: plans.executionPlans,
+            topicPlans: plans.topicPlans,
+            log: (event, data) =>
+              pipelineLog("fetch-and-normalize-serp", event, data),
           });
-
-          const filtered = filterArticlesInRequestWindow(articles, config.date);
-          const eligible = excludeTradingRecommendationArticles(filtered);
-          const boostedUrls = followUpBoostedUrlKeys(
-            googleSearchPayload,
-            followUpPayloads,
-          );
-          const weighted = applySelectionWeightBoosts(eligible, boostedUrls);
           pipelineLog("fetch-and-normalize-serp", "done", {
-            rawCount: articles.length,
-            afterDateFilter: filtered.length,
-            afterTradingFilter: eligible.length,
-            followUpBoostedUrls: boostedUrls.size,
-            youtubeVideoCount:
-              extractTopYoutubeVideoResults(youtubePayload).length,
+            funnel: result.funnel.stages,
+            sources: result.funnel.sources,
           });
           await appendNewsRequestLoadingLog(
             newsRequest.id,
             "Finding relevant stories.",
           );
-          return toJsonSafeStepOutput({
-            articles: weighted,
-            youtubeSerpPayload: {
-              video_results: extractTopYoutubeVideoResults(youtubePayload, 10),
-            },
-          });
+          return toJsonSafeStepOutput(result);
         },
       );
 
@@ -570,13 +366,11 @@ export const newsPipelineFunction = inngest.createFunction(
       }
 
       const researchPrompt = buildArticleSelectionPrompt(config);
-      const candidateBudget = articleCandidateBudget(config.storyCount);
-      const scrapeBudget = maxArticlesToScrape(config.storyCount);
 
       pipelineLog("step", "entering parallel research branches");
       const [
         { youtubeTranscripts, youtubeAnalyses, youtubeSynthesis },
-        { researched },
+        { researched, articleFunnel },
       ] = await Promise.all([
         (async () => {
           pipelineLog("step", "entering select-youtube-videos");
@@ -684,162 +478,78 @@ export const newsPipelineFunction = inngest.createFunction(
         })(),
         (async () => {
           pipelineLog("step", "entering select-articles");
-          const selected = await step.run("select-articles", async () => {
-            const budgeted = preferArticlesFromSources(
-              excludeTradingRecommendationArticles(normalized),
-              config.sources,
-            ).slice(0, candidateBudget);
-            pipelineLog("select-articles", "start", {
-              candidateCount: budgeted.length,
-              candidateBudget,
-              scrapeBudget,
+          const ranking = await step.run("select-articles", async () => {
+            const result = await rankArticlesForScrape({
+              config,
+              articles: normalized,
+              researchPrompt,
             });
-            const candidates = budgeted;
-            const links = candidates.map((article) => ({
-              url: article.url,
-              title: article.title,
-              snippet: article.snippet,
-              source: article.source,
-              sourceType: article.sourceType,
-              selectionWeight: article.selectionWeight,
-              fromAiOverviewFollowUp: article.fromAiOverviewFollowUp,
-            }));
-
-            const result = (
-              await runResearchArticleSelectorAgent({
-                userPrompt: researchPrompt,
-                links,
-                topPercent: 50,
-                abortSignal: AbortSignal.timeout(180_000),
-              })
-            )
-              .filter(
-                (article) =>
-                  !isTradingRecommendationArticle({ title: article.title }),
-              )
-              .slice(0, scrapeBudget);
-
             pipelineLog("select-articles", "done", {
-              selectedCount: result.length,
-              scrapeBudget,
+              funnel: result.funnel.stages,
             });
             return toJsonSafeStepOutput(result);
           });
 
           pipelineLog("step", "entering scrape-selected-articles");
-          const researched = await step.run(
+          const scraped = await step.run(
             "scrape-selected-articles",
             async () => {
-              pipelineLog("scrape-selected-articles", "start", {
-                urlCount: selected.length,
+              const result = await scrapeAndCleanArticles({
+                config,
+                selected: ranking.selected,
+                normalized,
               });
-              const scrapedBundles = await scrapeUrlsWithFirecrawlRaw(
-                selected.map((article) => article.url),
-              );
-
-              const cleanedRows = await Promise.all(
-                selected.map(async (article, index) => {
-                  pipelineLog("scrape-selected-articles", "processing", {
-                    index: index + 1,
-                    total: selected.length,
-                    url: article.url,
-                  });
-                  const normalizedMatch = normalized.find(
-                    (row) => row.url === article.url,
-                  );
-                  const scrapeBundle = scrapedBundles[index];
-                  const rawScrape = scrapeBundle?.markdown?.trim() ?? "";
-
-                  if (!rawScrape) {
-                    pipelineLog(
-                      "scrape-selected-articles",
-                      "skip empty scrape",
-                      {
-                        url: article.url,
-                      },
-                    );
-                    return null;
-                  }
-
-                  if (
-                    isTradingRecommendationArticle({
-                      title: article.title,
-                      scrapedContent: rawScrape,
-                    })
-                  ) {
-                    pipelineLog(
-                      "scrape-selected-articles",
-                      "skip trading recommendation",
-                      { url: article.url },
-                    );
-                    return null;
-                  }
-
-                  pipelineLog("scrape-selected-articles", "cleaning content", {
-                    url: article.url,
-                  });
-                  const cleaned = await runNewsContentCleanerAgent({
-                    location: config.location,
-                    date: config.date,
-                    content: rawScrape,
-                    abortSignal: AbortSignal.timeout(180_000),
-                  });
-
-                  if (
-                    !cleaned.isValidArticle ||
-                    !cleaned.cleanedContent.trim()
-                  ) {
-                    pipelineLog(
-                      "scrape-selected-articles",
-                      "skip invalid article after clean",
-                      { url: article.url },
-                    );
-                    return null;
-                  }
-
-                  const imageUrl = resolveArticleImageUrl({
-                    firecrawlPayload: scrapeBundle?.raw,
-                    serpImageUrl: normalizedMatch?.imageUrl ?? null,
-                  });
-
-                  return {
-                    index: normalizedMatch?.index ?? index,
-                    url: article.url,
-                    domain: article.domain,
-                    title: article.title,
-                    sourceType: article.sourceType,
-                    scrapedContent: cleaned.cleanedContent,
-                    publishedAt: normalizedMatch?.publishedAt
-                      ? new Date(normalizedMatch.publishedAt)
-                      : null,
-                    isPrimaryStorySource: true,
-                    imageUrl,
-                  };
-                }),
-              );
-
-              const articles = cleanedRows.filter(
-                (row): row is NonNullable<(typeof cleanedRows)[number]> =>
-                  row != null,
-              );
               pipelineLog("scrape-selected-articles", "done", {
-                scrapedCount: articles.length,
-                withContent: articles.filter((a) => a.scrapedContent).length,
+                funnel: result.funnel.stages,
               });
               await appendNewsRequestLoadingLog(
                 newsRequest.id,
                 "Checking sources.",
               );
-              return toJsonSafeStepOutput(articles);
+              return toJsonSafeStepOutput(result);
             },
           );
 
-          return { researched };
+          // Backfill from the ranked reserve only when scrapes left us short.
+          const backfill = needsScrapeBackfill(
+            config.storyCount,
+            scraped.researched.length,
+            ranking.reserve.length,
+          )
+            ? await step.run("scrape-backfill-articles", async () => {
+                const result = await scrapeAndCleanArticles({
+                  config,
+                  selected: scrapeBackfillBatch(
+                    ranking.reserve,
+                    config.storyCount,
+                    scraped.researched.length,
+                  ),
+                  normalized,
+                  stagePrefix: "backfill-",
+                });
+                pipelineLog("scrape-backfill-articles", "done", {
+                  funnel: result.funnel.stages,
+                });
+                return toJsonSafeStepOutput(result);
+              })
+            : null;
+
+          return {
+            researched: [
+              ...scraped.researched,
+              ...(backfill?.researched ?? []),
+            ],
+            articleFunnel: mergeFunnels(
+              ranking.funnel,
+              scraped.funnel,
+              backfill?.funnel,
+            ),
+          };
         })(),
       ]);
 
       pipelineLog("step", "entering synthesize-stories");
-      const synthesized = await step.run("synthesize-stories", async () => {
+      const synthesis = await step.run("synthesize-stories", async () => {
         await appendNewsRequestLoadingLog(
           newsRequest.id,
           "Organizing the news.",
@@ -854,20 +564,44 @@ export const newsPipelineFunction = inngest.createFunction(
           transcripts: youtubeTranscripts,
           synthesis: youtubeSynthesis,
         });
-        const stories = await runNewsSynthesizerAgent({
+        const result = await synthesizeNewsStories({
+          config,
           newsRequestId: newsRequest.id,
-          location: config.location,
           articles: [...researched, ...youtubeArticles],
+          regionOf: buildRegionLookup(researched),
           youtubeTranscriptSynthesis: youtubeSynthesis,
-          userPrompt: `${researchPrompt}\n\nReturn at most ${Math.ceil(config.storyCount * 1.5)} distinct stories backed by primary article sources. Do not pad with low-quality pages.`,
-          targetStoryCount: config.storyCount,
+          researchPrompt,
           model: synthesizerModel,
-          abortSignal: AbortSignal.timeout(300_000),
         });
         pipelineLog("synthesize-stories", "done", {
-          storyCount: stories.length,
+          storyCount: result.stories.length,
+          stats: result.stats,
         });
-        return toJsonSafeStepOutput(stories);
+        return toJsonSafeStepOutput(result);
+      });
+      const synthesized = synthesis.stories;
+
+      await step.run("record-funnel", async () => {
+        const funnel = mergeFunnels(
+          serpBundle.funnel,
+          articleFunnel,
+          synthesis.funnel,
+        );
+        pipelineLog("funnel", formatFunnel(funnel));
+        if (funnel.shortfall) {
+          pipelineLog("funnel", "shortfall", { reason: funnel.shortfall });
+        }
+        const row = await getNewsRequestByIdForUser(
+          newsRequest.id,
+          input.userId,
+        );
+        const existing =
+          row?.searchQuery && typeof row.searchQuery === "object"
+            ? (row.searchQuery as Record<string, unknown>)
+            : {};
+        await patchNewsRequest(newsRequest.id, {
+          searchQuery: newsSearchQuerySchema.parse({ ...existing, funnel }),
+        });
       });
 
       pipelineLog("step", "entering persist-stories-and-sources");

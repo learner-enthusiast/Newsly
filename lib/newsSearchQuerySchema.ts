@@ -21,6 +21,33 @@ export const newsSearchQuerySchema = z.object({
       }),
     )
     .optional(),
+  /** Per-run candidate funnel (`NewsFunnel` from services/news/newsBriefingStages). */
+  funnel: z
+    .object({
+      stages: z.array(
+        z.object({
+          stage: z.string(),
+          total: z.number(),
+          local: z.number().optional(),
+          world: z.number().optional(),
+          note: z.string().optional(),
+        }),
+      ),
+      sources: z.array(
+        z.object({
+          id: z.string(),
+          region: z.string(),
+          ok: z.boolean(),
+          fetched: z.number(),
+          inWindow: z.number(),
+          durationMs: z.number(),
+          error: z.string().optional(),
+        }),
+      ),
+      timingsMs: z.record(z.string(), z.number()),
+      shortfall: z.string().optional(),
+    })
+    .optional(),
   locationGeo: z
     .object({
       latitude: z.number(),

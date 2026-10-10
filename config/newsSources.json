@@ -1,0 +1,107 @@
+{
+  "$comment": "Direct publisher feeds for the news pipeline, by region. 'india' feeds the local tier when the request location is in India; 'world' feeds the world tier. kind: rss | news-sitemap. pathIncludes keeps only item URLs containing one of the strings. Set enabled=false to switch a source off. Feed URLs verified 2026-10-10. Skipped (verified): Moneycontrol (feeds stale since 2024 / 403), Financial Express (410), Reuters (no RSS, blocks bots), WSJ (stale + paywall), FT (hard paywall).",
+  "india": [
+    {
+      "id": "livemint-india",
+      "name": "Mint",
+      "kind": "rss",
+      "urls": [
+        "https://www.livemint.com/rss/news"
+      ],
+      "pathIncludes": [
+        "/news/india/"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "economic-times",
+      "name": "The Economic Times",
+      "kind": "rss",
+      "urls": [
+        "https://economictimes.indiatimes.com/news/economy/rssfeeds/1373380680.cms",
+        "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "business-standard",
+      "name": "Business Standard",
+      "kind": "rss",
+      "urls": [
+        "https://www.business-standard.com/rss/latest.rss"
+      ],
+      "enabled": false,
+      "disabledReason": "Returns HTTP 403 to non-browser user agents (bot blocking) as of 2026-10-10."
+    },
+    {
+      "id": "hindu-businessline",
+      "name": "BusinessLine",
+      "kind": "rss",
+      "urls": [
+        "https://www.thehindubusinessline.com/feeder/default.rss"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "the-hindu-business",
+      "name": "The Hindu",
+      "kind": "rss",
+      "urls": [
+        "https://www.thehindu.com/business/feeder/default.rss"
+      ],
+      "enabled": true
+    }
+  ],
+  "world": [
+    {
+      "id": "livemint-world",
+      "name": "Mint",
+      "kind": "news-sitemap",
+      "urls": [
+        "https://www.livemint.com/sitemap/today.xml",
+        "https://www.livemint.com/sitemap/yesterday.xml"
+      ],
+      "pathIncludes": [
+        "/news/world/"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "cnbc",
+      "name": "CNBC",
+      "kind": "rss",
+      "urls": [
+        "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100727362",
+        "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001147"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "bbc-business",
+      "name": "BBC News",
+      "kind": "rss",
+      "urls": [
+        "https://feeds.bbci.co.uk/news/business/rss.xml"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "al-jazeera",
+      "name": "Al Jazeera",
+      "kind": "rss",
+      "urls": [
+        "https://www.aljazeera.com/xml/rss/all.xml"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "guardian-business",
+      "name": "The Guardian",
+      "kind": "rss",
+      "urls": [
+        "https://www.theguardian.com/business/rss"
+      ],
+      "enabled": true
+    }
+  ]
+}

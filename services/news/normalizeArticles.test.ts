@@ -5,6 +5,7 @@ import {
   excludeTradingRecommendationArticles,
   filterArticlesNearRequestDate,
   filterArticlesInRequestWindow,
+  dedupeNearDuplicateTitles,
   interleaveSerpPayloads,
   isTradingRecommendationArticle,
   type NormalizedArticleLink,
@@ -142,5 +143,46 @@ describe("interleaveSerpPayloads", () => {
     ]);
     assert.deepEqual(merged.news_results, ["a1", "b1", "a2", "a3"]);
     assert.deepEqual(merged.organic_results, ["o1"]);
+  });
+});
+
+describe("isTradingRecommendationArticle body checks", () => {
+  it("keeps ordinary market news that mentions target price / intraday / stop-loss", () => {
+    assert.equal(
+      isTradingRecommendationArticle({
+        title: "Infosys shares rise after Q2 beat",
+        scrapedContent:
+          "Brokerages raised their target price after results. The stock hit an intraday high of 1,820 before profit-taking; traders cited stop-loss triggers.",
+      }),
+      false,
+    );
+  });
+
+  it("still drops tip pages by body text", () => {
+    assert.equal(
+      isTradingRecommendationArticle({
+        title: "Market outlook",
+        scrapedContent: "Here are three stocks to buy today with intraday calls from our analyst.",
+      }),
+      true,
+    );
+  });
+
+  it("still drops tip pages by title", () => {
+    assert.equal(
+      isTradingRecommendationArticle({ title: "Buy HDFC Bank, target price 1,900, stop-loss 1,650" }),
+      true,
+    );
+  });
+});
+
+describe("dedupeNearDuplicateTitles", () => {
+  it("drops syndicated copies with near-identical titles", () => {
+    const rows = dedupeNearDuplicateTitles([
+      { title: "RBI keeps repo rate unchanged at 6.5% in October policy" },
+      { title: "RBI keeps repo rate unchanged at 6.5% in October policy review" },
+      { title: "Sensex closes 400 points higher led by banks" },
+    ]);
+    assert.equal(rows.length, 2);
   });
 });

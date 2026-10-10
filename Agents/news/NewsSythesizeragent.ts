@@ -69,6 +69,11 @@ export const newsSynthesizerParamsSchema = z.object({
   fixedStoryId: z.uuid().optional(),
   /** Upstox market data for instruments the story is about (`ChatMarketData`). */
   marketData: z.unknown().optional(),
+  /**
+   * With `targetStoryCount`: when the first pass yields fewer stories, run one
+   * more pass over the unused articles, then fall back to article-derived stories.
+   */
+  fillToTarget: z.boolean().optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
 });
@@ -330,16 +335,19 @@ function fallbackStory(
   };
 }
 
+type ClaimState = { claimed: Set<string>; usedSlugs: Set<string> };
+
 function claimStories(
   modelStories: ModelStory[],
   articles: IndexedArticle[],
   newsRequestId: string,
   location: string | null,
   fixedStoryId?: string,
+  options: { state?: ClaimState; includeFallback?: boolean } = {},
 ): SynthesizedNewsStory[] {
   const byKey = new Map(articles.map((article) => [article.key, article]));
-  const claimed = new Set<string>();
-  const usedSlugs = new Set<string>();
+  const claimed = options.state?.claimed ?? new Set<string>();
+  const usedSlugs = options.state?.usedSlugs ?? new Set<string>();
   const stories: SynthesizedNewsStory[] = [];
 
   const ranked = [...modelStories].sort(
@@ -408,7 +416,7 @@ function claimStories(
     });
   }
 
-  for (const article of articles) {
+  for (const article of options.includeFallback === false ? [] : articles) {
     if (claimed.has(article.key) || !isPrimaryStorySource(article)) {
       continue;
     }
@@ -462,11 +470,11 @@ function buildSystemPrompt(
   return [
     "You are the news synthesizer. Cluster scraped news/web articles into distinct market and economic events.",
     targetStoryCount
-      ? `Aim for about ${targetStoryCount} distinct stories when the source material supports that many separate developments.`
-      : "Aim for at least four distinct stories when the source material supports that many separate developments.",
+      ? `Return the ${targetStoryCount} most important distinct events covered by the articles, ranked by relative importance. Every real news event is eligible: do not drop an event for seeming minor or not significant enough — give it a lower importanceScore instead.`
+      : "Return every distinct event covered by the articles (at least four when the articles cover that many), ranked by relative importance. Do not drop an event for seeming minor — give it a lower importanceScore instead.",
     targetStoryCount
-      ? `Do not invent extra stories; fewer than ${targetStoryCount} is acceptable when sources only support fewer events.`
-      : "Do not invent extra stories; fewer than four is acceptable when sources only support fewer events.",
+      ? `Return fewer than ${targetStoryCount} only when the articles genuinely cover fewer distinct events. Never pad by splitting one event or inventing facts.`
+      : "Never pad by splitting one event or inventing facts.",
     ...youtubeSection,
     "Articles about the same event become one story. Do not merge different events. Do not split one event across stories.",
     "Attach EVERY supplied article that covers a story's event to that story's sourceUrls (not just one), and use details from all of them.",
@@ -512,10 +520,27 @@ function outputTokenBudget(articleCount: number): number {
   return Math.min(24000, Math.max(6000, articleCount * 1200));
 }
 
-async function runSynthesizer(
+export type NewsSynthesizerStats = {
+  inputArticles: number;
+  /** Stories the model returned in the first pass. */
+  modelStories: number;
+  /** First-pass stories kept (valid primary, non-tip source). */
+  firstPassStories: number;
+  /** Stories added by the backfill pass over unused articles. */
+  backfillStories: number;
+  /** Article-derived fallback stories used as a last resort. */
+  fallbackStories: number;
+};
+
+export type NewsSynthesizerResult = {
+  stories: SynthesizedNewsStory[];
+  stats: NewsSynthesizerStats;
+};
+
+async function runSynthesizerWithStats(
   params: NewsSynthesizerParams,
   generate: typeof aiClient.generate,
-): Promise<SynthesizedNewsStory[]> {
+): Promise<NewsSynthesizerResult> {
   const { abortSignal, ...rawParams } = params;
   const parsed = newsSynthesizerParamsSchema.parse(rawParams);
   const articles = indexArticles(parsed.articles);
@@ -527,60 +552,132 @@ async function runSynthesizer(
   const location = parsed.location ?? null;
   const model = resolveSynthesizerModel(parsed.model);
   const youtubeFacts = parsed.youtubeTranscriptSynthesis?.facts ?? [];
-  const raw = await generate({
-    model,
-    system:
-      parsed.system ??
-      buildSystemPrompt(youtubeFacts.length > 0, parsed.targetStoryCount),
-    prompt:
-      parsed.userPrompt ??
-      "Cluster these researched articles into events and rank the stories.",
-    extraContext: {
-      newsRequestId: parsed.newsRequestId,
-      ...(parsed.marketData != null
-        ? {
-            marketData: parsed.marketData,
-            marketDataNote:
-              "Live Upstox data (quotes, fundamentals, flows) for instruments in the story. Use it for accurate figures in summary/content; it is not an article and must not appear in sourceUrls.",
-          }
-        : {}),
-      location,
-      youtubeTranscriptSynthesis: parsed.youtubeTranscriptSynthesis ?? null,
-      articles: articles.map((article) => ({
-        index: article.index ?? null,
-        url: article.url,
-        domain: article.domain,
-        title: article.title,
-        sourceType: article.sourceType,
-        isPrimaryStorySource: isPrimaryStorySource(article),
-        publishedAt: article.publishedAt?.toISOString() ?? null,
-        reason: article.reason ?? null,
-        selectionWeight: article.selectionWeight ?? null,
-        hasTranscript: Boolean(article.transcript?.trim()),
-        scrapedContent: excerpt(article.scrapedContent),
-      })),
-    },
-    schemaName: "NewsSynthesizerOutput",
-    schemaDescription:
-      "Article-backed stories (each with at least one primary scraped source in sourceUrls), optional supporting YouTube URLs, ranked by importance; content is Markdown.",
-    output: synthesizerModelOutputSchema,
-    temperature: 0,
-    maxOutputTokens: outputTokenBudget(articles.length),
-    abortSignal,
-  });
+  const target = parsed.targetStoryCount;
+  const fillToTarget = parsed.fillToTarget === true && target != null;
 
+  const runPass = (passArticles: IndexedArticle[], passTarget: number | undefined, extraPrompt?: string) =>
+    generate({
+      model,
+      system:
+        parsed.system ??
+        buildSystemPrompt(youtubeFacts.length > 0, passTarget),
+      prompt: [
+        parsed.userPrompt ??
+          "Cluster these researched articles into events and rank the stories.",
+        extraPrompt,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      extraContext: {
+        newsRequestId: parsed.newsRequestId,
+        ...(parsed.marketData != null
+          ? {
+              marketData: parsed.marketData,
+              marketDataNote:
+                "Live Upstox data (quotes, fundamentals, flows) for instruments in the story. Use it for accurate figures in summary/content; it is not an article and must not appear in sourceUrls.",
+            }
+          : {}),
+        location,
+        youtubeTranscriptSynthesis: parsed.youtubeTranscriptSynthesis ?? null,
+        articles: passArticles.map((article) => ({
+          index: article.index ?? null,
+          url: article.url,
+          domain: article.domain,
+          title: article.title,
+          sourceType: article.sourceType,
+          isPrimaryStorySource: isPrimaryStorySource(article),
+          publishedAt: article.publishedAt?.toISOString() ?? null,
+          reason: article.reason ?? null,
+          selectionWeight: article.selectionWeight ?? null,
+          hasTranscript: Boolean(article.transcript?.trim()),
+          scrapedContent: excerpt(article.scrapedContent),
+        })),
+      },
+      schemaName: "NewsSynthesizerOutput",
+      schemaDescription:
+        "Article-backed stories (each with at least one primary scraped source in sourceUrls), optional supporting YouTube URLs, ranked by importance; content is Markdown.",
+      output: synthesizerModelOutputSchema,
+      temperature: 0,
+      maxOutputTokens: outputTokenBudget(passArticles.length),
+      abortSignal,
+    });
+
+  const state: ClaimState = { claimed: new Set(), usedSlugs: new Set() };
+  const first = await runPass(articles, target);
   const stories = claimStories(
-    raw.stories,
+    first.stories,
     articles,
     parsed.newsRequestId,
     location,
     parsed.fixedStoryId,
+    { state, includeFallback: !fillToTarget },
   );
-  const parsedStories = synthesizedNewsStorySchema.array().parse(stories);
-  if (parsed.targetStoryCount) {
-    return parsedStories.slice(0, parsed.targetStoryCount);
+  const stats: NewsSynthesizerStats = {
+    inputArticles: articles.length,
+    modelStories: first.stories.length,
+    firstPassStories: stories.length,
+    backfillStories: 0,
+    fallbackStories: 0,
+  };
+
+  if (fillToTarget && stories.length < target) {
+    const unused = articles.filter(
+      (article) =>
+        !state.claimed.has(article.key) && isPrimaryStorySource(article),
+    );
+    if (unused.length > 0) {
+      const missing = target - stories.length;
+      const covered = stories.map((story) => `- ${story.title}`).join("\n");
+      const second = await runPass(
+        unused,
+        missing,
+        [
+          `These articles were not used by the first pass. Write up to ${missing} additional stories, one per distinct event, ranked by relative importance.`,
+          covered
+            ? `Do NOT repeat these events, which are already covered:\n${covered}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      const added = claimStories(
+        second.stories,
+        unused,
+        parsed.newsRequestId,
+        location,
+        undefined,
+        { state, includeFallback: false },
+      );
+      stats.backfillStories = added.length;
+      stories.push(...added);
+    }
+
+    if (stories.length < target) {
+      const remaining = articles.filter(
+        (article) => !state.claimed.has(article.key),
+      );
+      const fallback = claimStories([], remaining, parsed.newsRequestId, location, undefined, {
+        state,
+        includeFallback: true,
+      }).slice(0, target - stories.length);
+      stats.fallbackStories = fallback.length;
+      stories.push(...fallback);
+    }
   }
-  return parsedStories;
+
+  stories.sort((left, right) => right.importanceScore - left.importanceScore);
+  const parsedStories = synthesizedNewsStorySchema.array().parse(stories);
+  return {
+    stories: target ? parsedStories.slice(0, target) : parsedStories,
+    stats,
+  };
+}
+
+async function runSynthesizer(
+  params: NewsSynthesizerParams,
+  generate: typeof aiClient.generate,
+): Promise<SynthesizedNewsStory[]> {
+  return (await runSynthesizerWithStats(params, generate)).stories;
 }
 
 export function createNewsSynthesizerAgent(options: AIClientOptions = {}) {
@@ -591,6 +688,13 @@ export function createNewsSynthesizerAgent(options: AIClientOptions = {}) {
   ): Promise<SynthesizedNewsStory[]> {
     return runSynthesizer(params, client.generate.bind(client));
   };
+}
+
+/** Same as `runNewsSynthesizerAgent`, plus per-pass counts for the pipeline funnel. */
+export async function runNewsSynthesizerAgentWithStats(
+  params: NewsSynthesizerParams,
+): Promise<NewsSynthesizerResult> {
+  return runSynthesizerWithStats(params, aiClient.generate.bind(aiClient));
 }
 
 /** Cluster researched articles into ranked NewsStory results for one news request. */

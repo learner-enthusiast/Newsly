@@ -286,6 +286,23 @@ function buildSystemPrompt(): string {
   ].join("\n");
 }
 
+/**
+ * News-briefing variant: rank every candidate by relative importance and keep
+ * `relevant=false` as a low floor for clear junk only. Used with `topPercent: 100`
+ * so the pipeline takes the top N by rank instead of a pass/fail gate.
+ */
+export function buildNewsBriefingSelectorSystemPrompt(): string {
+  return [
+    "You rank news article URLs for a stock-market and economic news briefing. The user prompt describes the briefing (date, scope, location, focus).",
+    "Return one decision for every candidate URL. Use the exact URL string given. Do not invent URLs.",
+    "rank: order ALL candidates by relative importance for this briefing (1 = most important). Consider market/economic impact, breadth of effect, novelty, recency, geographic fit with the briefing scope, and source quality. Rank by comparison with the other candidates — do not ask whether a story is significant enough on its own.",
+    "Prefer distinct events: when several candidates cover the same event, rank the most complete/authoritative one highest and the copies lower.",
+    "relevant is a low floor for clear junk only. Set relevant to false ONLY for: ads or sponsored content, stock tips / buy-sell calls, homepages, section or tag index pages, search/listing pages, login walls, video-only pages, and pages clearly unrelated to business, markets, the economy, policy or the briefing location. Everything else is relevant=true, even if minor — rank it lower instead.",
+    "Candidates may include selectionWeight above 1 (for example 1.4) or fromAiOverviewFollowUp true: rank them higher when importance is comparable.",
+    "reason: one concise sentence — for relevant pages, the development the article reports; for dropped pages, why it is junk.",
+  ].join("\n");
+}
+
 function outputTokenBudget(candidateCount: number): number {
   return Math.min(16000, Math.max(2048, candidateCount * 150));
 }
