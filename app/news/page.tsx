@@ -1,8 +1,8 @@
 "use client";
 
-import { LocationAutocomplete } from "@/components/news/LocationAutocomplete";
-import { useLocationHook } from "@/hooks/useLocationHook";
-import type { LocationAutocompleteSuggestion } from "@/services/location/userLocationTypes";
+import { MetroAutocomplete } from "@/components/news/MetroAutocomplete";
+import { useNewsMetroGeolocation } from "@/hooks/useNewsMetroGeolocation";
+import type { SerializedNewsMetro } from "@/services/news/metroLocation";
 import { NewsAdvancedOptionsCollapsible } from "@/components/news/NewsAdvancedOptionsCollapsible";
 import { NewsGenerateSidebar } from "@/components/news/NewsGenerateSidebar";
 import {
@@ -32,10 +32,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  pickFirstAutocompleteGeo,
-  readSuggestionCoordinates,
-} from "@/services/location/mapsAutocomplete";
 import type { SerializedNewsRequest } from "@/services/news/newsRequestTypes";
 import {
   ArrowRight,
@@ -85,8 +81,8 @@ export default function NewsRequestPage() {
   const {
     isLoading: detectingLocation,
     error: detectLocationError,
-    requestLocation,
-  } = useLocationHook();
+    requestNearestMetro,
+  } = useNewsMetroGeolocation();
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [allTopics, setAllTopics] = useState(true);
   const [customQuery, setCustomQuery] = useState("");
@@ -126,7 +122,7 @@ export default function NewsRequestPage() {
   }, []);
 
   async function onUseMyLocation() {
-    const resolved = await requestLocation();
+    const resolved = await requestNearestMetro();
     if (!resolved) {
       return;
     }
@@ -135,6 +131,30 @@ export default function NewsRequestPage() {
       latitude: resolved.latitude,
       longitude: resolved.longitude,
     });
+  }
+
+  async function applyQuickLocation(place: string) {
+    setLocation(place);
+    const primary = place.split(",")[0]?.trim() ?? place;
+    try {
+      const response = await fetch(
+        `/api/news/metros/search?${new URLSearchParams({ q: primary, limit: "1" })}`,
+      );
+      const payload = (await response.json()) as {
+        metros?: SerializedNewsMetro[];
+      };
+      const metro = payload.metros?.[0];
+      if (response.ok && metro) {
+        setLocationAnchor({
+          latitude: metro.latitude,
+          longitude: metro.longitude,
+        });
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    setLocationAnchor(null);
   }
 
   function applyPreset(preset: NewsPreset) {
@@ -208,21 +228,24 @@ export default function NewsRequestPage() {
         let coords = locationAnchor;
         if (!coords && body.location) {
           try {
-            const autocompleteResponse = await fetch(
-              `/api/location/autocomplete?${new URLSearchParams({
-                q: String(body.location),
+            const metroResponse = await fetch(
+              `/api/news/metros/search?${new URLSearchParams({
+                q: String(body.location).split(",")[0]?.trim() ?? String(body.location),
+                limit: "1",
               }).toString()}`,
             );
-            const autocompletePayload = (await autocompleteResponse.json()) as {
-              suggestions?: LocationAutocompleteSuggestion[];
+            const metroPayload = (await metroResponse.json()) as {
+              metros?: SerializedNewsMetro[];
             };
-            if (autocompleteResponse.ok) {
-              coords = pickFirstAutocompleteGeo(
-                autocompletePayload.suggestions ?? [],
-              );
+            const metro = metroPayload.metros?.[0];
+            if (metroResponse.ok && metro) {
+              coords = {
+                latitude: metro.latitude,
+                longitude: metro.longitude,
+              };
             }
           } catch {
-            /* server requestNews also resolves coords from autocomplete[0] */
+            /* server requestNews also resolves coords from metro catalog */
           }
         }
         if (coords) {
@@ -367,24 +390,20 @@ export default function NewsRequestPage() {
                       </label>
                       <div className="relative mt-2 min-w-0 max-w-full">
                         <MapPin className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-muted-foreground" />
-                        <LocationAutocomplete
+                        <MetroAutocomplete
                           required
                           value={location}
-                          geoAnchor={locationAnchor}
                           onChange={(next) => {
                             setLocation(next);
                             setLocationAnchor(null);
                           }}
-                          onSelectSuggestion={(
-                            suggestion: LocationAutocompleteSuggestion,
-                          ) => {
-                            const coords =
-                              readSuggestionCoordinates(suggestion);
-                            if (coords) {
-                              setLocationAnchor(coords);
-                            }
+                          onSelectMetro={(metro) => {
+                            setLocationAnchor({
+                              latitude: metro.latitude,
+                              longitude: metro.longitude,
+                            });
                           }}
-                          placeholder="City, state, country"
+                          placeholder="Search a metro (e.g. Mumbai, London)"
                           inputClassName="flex h-10 w-full rounded-md border border-input bg-background py-2 pr-3 pl-10 text-sm"
                         />
                       </div>
@@ -427,10 +446,7 @@ export default function NewsRequestPage() {
                           type="button"
                           size="xs"
                           variant={location === place ? "secondary" : "outline"}
-                          onClick={() => {
-                            setLocation(place);
-                            setLocationAnchor(null);
-                          }}
+                          onClick={() => void applyQuickLocation(place)}
                         >
                           <MapPin data-icon="inline-start" />
                           {place.split(",")[0]}

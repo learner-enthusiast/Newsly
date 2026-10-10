@@ -41,7 +41,7 @@ import {
 } from "@/services/news/newsRequestTypes";
 import { findUserNewsRequest } from "@/repositories/user";
 import { z } from "zod";
-import { resolveCoordsFromFirstAutocompleteHit } from "@/services/location/autocompleteServerCache";
+import { resolveCoordsFromNewsMetroLocation } from "@/services/news/metroLocation";
 
 export const requestNewsBodySchema = newsGenerationRequestSchema;
 
@@ -286,7 +286,7 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
     body.location?.trim() &&
     (body.latitude === undefined || body.longitude === undefined)
   ) {
-    const coords = await resolveCoordsFromFirstAutocompleteHit(
+    const coords = await resolveCoordsFromNewsMetroLocation(
       body.location,
     ).catch(() => null);
     if (coords) {

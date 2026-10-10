@@ -330,6 +330,23 @@ model SearchAutocompleteCache {
   @@map("search_autocomplete_cache")
 }
 
+/// Curated metros for local news location (seeded from config/newsMetros.ts).
+model NewsMetro {
+  id          String   @id
+  name        String
+  aliases     String[] @default([])
+  country     String
+  countryCode String   @map("country_code")
+  region      String
+  latitude    Float
+  longitude   Float
+  timezone    String
+  lang        String
+
+  @@index([name], map: "idx_news_metros_name")
+  @@map("news_metros")
+}
+
 /// Upstox BOD instruments — one row per instrument_key; derivative-only columns are nullable.
 model Instrument {
   instrumentKey  String  @id @map("instrument_key")
