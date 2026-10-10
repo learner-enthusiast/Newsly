@@ -1,0 +1,330 @@
+// Prisma loads every file in db/schema automatically.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                    String    @id @default(cuid())
+  clerkId               String    @unique
+  email                 String    @unique
+  firstName             String?
+  lastName              String?
+  username              String?
+  imageUrl              String?
+  hasImage              Boolean   @default(false)
+  primaryEmailAddressId String?
+  lastSignInAt          DateTime?
+  lastActiveAt          DateTime?
+  banned                Boolean   @default(false)
+  locked                Boolean   @default(false)
+  twoFactorEnabled      Boolean   @default(false)
+  locale                String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  savedStories          String[]  @default([]) @map("saved_stories") @db.Uuid
+  plan                  UserPlan  @default(FREE)
+
+  newsRequests     NewsRequest[]
+  chatSessions     ChatSession[]
+  scripts          Script[]
+  newsStoryVotes   NewsStoryVote[]
+  notifications    Notification[]
+  ownedNewsStories NewsStory[]
+  subscription     Subscription?
+  payments         Payment[]
+
+  @@map("users")
+}
+
+enum NewsScope {
+  local
+  world
+  both
+
+  @@map("news_scope")
+}
+
+enum NewsRequestStatus {
+  pending
+  failed
+  success
+
+  @@map("news_request_status")
+}
+
+enum PublishStatus {
+  draft
+  published
+
+  @@map("publish_status")
+}
+
+model NewsRequest {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String            @map("user_id")
+  date        DateTime          @db.Date
+  location    String?
+  latitude    Float?
+  longitude   Float?
+  scope       NewsScope
+  searchQuery Json              @map("search_query")
+  status      NewsRequestStatus
+  error       String?           @db.Text
+  storyCount  Int               @default(5) @map("story_count")
+  categories  String[]          @default([])
+  customQuery String?           @map("custom_query") @db.Text
+  language    String?
+  sources     String[]          @default([])
+  createdAt   DateTime          @default(now()) @map("created_at")
+  completedAt DateTime?         @map("completed_at")
+  isRerunning Boolean           @default(false) @map("is_rerunning")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stories     NewsStory[]
+  loadingLogs String[]    @default([]) @map("loading_logs")
+
+  @@index([userId])
+  @@index([status])
+  @@index([date])
+  @@map("news_requests")
+}
+
+model NewsStory {
+  id              String        @id @default(uuid()) @db.Uuid
+  newsRequestId   String?       @map("news_request_id") @db.Uuid
+  chatSessionId   String?       @map("chat_session_id") @db.Uuid
+  ownerId         String?       @map("owner_id")
+  isUserCreated   Boolean       @default(false) @map("is_user_created")
+  publishStatus   PublishStatus @default(published) @map("publish_status")
+  generationError String?       @map("generation_error") @db.Text
+  title           String
+  description     String?
+  slug            String
+  summary         String        @db.Text
+  content         String        @db.Text
+  category        String
+  location        String?
+  publishedAt     DateTime?     @map("published_at")
+  importanceScore Decimal?      @map("importance_score") @db.Decimal(10, 4)
+  upvotes         Int           @default(0)
+  downvotes       Int           @default(0)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  newsSourceIds   String[]      @default([]) @map("news_source_ids") @db.Uuid
+  imageUrl        String?       @map("image_url") @db.Text
+  loadingLogs     String[]      @default([]) @map("loading_logs")
+
+  newsRequest       NewsRequest?    @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
+  originChatSession ChatSession?    @relation("ChatStoryOrigin", fields: [chatSessionId], references: [id], onDelete: SetNull)
+  owner             User?           @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  sources           NewsSource[]
+  chatSessions      ChatSession[]   @relation("ChatSessionLinkedStory")
+  votes             NewsStoryVote[]
+
+  @@unique([newsRequestId, slug])
+  @@index([newsRequestId])
+  @@index([chatSessionId])
+  @@index([ownerId])
+  @@index([isUserCreated, publishStatus])
+  @@index([ownerId, publishStatus])
+  @@index([upvotes, publishedAt])
+  @@map("news_stories")
+}
+
+model NewsSource {
+  id             String    @id @default(uuid()) @db.Uuid
+  newsStoryId    String    @map("news_story_id") @db.Uuid
+  url            String    @db.Text
+  domain         String
+  title          String
+  scrapedContent String?   @map("scraped_content") @db.Text
+  publishedAt    DateTime? @map("published_at")
+  sourceType     String    @map("source_type")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  transcript     String?   @db.Text
+  imageUrl       String?   @map("image_url") @db.Text
+
+  newsStory NewsStory @relation(fields: [newsStoryId], references: [id], onDelete: Cascade)
+
+  @@index([newsStoryId])
+  @@map("news_sources")
+}
+
+enum VoteType {
+  UP
+  DOWN
+
+  @@map("vote_type")
+}
+
+model NewsStoryVote {
+  id          String @id @default(uuid()) @db.Uuid
+  newsStoryId String @map("news_story_id") @db.Uuid
+  userId      String @map("user_id")
+
+  vote VoteType
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  newsStory NewsStory @relation(fields: [newsStoryId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([newsStoryId, userId])
+  @@index([newsStoryId])
+  @@index([userId])
+  @@map("news_story_votes")
+}
+
+model ChatSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id")
+  newsStoryId      String?  @map("news_story_id") @db.Uuid
+  newsSourceId     String[] @default([]) @map("news_source_id") @db.Uuid
+  title            String?
+  topic            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  isFromNewsStory  Boolean  @default(false) @map("is_from_news_story")
+  isBookmarked     Boolean  @default(false) @map("is_bookmarked")
+  potentialStories String[] @default([]) @map("potential_stories")
+
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newsStory          NewsStory?              @relation("ChatSessionLinkedStory", fields: [newsStoryId], references: [id], onDelete: SetNull)
+  originStories      NewsStory[]             @relation("ChatStoryOrigin")
+  messages           ChatMessage[]
+  researchSources    ResearchSource[]
+  scripts            Script[]
+  resourceEmbeddings ChatResourceEmbedding[]
+  messageEmbeddings  ChatMessageEmbedding[]
+
+  @@index([userId])
+  @@index([userId, isBookmarked])
+  @@index([newsStoryId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id            String   @id @default(uuid()) @db.Uuid
+  chatSessionId String   @map("chat_session_id") @db.Uuid
+  role          String
+  content       String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  scriptId      String?  @map("script_id") @db.Uuid
+  loadingLogs   String[] @default([]) @map("loading_logs")
+  isAStoryRequest Boolean @default(false) @map("is_a_story_request")
+  newsStoryId     String? @map("news_story_id") @db.Uuid
+  isRerunning     Boolean @default(false) @map("is_rerunning")
+
+  chatSession ChatSession           @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  embedding   ChatMessageEmbedding?
+
+  @@index([chatSessionId])
+  @@index([chatSessionId, createdAt, id])
+  @@map("chat_messages")
+}
+
+model ResearchSource {
+  id            String   @id @default(uuid()) @db.Uuid
+  chatSessionId String   @map("chat_session_id") @db.Uuid
+  url           String   @db.Text
+  domain        String
+  title         String
+  description   String?
+  content       String   @db.Text
+  sourceType    String   @map("source_type")
+  imageUrl      String?  @map("image_url") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  chatSession       ChatSession            @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  resourceEmbedding ChatResourceEmbedding?
+
+  @@index([chatSessionId])
+  @@map("research_sources")
+}
+
+model ChatResourceEmbedding {
+  id             String                      @id @db.Uuid
+  chatSessionId  String                      @map("chat_session_id") @db.Uuid
+  chatResourceId String                      @unique @map("chat_resource_id") @db.Uuid
+  embedding      Unsupported("vector(1536)")
+
+  chatSession    ChatSession    @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  researchSource ResearchSource @relation(fields: [chatResourceId], references: [id], onDelete: Cascade)
+
+  @@index([chatSessionId])
+  @@map("chat_resource_embeddings")
+}
+
+model Script {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id")
+  chatSessionId     String   @map("chat_session_id") @db.Uuid
+  title             String
+  content           String   @db.Text
+  durationSeconds   Int?     @map("duration_seconds")
+  style             String?
+  status            String
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  researchSourceIds String[] @default([]) @map("research_source_ids") @db.Uuid
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([chatSessionId])
+  @@map("scripts")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  message   String?
+  link      String?
+  read      Boolean  @default(false)
+  dedupeKey String?  @map("dedupe_key")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+model ChatMessageEmbedding {
+  id            String                      @id @default(uuid()) @db.Uuid
+  messageId     String                      @unique @map("message_id") @db.Uuid
+  chatSessionId String                      @map("chat_session_id") @db.Uuid
+  embedding     Unsupported("vector(1536)")
+  createdAt     DateTime                    @default(now()) @map("created_at")
+
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  chatSession ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+
+  @@index([chatSessionId])
+  @@map("chat_message_embeddings")
+}
+
+model SearchAutocompleteCache {
+  id        String   @id @default(uuid()) @db.Uuid
+  provider  String
+  query     String
+  response  Json
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@unique([provider, query])
+  @@index([expiresAt])
+  @@map("search_autocomplete_cache")
+}
