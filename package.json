@@ -48,6 +48,7 @@
     "i18n-iso-countries": "^7.14.0",
     "inngest": "^4.20.0",
     "lucide-react": "^1.47.0",
+    "neatlogs": "^1.1.28",
     "next": "16.3.5",
     "next-logger": "^5.0.2",
     "next-themes": "^0.4.6",

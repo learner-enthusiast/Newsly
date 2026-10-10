@@ -1,5 +1,6 @@
-import { generateText, Output, type LanguageModel } from "ai";
+import { Output, type LanguageModel } from "ai";
 import OpenAI from "openai";
+import { neatlogsClient } from "@/clients/neatlogsClient";
 import { zodTextFormat } from "openai/helpers/zod";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
@@ -315,13 +316,15 @@ export function createAIClient(options: AIClientOptions = {}) {
     const baseURL = resolveOpenAiBaseUrl(options);
     const project = resolveOpenAiProjectId(options);
 
-    openaiClient ??= new OpenAI({
-      apiKey,
-      ...(baseURL ? { baseURL } : {}),
-      ...(project ? { project } : {}),
-      timeout: options.timeout,
-      maxRetries: options.maxRetries,
-    });
+    openaiClient ??= neatlogsClient.wrapOpenAI(
+      new OpenAI({
+        apiKey,
+        ...(baseURL ? { baseURL } : {}),
+        ...(project ? { project } : {}),
+        timeout: options.timeout,
+        maxRetries: options.maxRetries,
+      }),
+    );
 
     return openaiClient;
   };
@@ -406,7 +409,7 @@ export function createAIClient(options: AIClientOptions = {}) {
       parsed.maxOutputTokens,
     );
 
-    const { output } = await generateText({
+    const { output } = await neatlogsClient.generateText({
       model: params.model,
       prompt: buildPrompt(parsed.prompt, parsed.extraContext),
       system: parsed.system,
@@ -440,6 +443,7 @@ export function createAIClient(options: AIClientOptions = {}) {
     async generate<SCHEMA extends z.ZodType>(
       params: AIGenerateParams<SCHEMA>,
     ): Promise<z.output<SCHEMA>> {
+      await neatlogsClient.ready();
       const { output: outputSchema, abortSignal, ...rawParams } = params;
       let parsed = generateParamsSchema.parse(rawParams);
       const schemaName = parsed.schemaName ?? "StructuredOutput";
@@ -508,15 +512,26 @@ export function createAIClient(options: AIClientOptions = {}) {
         throw new Error("Cannot embed an empty string");
       }
 
+      await neatlogsClient.ready();
+
       const openai = getOpenAI();
       if (!openai) {
         throw new Error("OpenAI API key is required for embeddings");
       }
 
-      const response = await openai.embeddings.create({
-        model: resolveOpenAiEmbeddingModel(options),
-        input: trimmed,
-      });
+      const embeddingModel = resolveOpenAiEmbeddingModel(options);
+      const response = await neatlogsClient.trace(
+        {
+          name: "openai.embeddings.create",
+          kind: "EMBEDDING",
+          model: embeddingModel,
+        },
+        async () =>
+          openai.embeddings.create({
+            model: embeddingModel,
+            input: trimmed,
+          }),
+      );
 
       const embedding = response.data[0]?.embedding;
       if (!embedding?.length) {
