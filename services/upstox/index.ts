@@ -39,7 +39,10 @@ import {
   getOptionGreeks,
 } from "@/services/upstox/marketQuote";
 import { getInstrumentNews } from "@/services/upstox/news";
-import { getOptionChain, getOptionContracts } from "@/services/upstox/optionChain";
+import {
+  getOptionChain,
+  getOptionContracts,
+} from "@/services/upstox/optionChain";
 import { testUpstoxConnection } from "@/services/upstox/testConnection";
 
 export type UpstoxApiDefinition<
@@ -455,7 +458,11 @@ export {
   type HistoricalCandlesParams,
   type IntradayCandlesParams,
 } from "@/services/upstox/historicalData";
-export { getIpoDetails, getIpos, type GetIposParams } from "@/services/upstox/ipo";
+export {
+  getIpoDetails,
+  getIpos,
+  type GetIposParams,
+} from "@/services/upstox/ipo";
 export {
   assertMarginApiNotUsed,
   MARGIN_API_NOT_SUPPORTED_WITH_ANALYTICS_TOKEN,
@@ -490,7 +497,10 @@ export {
   getOhlcQuotes,
   getOptionGreeks,
 } from "@/services/upstox/marketQuote";
-export { getInstrumentNews, type InstrumentNewsParams } from "@/services/upstox/news";
+export {
+  getInstrumentNews,
+  type InstrumentNewsParams,
+} from "@/services/upstox/news";
 export {
   getOptionChain,
   getOptionContracts,

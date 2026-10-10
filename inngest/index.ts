@@ -59,6 +59,12 @@
  *   Outcome: Append deduped labels to `ChatSession.potentialStories` (0–5 new).
  *   Idempotent per `chatMessageId`.
  *
+ * stockResearchPipelineFunction (`stockResearch/stockResearchPipeline.ts`)
+ *   Event: `stock/research.requested`
+ *   Enqueue: `POST /api/stockResearch` (creates PENDING `StockResearch`)
+ *   Outcome: Prompt enhancer → tool determiner → Upstox + Serp → link selector →
+ *   Firecrawl → `StockResearchResource` rows → Markdown report, status COMPLETED.
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  * Typical chat flow (general session)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -130,6 +136,14 @@ export {
   type ChatPotentialStoryTopicsEventData,
 } from "./chatPotentialStoryTopicsPipeline";
 
+export {
+  STOCK_RESEARCH_PIPELINE_EVENT,
+  stockResearchPipelineEventDataSchema,
+  stockResearchPipelineFunction,
+  enqueueStockResearchPipeline,
+  type StockResearchPipelineEventData,
+} from "./stockResearch/stockResearchPipeline";
+
 import { chatPipelineFunction } from "./newsNewchatPipeline";
 import { chatMessageEmbeddingFunction } from "./chatMessageEmbeddingPipeline";
 import { messageChatPipelineFunction } from "./chatPipeline";
@@ -138,6 +152,7 @@ import { newsRerunPipelineFunction } from "./reRunPipeline";
 import { researchSourceDescriptionFunction } from "./researchSourceDescriptionPipeline";
 import { chatPotentialStoryTopicsFunction } from "./chatPotentialStoryTopicsPipeline";
 import { chatStoryPipelineFunction } from "./chatstoryPipeline";
+import { stockResearchPipelineFunction } from "./stockResearch/stockResearchPipeline";
 
 export const inngestFunctions = [
   newsPipelineFunction,
@@ -145,6 +160,7 @@ export const inngestFunctions = [
   chatPipelineFunction,
   messageChatPipelineFunction,
   chatStoryPipelineFunction,
+  stockResearchPipelineFunction,
   researchSourceDescriptionFunction,
   chatMessageEmbeddingFunction,
   chatPotentialStoryTopicsFunction,

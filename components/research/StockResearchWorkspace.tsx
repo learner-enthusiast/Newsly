@@ -1,31 +1,153 @@
 "use client";
 
-import { useState } from "react";
+import { StockResearchRecentSidebar } from "@/components/research/StockResearchRecentSidebar";
 import { StockSearch } from "@/components/research/StockSearch";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import { useRecentStockResearches } from "@/hooks/useRecentStockResearches";
 import type { InstrumentSuggestion } from "@/app/api/instruments/suggest/route";
+import type { SerializedStockResearch } from "@/services/stockResearch/stockResearchTypes";
+import { Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
+
+const MIN_PROMPT_CHARS = 3;
+const MAX_PROMPT_CHARS = 2000;
 
 export function StockResearchWorkspace() {
+  const router = useRouter();
   const [selectedStock, setSelectedStock] =
     useState<InstrumentSuggestion | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const { recentResearches, total, recentLoading } = useRecentStockResearches();
+
+  const trimmedPrompt = prompt.trim();
+  const canSubmit =
+    selectedStock !== null &&
+    trimmedPrompt.length >= MIN_PROMPT_CHARS &&
+    !submitting;
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedStock || !canSubmit) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/stockResearch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instrumentKey: selectedStock.instrumentKey,
+          prompt: trimmedPrompt,
+        }),
+      });
+      const payload = (await response.json()) as {
+        stockResearch?: SerializedStockResearch;
+        error?: string;
+      };
+      if (!response.ok || !payload.stockResearch) {
+        throw new Error(payload.error ?? "Failed to start research");
+      }
+      router.push(`/stockResearch/${payload.stockResearch.id}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to start research",
+      );
+      setSubmitting(false);
+    }
+  }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12 md:px-6 md:py-16">
-      <div className="flex flex-col gap-3">
-        <h1 className="font-display text-3xl tracking-tight">Stock research</h1>
-        <p className="text-muted-foreground">
-          Search for a stock to start researching it.
-        </p>
+    // Full-height panes, each scrolling on its own on lg+; stacked below lg.
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+      <div className="min-w-0 flex-1 lg:scroll-pane">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 md:px-8 md:py-12">
+          <div className="flex flex-col gap-3">
+            <h1 className="font-display text-3xl tracking-tight">
+              Stock research
+            </h1>
+            <p className="text-muted-foreground">
+              Pick a stock, tell us what you want to know, and we&apos;ll pull
+              market data, fundamentals and recent coverage into one report.
+            </p>
+          </div>
+
+          <form onSubmit={onSubmit} className="flex flex-col gap-4">
+            <StockSearch
+              onSelect={setSelectedStock}
+              onClear={() => setSelectedStock(null)}
+            />
+
+            {selectedStock ? (
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {selectedStock.name}
+                  </CardTitle>
+                  <CardDescription>
+                    {selectedStock.tradingSymbol} · {selectedStock.exchange} ·{" "}
+                    {selectedStock.instrumentType}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <label
+                    htmlFor="stock-research-prompt"
+                    className="text-sm font-medium"
+                  >
+                    What do you want to research?
+                  </label>
+                  <Textarea
+                    id="stock-research-prompt"
+                    value={prompt}
+                    onChange={(event) => setPrompt(event.target.value)}
+                    maxLength={MAX_PROMPT_CHARS}
+                    rows={4}
+                    placeholder={`e.g. Should I invest in ${selectedStock.name} for the next 2–3 years? How are its valuation and recent results?`}
+                    disabled={submitting}
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Research takes a few minutes. You can leave the page and
+                      come back.
+                    </p>
+                    <Button
+                      type="submit"
+                      variant="brand-accent"
+                      disabled={!canSubmit}
+                    >
+                      {submitting ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <Sparkles data-icon="inline-start" />
+                      )}
+                      {submitting ? "Starting…" : "Start research"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+          </form>
+        </div>
       </div>
 
-      <StockSearch onSelect={setSelectedStock} />
-
-      {selectedStock && (
-        <p className="text-sm text-muted-foreground">
-          Selected:{" "}
-          <span className="font-medium text-foreground">{selectedStock.name}</span>{" "}
-          ({selectedStock.tradingSymbol} · {selectedStock.exchange})
-        </p>
-      )}
+      <div className="border-t border-border/60 bg-muted/20 px-4 py-6 lg:scroll-pane lg:w-[320px] lg:shrink-0 lg:border-t-0 lg:border-l">
+        <StockResearchRecentSidebar
+          recentResearches={recentResearches}
+          recentLoading={recentLoading}
+          total={total}
+        />
+      </div>
     </div>
   );
 }

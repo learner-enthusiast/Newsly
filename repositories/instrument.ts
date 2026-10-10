@@ -69,11 +69,45 @@ const nameSearchSchema = z.object({
   instrumentType: z.string().min(1).optional(),
 });
 
+const etfEqSegmentSchema = z.enum(["NSE_EQ", "BSE_EQ"]);
+
+const etfNameSearchSchema = z.object({
+  query: z.string().min(1),
+  limit: z.number().int().min(1).max(100).optional(),
+  /** Narrow to one equity segment; default is both NSE_EQ and BSE_EQ. */
+  segment: etfEqSegmentSchema.optional(),
+});
+
 export type InstrumentCreateInput = z.input<typeof instrumentWriteSchema>;
 export type InstrumentPutInput = z.input<typeof instrumentPutSchema>;
 export type InstrumentPatchInput = z.input<typeof instrumentPatchSchema>;
 export type InstrumentSymbolLookup = z.input<typeof symbolLookupSchema>;
 export type InstrumentNameSearchInput = z.input<typeof nameSearchSchema>;
+export type EtfNameSearchInput = z.input<typeof etfNameSearchSchema>;
+
+export const ETF_EQ_SEGMENTS = ["NSE_EQ", "BSE_EQ"] as const;
+
+/** Listed ETFs on NSE/BSE equity segments (ISIN prefix INF). */
+export function instrumentIsEtf(
+  instrument: Pick<
+    { segment: string; isin: string | null },
+    "segment" | "isin"
+  >,
+): boolean {
+  return (
+    (instrument.segment === "NSE_EQ" || instrument.segment === "BSE_EQ") &&
+    (instrument.isin?.startsWith("INF") ?? false)
+  );
+}
+
+function etfInstrumentWhere(
+  segment?: (typeof ETF_EQ_SEGMENTS)[number],
+): Prisma.InstrumentWhereInput {
+  return {
+    segment: segment ?? { in: [...ETF_EQ_SEGMENTS] },
+    isin: { startsWith: "INF" },
+  };
+}
 
 function normalizeLookupQuery(query: string): string {
   return query.trim();
@@ -144,6 +178,37 @@ export async function searchInstrumentsByShortName(
         : {}),
     },
     orderBy: [{ shortName: "asc" }, { instrumentKey: "asc" }],
+    take: parsed.limit ?? 25,
+  });
+}
+
+/** Prefix search on ETF `name` (case-insensitive), equity segments + INF ISIN. */
+export async function searchEtfsByName(input: EtfNameSearchInput) {
+  const parsed = etfNameSearchSchema.parse(input);
+  const q = normalizeLookupQuery(parsed.query);
+  return await prisma.instrument.findMany({
+    where: {
+      ...etfInstrumentWhere(parsed.segment),
+      name: { startsWith: q, mode: "insensitive" },
+    },
+    orderBy: [{ name: "asc" }, { instrumentKey: "asc" }],
+    take: parsed.limit ?? 25,
+  });
+}
+
+/** ETF prefix search on `name` or `short_name` for autocomplete-style lookups. */
+export async function searchEtfsByNameOrShortName(input: EtfNameSearchInput) {
+  const parsed = etfNameSearchSchema.parse(input);
+  const q = normalizeLookupQuery(parsed.query);
+  return await prisma.instrument.findMany({
+    where: {
+      ...etfInstrumentWhere(parsed.segment),
+      OR: [
+        { name: { startsWith: q, mode: "insensitive" } },
+        { shortName: { startsWith: q, mode: "insensitive" } },
+      ],
+    },
+    orderBy: [{ name: "asc" }, { instrumentKey: "asc" }],
     take: parsed.limit ?? 25,
   });
 }

@@ -344,7 +344,10 @@ export function createAIClient(options: AIClientOptions = {}) {
       params.parsed.maxOutputTokens,
       { retry: params.retryAttempt },
     );
-    const response = (await params.client.responses.parse(
+    // `responses.create`, not `responses.parse`: parse calls create on the
+    // unwrapped client internally, so Neatlogs never sees it. The structured
+    // output is recovered from the JSON text by extractOpenAiStructuredOutput.
+    const response = (await params.client.responses.create(
       {
         model: params.model,
         instructions: params.parsed.system,

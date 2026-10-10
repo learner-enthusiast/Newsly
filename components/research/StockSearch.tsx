@@ -9,9 +9,11 @@ const DEBOUNCE_MS = 250;
 
 type StockSearchProps = {
   onSelect?: (instrument: InstrumentSuggestion) => void;
+  /** Called when the user edits the text after picking a stock. */
+  onClear?: () => void;
 };
 
-export function StockSearch({ onSelect }: StockSearchProps) {
+export function StockSearch({ onSelect, onClear }: StockSearchProps) {
   const listId = useId();
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<InstrumentSuggestion[]>([]);
@@ -93,7 +95,10 @@ export function StockSearch({ onSelect }: StockSearchProps) {
         onChange={(event) => {
           const value = event.target.value;
           setQuery(value);
-          setSelected(null);
+          if (selected) {
+            setSelected(null);
+            onClear?.();
+          }
           if (!value.trim()) {
             setSuggestions([]);
             setIsLoading(false);

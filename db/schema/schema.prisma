@@ -38,6 +38,7 @@ model User {
   ownedNewsStories NewsStory[]
   subscription     Subscription?
   payments         Payment[]
+  stockResearches  StockResearch[]
 
   @@map("users")
 }
@@ -362,4 +363,90 @@ model Instrument {
   @@index([name], map: "idx_instruments_name")
   @@index([shortName], map: "idx_instruments_short_name")
   @@map("instruments")
+}
+
+enum StockResearchStatus {
+  PENDING
+  RUNNING
+  RERUNNING
+  COMPLETED
+  FAILED
+}
+
+enum StockResearchProvider {
+  UPSTOX
+  SERP
+  FIRECRAWL
+  NEWS
+  AI
+  INTERNAL
+}
+
+enum StockResearchResourceType {
+  MARKET_DATA
+  FUNDAMENTAL
+  NEWS
+  WEB_PAGE
+  OPTIONS
+  HISTORICAL
+  SYNTHESIS
+  OTHER
+}
+
+model StockResearch {
+  id             String              @id @default(cuid())
+  userId         String              @map("user_id")
+  companyName    String?             @map("company_name")
+  userPrompt     String?             @map("user_prompt") @db.Text
+  symbol         String?
+  exchange       String?
+  isin           String?
+  instrumentKey  String?             @map("instrument_key")
+  query          String              @db.Text
+  status         StockResearchStatus @default(PENDING)
+  runCount       Int                 @default(0) @map("run_count")
+  determinerPlan Json?               @map("determiner_plan")
+  report         Json?
+  reportMarkdown String?             @map("report_markdown") @db.Text
+  error          String?             @db.Text
+  startedAt      DateTime?           @map("started_at")
+  completedAt    DateTime?           @map("completed_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  loadingLogs   String[] @default([]) @map("loading_logs")
+
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resources StockResearchResource[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([symbol, exchange])
+  @@index([isin])
+  @@map("stock_researches")
+}
+
+model StockResearchResource {
+  id               String                    @id @default(cuid())
+  stockResearchId  String                    @map("stock_research_id")
+  provider         StockResearchProvider
+  type             StockResearchResourceType @map("resource_type")
+  title            String?
+  url              String?                   @db.Text
+  externalId       String?                   @map("external_id")
+  content          String?                   @db.Text
+  rawData          Json?                     @map("raw_data")
+  metadata         Json?
+  researchSourceId String?                   @map("research_source_id") @db.Uuid
+  contentHash      String?                   @map("content_hash")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+
+  stockResearch StockResearch @relation(fields: [stockResearchId], references: [id], onDelete: Cascade)
+
+  @@unique([stockResearchId, provider, contentHash])
+  @@index([stockResearchId, provider])
+  @@index([stockResearchId, type])
+  @@index([externalId])
+  @@index([contentHash])
+  @@map("stock_research_resources")
 }
