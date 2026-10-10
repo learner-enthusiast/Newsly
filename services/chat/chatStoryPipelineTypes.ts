@@ -3,6 +3,7 @@ import type { ChatModelResearchSourceRow } from "@/services/chat/researchContext
 import type { ChatYoutubeEvidenceRow } from "@/services/chat/chatYoutubeEvidence";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import type { SelectedResearchArticle } from "@/Agents/news/ResearchArticleSelectorAgent";
+import { chatMarketDataSchema } from "@/services/chat/instrumentResearchTypes";
 import { z } from "zod";
 
 const recentMessageSchema = z.object({
@@ -41,6 +42,11 @@ export const chatStoryPipelineEventDataSchema = z.object({
   serpHits: z.array(z.custom<NormalizedSerpHit>()),
   youtubeEvidence: z.array(z.custom<ChatYoutubeEvidenceRow>()),
   selectedArticles: z.array(z.custom<SelectedResearchArticle>()).optional(),
+  /**
+   * Upstox data gathered upstream by the message chat pipeline. `null` = prompt
+   * was not instrument-specific; omitted = not checked (story pipeline runs it).
+   */
+  marketData: chatMarketDataSchema.nullable().optional(),
 });
 
 export type ChatStoryPipelineEventData = z.infer<

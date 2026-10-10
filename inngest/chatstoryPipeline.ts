@@ -99,6 +99,8 @@ import {
 } from "@/services/news/newsStoryAccess";
 import { createNewsSource } from "@/repositories/newsSource";
 import { fetchAndNormalizeChatSerpResearch } from "@/services/chat/chatSerpWithAiOverview";
+import { runChatInstrumentResearch } from "@/services/chat/instrumentResearch";
+import type { ChatMarketData } from "@/services/chat/instrumentResearchTypes";
 import { mergePreparedResearchArticles } from "@/services/chat/chatStoryResearchArticles";
 import {
   chatStoryPipelineEventDataSchema,
@@ -224,17 +226,35 @@ export const chatStoryPipelineFunction = inngest.createFunction(
       });
     }
 
-    const gap = await step.run("story-research-gap", async () => {
-      const result = await runChatStoryResearchGapAgent({
-        enhancedPrompt: input.enhancedPrompt,
-        existingResearchCount: input.existingResearch.length,
-        serpHitCount: input.serpHits.length,
-        youtubeEvidenceCount: input.youtubeEvidence.length,
-        selectedArticleCount: input.selectedArticles?.length ?? 0,
-        abortSignal: AbortSignal.timeout(120_000),
-      });
-      return toJsonSafeStepOutput(result);
-    });
+    // Market data usually arrives from the message chat pipeline; fetch it here
+    // (in parallel with gap analysis) only when the event did not carry it.
+    const [gap, instrumentResearch] = await Promise.all([
+      step.run("story-research-gap", async () => {
+        const result = await runChatStoryResearchGapAgent({
+          enhancedPrompt: input.enhancedPrompt,
+          existingResearchCount: input.existingResearch.length,
+          serpHitCount: input.serpHits.length,
+          youtubeEvidenceCount: input.youtubeEvidence.length,
+          selectedArticleCount: input.selectedArticles?.length ?? 0,
+          abortSignal: AbortSignal.timeout(120_000),
+        });
+        return toJsonSafeStepOutput(result);
+      }),
+      input.marketData !== undefined
+        ? Promise.resolve({ marketData: input.marketData })
+        : step.run("instrument-research", async () => {
+            const { marketData } = await runChatInstrumentResearch({
+              prompt: input.enhancedPrompt,
+              chatSessionId: input.chatSessionId,
+              abortSignal: AbortSignal.timeout(120_000),
+            });
+            pipelineLog("instrument-research", "done", {
+              instruments: marketData?.instruments.map((row) => row.tradingSymbol) ?? [],
+            });
+            return toJsonSafeStepOutput({ marketData: marketData as ChatMarketData | null });
+          }),
+    ]);
+    const marketData = instrumentResearch.marketData ?? null;
 
     await step.run("append-story-log-gap", async () => {
       await appendNewsStoryLoadingLog(
@@ -330,6 +350,7 @@ export const chatStoryPipelineFunction = inngest.createFunction(
         articles,
         userPrompt: `${input.enhancedPrompt}\n\nProduce exactly one evidence-backed news story from the prepared research. Use conversation context only for intent, not as factual evidence.`,
         targetStoryCount: 1,
+        marketData,
         abortSignal: AbortSignal.timeout(300_000),
       });
 

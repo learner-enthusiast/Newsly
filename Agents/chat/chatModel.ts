@@ -35,6 +35,7 @@ import { z } from "zod";
 export const CHAT_HISTORY_MAX_MESSAGES = 10;
 
 const SERP_DATA_MAX_CHARS = 48_000;
+const MARKET_DATA_MAX_CHARS = 40_000;
 
 export const chatHistoryMessageSchema = z.object({
   role: z.string().min(1),
@@ -48,6 +49,8 @@ export const chatModelParamsSchema = z.object({
   prompt: z.string().min(1),
   /** Unstructured SerpAPI payload when a search was run; omit when none. */
   serpData: z.unknown().optional(),
+  /** Upstox market data for instruments the question is about (`ChatMarketData`). */
+  marketData: z.unknown().optional(),
   /** Up to the last 10 messages in the session (oldest first). */
   chatHistory: z.array(chatHistoryMessageSchema).max(CHAT_HISTORY_MAX_MESSAGES),
   model: z.string().min(1).optional(),
@@ -84,6 +87,10 @@ function buildSystemPrompt(): string {
     "Extract what is relevant to the question. Synthesize overlapping results. Note disagreements between sources.",
     "If Serp data is absent, answer from prompt and history only — never claim you searched the web.",
     "",
+    "marketData (when provided) is live Upstox data for the instruments in the question: quotes, candles, fundamentals, shareholding, corporate actions, news, FII/DII flows (JSON, possibly truncated), fetched at marketData.asOf.",
+    "Prefer marketData for prices, ratios and financial figures over numbers in web snippets; mention the as-of time for prices. Use web sources for narrative, news and opinions.",
+    "Only quote numbers that appear in marketData or sources. Where marketData.instruments[].unavailableTools lists a tool, do not guess that data.",
+    "",
     "Never fabricate facts, sources, URLs, quotes, dates, statistics, people, events, or search results.",
     'If evidence is insufficient, say so plainly (e.g. "The available sources don\'t establish this conclusively.").',
     "",
@@ -104,19 +111,19 @@ function trimChatHistory(history: ChatHistoryMessage[]): ChatHistoryMessage[] {
   return history.slice(-CHAT_HISTORY_MAX_MESSAGES);
 }
 
-function serializeSerpData(serpData: unknown): string | null {
-  if (serpData == null) {
+function serializeForPrompt(value: unknown, maxChars: number): string | null {
+  if (value == null) {
     return null;
   }
 
   try {
-    const json = JSON.stringify(serpData, null, 2);
-    if (json.length <= SERP_DATA_MAX_CHARS) {
+    const json = JSON.stringify(value, null, 2);
+    if (json.length <= maxChars) {
       return json;
     }
-    return `${json.slice(0, SERP_DATA_MAX_CHARS)}\n…[truncated]`;
+    return `${json.slice(0, maxChars)}\n…[truncated]`;
   } catch {
-    return String(serpData).slice(0, SERP_DATA_MAX_CHARS);
+    return String(value).slice(0, maxChars);
   }
 }
 
@@ -132,12 +139,15 @@ function normalizeAssistantMarkdown(raw: string): string {
 }
 
 function buildExtraContext(params: z.output<typeof chatModelParamsSchema>) {
-  const serpJson = serializeSerpData(params.serpData);
+  const serpJson = serializeForPrompt(params.serpData, SERP_DATA_MAX_CHARS);
+  const marketJson = serializeForPrompt(params.marketData, MARKET_DATA_MAX_CHARS);
 
   return {
     chatHistory: trimChatHistory(params.chatHistory),
     serpDataIncluded: serpJson != null,
     ...(serpJson != null ? { serpData: serpJson } : {}),
+    marketDataIncluded: marketJson != null,
+    ...(marketJson != null ? { marketData: marketJson } : {}),
   };
 }
 

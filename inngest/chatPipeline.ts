@@ -172,6 +172,8 @@ import {
 } from "@/services/chat/messageStoryCreation";
 import { todayIsoDateUtc } from "@/services/chat/researchPrompt";
 import { enrichSelectedArticlesWithSerpImages } from "@/services/chat/enrichSelectedArticlesWithSerpImages";
+import { runChatInstrumentResearch } from "@/services/chat/instrumentResearch";
+import type { ChatMarketData } from "@/services/chat/instrumentResearchTypes";
 import { resolveArticleImageUrl } from "@/services/news/articleImageUrl";
 import { scrapeUrlsWithFirecrawlRaw } from "@/services/firecrawl/scrapeUrls";
 import {
@@ -563,7 +565,12 @@ export const messageChatPipelineFunction = inngest.createFunction(
         );
       }
 
-      const [vectorResearchBranch, serpResearchBranch, youtubeResearchBranch] =
+      const [
+        vectorResearchBranch,
+        serpResearchBranch,
+        youtubeResearchBranch,
+        instrumentResearchBranch,
+      ] =
         await Promise.all([
           step.run("vector-research-branch", async () => {
             const elapsed = createStepTimer();
@@ -666,11 +673,35 @@ export const messageChatPipelineFunction = inngest.createFunction(
             });
             return toJsonSafeStepOutput(rows);
           }),
+          step.run("instrument-research-branch", async () => {
+            const elapsed = createStepTimer();
+            pipelineLog("instrument-research-branch", "start");
+            const { marketData } = await runChatInstrumentResearch({
+              prompt: researchPrompt,
+              chatSessionId: input.chatSessionId,
+              abortSignal: AbortSignal.timeout(120_000),
+            });
+            if (marketData) {
+              await appendChatMessageLoadingLog(
+                assistantProgress.id,
+                "Market data fetched.",
+              );
+            }
+            pipelineLog("instrument-research-branch", "done", {
+              durationMs: elapsed(),
+              instruments:
+                marketData?.instruments.map((row) => row.tradingSymbol) ?? [],
+            });
+            return toJsonSafeStepOutput({
+              marketData: marketData as ChatMarketData | null,
+            });
+          }),
         ]);
 
       const existingResearchRows = vectorResearchBranch;
       const serpHits = serpResearchBranch;
       const youtubeEvidence = youtubeResearchBranch;
+      const marketData = instrumentResearchBranch.marketData;
 
       const [selectedArticles, preloadedSessionSources] = await Promise.all([
         step.run("run-article-synthesizer", async () => {
@@ -956,6 +987,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
             serpHits,
             youtubeEvidence,
             selectedArticles,
+            marketData,
           },
         });
 
@@ -1024,6 +1056,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
               scrapedResearchSources: researchContext,
               youtubeTranscriptEvidence: youtubeEvidence,
             },
+            marketData,
             chatHistory,
             abortSignal: AbortSignal.timeout(300_000),
           });

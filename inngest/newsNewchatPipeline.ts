@@ -123,6 +123,8 @@ import {
   roleForChatModel,
 } from "@/services/chat/chatSerpResearch";
 import { enrichSelectedArticlesWithSerpImages } from "@/services/chat/enrichSelectedArticlesWithSerpImages";
+import { runChatInstrumentResearch } from "@/services/chat/instrumentResearch";
+import type { ChatMarketData } from "@/services/chat/instrumentResearchTypes";
 import { resolveArticleImageUrl } from "@/services/news/articleImageUrl";
 import { scrapeUrlsWithFirecrawlRaw } from "@/services/firecrawl/scrapeUrls";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
@@ -424,29 +426,47 @@ export const chatPipelineFunction = inngest.createFunction(
       const determiner = determinerStep.outcome.determiner;
       const chatHistoryForModel = determinerStep.chatHistoryForModel;
 
-      const serpHits = await step.run("fetch-and-normalize-serp", async () => {
-        const elapsed = createStepTimer();
-        if (determiner.useTools !== "yes" || determiner.calls.length === 0) {
-          pipelineLog("fetch-and-normalize-serp", "skipped", {
-            durationMs: elapsed(),
-            reason: "no serp calls",
+      // Instrument / Upstox research runs in parallel with Serp.
+      const [serpHits, instrumentResearch] = await Promise.all([
+        step.run("fetch-and-normalize-serp", async () => {
+          const elapsed = createStepTimer();
+          if (determiner.useTools !== "yes" || determiner.calls.length === 0) {
+            pipelineLog("fetch-and-normalize-serp", "skipped", {
+              durationMs: elapsed(),
+              reason: "no serp calls",
+            });
+            return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
+          }
+
+          pipelineLog("fetch-and-normalize-serp", "start", {
+            calls: determiner.calls.length,
           });
-          return toJsonSafeStepOutput([] as NormalizedSerpHit[]);
-        }
 
-        pipelineLog("fetch-and-normalize-serp", "start", {
-          calls: determiner.calls.length,
-        });
-
-        const merged = await fetchAndNormalizeSerp(
-          determiner.calls as ValidatedSerpToolCall[],
-        );
-        pipelineLog("fetch-and-normalize-serp", "done", {
-          durationMs: elapsed(),
-          hitCount: merged.length,
-        });
-        return toJsonSafeStepOutput(merged);
-      });
+          const merged = await fetchAndNormalizeSerp(
+            determiner.calls as ValidatedSerpToolCall[],
+          );
+          pipelineLog("fetch-and-normalize-serp", "done", {
+            durationMs: elapsed(),
+            hitCount: merged.length,
+          });
+          return toJsonSafeStepOutput(merged);
+        }),
+        step.run("instrument-research", async () => {
+          const elapsed = createStepTimer();
+          pipelineLog("instrument-research", "start");
+          const { marketData } = await runChatInstrumentResearch({
+            prompt: researchPrompt.researchPrompt,
+            chatSessionId: input.chatSessionId,
+            abortSignal: AbortSignal.timeout(120_000),
+          });
+          pipelineLog("instrument-research", "done", {
+            durationMs: elapsed(),
+            instruments: marketData?.instruments.map((row) => row.tradingSymbol) ?? [],
+          });
+          return toJsonSafeStepOutput({ marketData: marketData as ChatMarketData | null });
+        }),
+      ]);
+      const marketData = instrumentResearch.marketData;
 
       const [selectedArticles, preloadedSessionSources] = await Promise.all([
         step.run("select-articles", async () => {
@@ -580,6 +600,7 @@ export const chatPipelineFunction = inngest.createFunction(
               normalizedHits: serpHits,
               scrapedResearchSources: scrapedSources,
             },
+            marketData,
             chatHistory: chatHistoryForModel,
             abortSignal: AbortSignal.timeout(300_000),
           });

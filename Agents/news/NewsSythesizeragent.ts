@@ -66,6 +66,8 @@ export const newsSynthesizerParamsSchema = z.object({
   targetStoryCount: z.number().int().min(1).max(12).optional(),
   /** When set, the first synthesized story uses this id (chat story pipeline). */
   fixedStoryId: z.uuid().optional(),
+  /** Upstox market data for instruments the story is about (`ChatMarketData`). */
+  marketData: z.unknown().optional(),
   model: z.string().min(1).optional(),
   system: z.string().min(1).optional(),
 });
@@ -531,6 +533,13 @@ async function runSynthesizer(
       "Cluster these researched articles into events and rank the stories.",
     extraContext: {
       newsRequestId: parsed.newsRequestId,
+      ...(parsed.marketData != null
+        ? {
+            marketData: parsed.marketData,
+            marketDataNote:
+              "Live Upstox data (quotes, fundamentals, flows) for instruments in the story. Use it for accurate figures in summary/content; it is not an article and must not appear in sourceUrls.",
+          }
+        : {}),
       location,
       youtubeTranscriptSynthesis: parsed.youtubeTranscriptSynthesis ?? null,
       articles: articles.map((article) => ({
