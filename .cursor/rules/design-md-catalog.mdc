@@ -1,0 +1,19 @@
+---
+description: Use the vendored awesome-design-md catalog when building or redesigning UI
+globs: app/**/*.tsx,components/**/*.tsx,app/**/*.css
+alwaysApply: false
+---
+
+# DESIGN.md catalog
+
+- Vendored catalog: `vendor/awesome-design-md/design-md/<brand>/DESIGN.md` (+ `preview.html` for visual QA).
+- Active choice for this repo: `design/active/DESIGN.md` (set via `pnpm design-md:use <brand>`).
+- See `docs/awesome-design-md.md` for workflow.
+
+When the user asks for a new look, a landing page, or to match a reference brand:
+
+1. Read the relevant `DESIGN.md` (active copy or a path they name).
+2. Map tokens to existing stack (Tailwind v4, shadcn, `app/globals.css`, `lib/fonts.ts`) instead of replacing the whole design system unless they ask for a full redesign.
+3. Prefer layout, spacing, typography, and motion rules from `DESIGN.md`; keep accessibility and project conventions.
+
+Do not treat catalog files as permission to copy trademark branding in production UI.

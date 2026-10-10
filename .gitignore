@@ -44,3 +44,7 @@ next-env.d.ts
 # prisma
 /db/generated
 .clerk/
+
+# Local DESIGN.md picked from vendor/awesome-design-md (pnpm design-md:use)
+/design/active/DESIGN.md
+/design/active/SOURCE_BRAND.txt

@@ -21,6 +21,8 @@
     "upstox:test": "node --import tsx --import dotenv/config scripts/upstoxTest.ts",
     "instruments:sync": "node --import tsx --import dotenv/config scripts/syncInstruments.ts",
     "news:metros:seed": "node --import tsx --import dotenv/config scripts/seedNewsMetros.ts",
+    "design-md:list": "ls vendor/awesome-design-md/design-md",
+    "design-md:use": "node --import tsx scripts/design-md-use.ts",
     "news:funnel": "node --import tsx --import dotenv/config scripts/newsFunnel.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
