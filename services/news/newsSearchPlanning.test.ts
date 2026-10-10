@@ -4,6 +4,9 @@ import {
   articleCandidateBudget,
   buildGoogleQueryFromContext,
   buildNewsSearchExecutionPlans,
+  buildNewsTopicSearchPlans,
+  MAX_TOPIC_QUERIES_PER_TIER,
+  withGoogleRecencyFilter,
   expandCategoryKeywords,
   maxArticlesToScrape,
   newsSearchContextFromConfig,
@@ -76,8 +79,8 @@ describe("buildNewsSearchExecutionPlans", () => {
 
 describe("budget helpers", () => {
   it("scales candidate and scrape budgets with storyCount", () => {
-    assert.equal(articleCandidateBudget(3), 15);
-    assert.equal(articleCandidateBudget(10), 40);
+    assert.equal(articleCandidateBudget(3), 21);
+    assert.equal(articleCandidateBudget(10), 48);
     assert.equal(maxArticlesToScrape(3), 6);
     assert.equal(serpResultsPerEngine(5), 15);
   });
@@ -95,5 +98,48 @@ describe("buildGoogleQueryFromContext", () => {
     const q = buildGoogleQueryFromContext(ctx, "world", "news");
     assert.match(q, /site:thehindu\.com/);
     assert.match(q, /site:economictimes\.indiatimes\.com/);
+  });
+});
+
+describe("buildNewsTopicSearchPlans", () => {
+  it("builds short focused queries per tier with a tbs date range", () => {
+    const config = normalizeNewsGenerationRequest({
+      date: "2026-09-26",
+      scope: "both",
+      location: "Hyderabad, Telangana, India",
+    });
+    const plans = buildNewsTopicSearchPlans(config);
+    const local = plans.filter((plan) => plan.tier === "local");
+    const world = plans.filter((plan) => plan.tier === "world");
+    assert.equal(local.length, MAX_TOPIC_QUERIES_PER_TIER);
+    assert.equal(world.length, MAX_TOPIC_QUERIES_PER_TIER);
+    assert.ok(local.every((plan) => /Hyderabad|Telangana/.test(plan.query)));
+    assert.ok(world.every((plan) => !/Hyderabad/.test(plan.query)));
+    assert.ok(plans.every((plan) => !/2026-09-26|after:/.test(plan.query)));
+    assert.equal(
+      world[0]!.googleSearchParams.tbs,
+      "cdr:1,cd_min:9/25/2026,cd_max:9/26/2026",
+    );
+  });
+
+  it("puts the custom query first", () => {
+    const config = normalizeNewsGenerationRequest({
+      date: "2026-09-26",
+      scope: "world",
+      customQuery: "Adani investment",
+    });
+    assert.equal(buildNewsTopicSearchPlans(config)[0]!.query, "Adani investment");
+  });
+});
+
+describe("withGoogleRecencyFilter", () => {
+  it("replaces after:/before: operators with tbs", () => {
+    const params = withGoogleRecencyFilter(
+      { q: "global markets news after:2026-09-26 before:2026-09-27", num: 10 },
+      "2026-09-26",
+    );
+    assert.equal(params.q, "global markets news");
+    assert.equal(params.tbs, "cdr:1,cd_min:9/25/2026,cd_max:9/26/2026");
+    assert.equal(params.num, 10);
   });
 });

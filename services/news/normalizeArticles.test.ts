@@ -4,6 +4,8 @@ import {
   articlePublishedMatchesRequestDate,
   excludeTradingRecommendationArticles,
   filterArticlesNearRequestDate,
+  filterArticlesInRequestWindow,
+  interleaveSerpPayloads,
   isTradingRecommendationArticle,
   type NormalizedArticleLink,
 } from "./normalizeArticles";
@@ -109,5 +111,36 @@ describe("excludeTradingRecommendationArticles", () => {
     ]);
     assert.equal(rows.length, 1);
     assert.match(rows[0]!.url, /news$/);
+  });
+});
+
+describe("filterArticlesInRequestWindow", () => {
+  it("keeps the request day and the previous day, drops older and later", () => {
+    const rows = filterArticlesInRequestWindow(
+      [
+        link({ url: "https://example.com/today", publishedAt: "2025-09-22T03:00:00.000Z" }),
+        link({ url: "https://example.com/yday", publishedAt: "2025-09-21T09:00:00.000Z" }),
+        link({ url: "https://example.com/old", publishedAt: "2025-09-19T09:00:00.000Z" }),
+        link({ url: "https://example.com/next", publishedAt: "2025-09-23T01:00:00.000Z" }),
+        link({ url: "https://example.com/undated" }),
+      ],
+      "2025-09-22",
+    );
+    assert.deepEqual(
+      rows.map((row) => row.url),
+      ["https://example.com/today", "https://example.com/yday", "https://example.com/undated"],
+    );
+  });
+});
+
+describe("interleaveSerpPayloads", () => {
+  it("round-robins news_results so later queries reach the head", () => {
+    const merged = interleaveSerpPayloads([
+      { news_results: ["a1", "a2", "a3"] },
+      null,
+      { news_results: ["b1"], organic_results: ["o1"] },
+    ]);
+    assert.deepEqual(merged.news_results, ["a1", "b1", "a2", "a3"]);
+    assert.deepEqual(merged.organic_results, ["o1"]);
   });
 });

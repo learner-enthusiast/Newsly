@@ -248,6 +248,38 @@ export function serpPayloadHasAiOverview(payload: unknown): boolean {
 
 /** Merge news/organic hits from extra `searchGoogle` calls into the base payload. */
 /** Concatenate news/organic arrays from multiple Serp JSON payloads. */
+/**
+ * Merge several Serp payloads by interleaving `news_results` / `organic_results`
+ * round-robin, so every query contributes to the head of the list (plain
+ * concatenation lets the first query fill the whole per-engine budget).
+ */
+export function interleaveSerpPayloads(payloads: unknown[]): Record<string, unknown> {
+  const records = payloads.filter(
+    (payload): payload is Record<string, unknown> =>
+      payload != null && typeof payload === "object",
+  );
+  const interleave = (key: string): unknown[] => {
+    const lists = records.map((record) =>
+      Array.isArray(record[key]) ? (record[key] as unknown[]) : [],
+    );
+    const longest = Math.max(0, ...lists.map((list) => list.length));
+    const out: unknown[] = [];
+    for (let i = 0; i < longest; i += 1) {
+      for (const list of lists) {
+        if (i < list.length) {
+          out.push(list[i]);
+        }
+      }
+    }
+    return out;
+  };
+  return {
+    ...(records[0] ?? {}),
+    news_results: interleave("news_results"),
+    organic_results: interleave("organic_results"),
+  };
+}
+
 export function mergeSerpPayloads(
   basePayload: unknown,
   extraPayload: unknown,
@@ -425,7 +457,11 @@ function extractOrganicResults(payload: unknown): z.infer<typeof serpOrganicItem
 }
 
 /** Drop thumbnails / metadata blobs before Inngest persists step output. */
-export function slimSerpPayloadForNormalize(payload: unknown): {
+export function slimSerpPayloadForNormalize(
+  payload: unknown,
+  /** Rows kept per result type (default 15). */
+  maxRows = 15,
+): {
   news_results: unknown[];
   organic_results?: unknown[];
   aiOverviewFollowUpSearch?: boolean;
@@ -440,11 +476,11 @@ export function slimSerpPayloadForNormalize(payload: unknown): {
   };
 
   const slimNews = Array.isArray(record.news_results)
-    ? record.news_results.slice(0, 15).map(slimSerpNewsRow)
+    ? record.news_results.slice(0, maxRows).map(slimSerpNewsRow)
     : [];
 
   const slimOrganic = Array.isArray(record.organic_results)
-    ? record.organic_results.slice(0, 15).map(slimSerpOrganicRow)
+    ? record.organic_results.slice(0, maxRows).map(slimSerpOrganicRow)
     : undefined;
 
   return {
@@ -739,6 +775,30 @@ export function filterArticlesNearRequestDate(
     );
   });
 
+  return filtered.map((article, index) => ({ ...article, index }));
+}
+
+/**
+ * Keep undated rows and articles published on the request day or the day before
+ * (UTC). Wider than `filterArticlesNearRequestDate`, which dropped most Indian
+ * coverage published the previous afternoon/evening IST.
+ */
+export function filterArticlesInRequestWindow(
+  articles: NormalizedArticleLink[],
+  requestDateIso: string,
+): NormalizedArticleLink[] {
+  const windowEnd = Date.parse(`${addDaysIsoDate(requestDateIso, 1)}T00:00:00.000Z`);
+  const windowStart = Date.parse(`${addDaysIsoDate(requestDateIso, -1)}T00:00:00.000Z`);
+  const filtered = articles.filter((article) => {
+    if (!article.publishedAt) {
+      return true;
+    }
+    const published = Date.parse(article.publishedAt);
+    if (Number.isNaN(published)) {
+      return true;
+    }
+    return published >= windowStart && published < windowEnd;
+  });
   return filtered.map((article, index) => ({ ...article, index }));
 }
 

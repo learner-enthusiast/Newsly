@@ -98,7 +98,7 @@ export function expandCategoryKeywords(categories: string[]): string[] {
 }
 
 export function articleCandidateBudget(storyCount: number): number {
-  return Math.min(40, Math.max(15, storyCount * 5));
+  return Math.min(48, Math.max(20, storyCount * 7));
 }
 
 export function serpResultsPerEngine(storyCount: number): number {
@@ -344,6 +344,142 @@ export function buildNewsSearchExecutionPlans(
         ...(gl ? { gl } : {}),
       },
     };
+  });
+}
+
+function usDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return `${m}/${d}/${y}`;
+}
+
+function shiftIsoDate(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const utc = new Date(Date.UTC(y!, m! - 1, d!));
+  utc.setUTCDate(utc.getUTCDate() + days);
+  return utc.toISOString().slice(0, 10);
+}
+
+/** Google `tbs` custom date range covering the request day and the day before. */
+export function googleRecencyTbs(requestDateIso: string): string {
+  return `cdr:1,cd_min:${usDate(shiftIsoDate(requestDateIso, -1))},cd_max:${usDate(requestDateIso)}`;
+}
+
+/**
+ * Swap `after:/before:` query operators for a `tbs` date range on Google Search
+ * params. The operators on a one-day window return almost nothing (and `tbm` is
+ * not forwarded by `searchGoogle`), so the web leg came back empty.
+ */
+export function withGoogleRecencyFilter(
+  params: Record<string, unknown>,
+  requestDateIso: string,
+): Record<string, unknown> {
+  const q = typeof params.q === "string" ? params.q : "";
+  return {
+    ...params,
+    q: q.replace(/\s*after:\S+\s*before:\S+/g, " ").replace(/\s+/g, " ").trim(),
+    tbs: googleRecencyTbs(requestDateIso),
+  };
+}
+
+/** Max focused topic queries per tier (each = one google_news + one google call). */
+export const MAX_TOPIC_QUERIES_PER_TIER = 3;
+
+export type NewsTopicSearchPlan = {
+  tier: "local" | "world";
+  query: string;
+  googleNewsParams: Record<string, unknown>;
+  googleSearchParams: Record<string, unknown>;
+};
+
+function localRegionLabel(location: string): string | null {
+  const parts = location
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length >= 2 ? parts[1]! : null;
+}
+
+function topicQueriesForTier(
+  config: NewsGenerationConfig,
+  tier: "local" | "world",
+): string[] {
+  const custom = config.customQuery?.trim() || null;
+  const categories = config.categories.map((c) => c.trim()).filter(Boolean);
+
+  if (tier === "world") {
+    return [
+      ...(custom ? [custom] : []),
+      ...categories.slice(0, 2).map((category) => `${category} news`),
+      "stock market today",
+      "global economy central banks inflation",
+      "corporate earnings mergers business news",
+    ];
+  }
+
+  const location = config.location ?? "";
+  const place = primaryPlaceLabel(location);
+  const region = localRegionLabel(location) ?? place;
+  return [
+    ...(custom ? [`${place} ${custom}`] : []),
+    ...categories.slice(0, 2).map((category) => `${place} ${category} news`),
+    `${place} business news`,
+    `${region} economy investment industry`,
+    `${region} companies jobs infrastructure`,
+  ];
+}
+
+/**
+ * Short, focused queries run in parallel next to the tier plans. One long
+ * combined query (place + date + category keywords) returns few, often stale
+ * results; several short ones return many fresh, distinct stories.
+ */
+export function buildNewsTopicSearchPlans(
+  config: NewsGenerationConfig,
+): NewsTopicSearchPlan[] {
+  const hl = config.serpHl;
+  const tiers: Array<"local" | "world"> =
+    config.scope === "both"
+      ? ["local", "world"]
+      : config.scope === "local"
+        ? ["local"]
+        : ["world"];
+  const siteFilter = buildSourceSiteFilter(config.sources);
+  const tbs = googleRecencyTbs(config.date);
+
+  return tiers.flatMap((tier) => {
+    const gl = buildNewsSearchQuery({
+      type: tier === "local" ? "LOCAL" : "WORLD",
+      location: tier === "local" ? (config.location ?? undefined) : undefined,
+      date: config.date,
+      channel: "news",
+    }).suggestedGl;
+    const geo =
+      tier === "local"
+        ? buildSerpGoogleSearchGeoParams({
+            latitude: config.latitude,
+            longitude: config.longitude,
+            location: config.location,
+            locationRadiusMeters: config.locationRadiusMeters,
+          })
+        : {};
+
+    return [...new Set(topicQueriesForTier(config, tier))]
+      .slice(0, MAX_TOPIC_QUERIES_PER_TIER)
+      .map((topic) => {
+        const query = siteFilter ? `${topic} ${siteFilter}` : topic;
+        return {
+          tier,
+          query,
+          googleNewsParams: { q: query, hl, ...(gl ? { gl } : {}) },
+          googleSearchParams: {
+            q: `${query} news`,
+            hl,
+            tbs,
+            ...(gl ? { gl } : {}),
+            ...geo,
+          },
+        };
+      });
   });
 }
 

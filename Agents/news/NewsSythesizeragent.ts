@@ -31,7 +31,8 @@ import { isTradingRecommendationArticle } from "@/services/news/normalizeArticle
 import { z } from "zod";
 
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid"]);
-const SCRAPE_EXCERPT_CHARS = 4000;
+/** Per-article text sent to the model; 4k cut most articles before the key details. */
+const SCRAPE_EXCERPT_CHARS = 7000;
 
 /** Scraped article. Matches NewsSource fields that exist before a story id is assigned. */
 export const researchedArticleSchema = z.object({
@@ -468,6 +469,7 @@ function buildSystemPrompt(
       : "Do not invent extra stories; fewer than four is acceptable when sources only support fewer events.",
     ...youtubeSection,
     "Articles about the same event become one story. Do not merge different events. Do not split one event across stories.",
+    "Attach EVERY supplied article that covers a story's event to that story's sourceUrls (not just one), and use details from all of them.",
     "Copy source URLs exactly in sourceUrls. Do not invent URLs. sourceUrls is the canonical machine-readable source list.",
     "Write each story only from its assigned sources. If sources disagree, say so. Do not add facts from outside the supplied research.",
     "Do not build stories from stock recommendations, buy/sell calls, target/stop-loss trading guides, or similar tip content.",
@@ -480,6 +482,7 @@ function buildSystemPrompt(
     "- uniqueness: a distinct event should not be buried inside a larger story",
     "summary: plain-text teaser (2–3 sentences) for list views.",
     "description: plain-text detailed account (what happened, actors, numbers, dates, impact). Several paragraphs; factual and source-bound.",
+    "Depth: content should be an in-depth article, roughly 400–800 words when the sources support it (shorter only when sources are thin). Include specific figures, named people/companies/agencies, direct quotes with attribution, background on why it happened, market or economic reaction, and what comes next — all from the supplied sources.",
     "content: the full story as valid, readable Markdown (not plain text). Structure naturally when the evidence supports it, for example:",
     "## What happened",
     "(Clear explanation of the event.)",
@@ -504,8 +507,9 @@ function buildSystemPrompt(
   ].join("\n");
 }
 
+/** Room for in-depth (400–800 word) stories; too low a cap truncates the JSON. */
 function outputTokenBudget(articleCount: number): number {
-  return Math.min(16000, Math.max(4096, articleCount * 800));
+  return Math.min(24000, Math.max(6000, articleCount * 1200));
 }
 
 async function runSynthesizer(

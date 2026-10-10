@@ -55,13 +55,15 @@
  *    `NewsRequest.searchQuery`; append “Search queries planned.”
  *
  * 4. fetch-and-normalize-serp
- *    For each execution plan, parallel Serp: Google News, Google (`tbm: nws`),
- *    YouTube; merge payloads across tiers.
+ *    All in parallel: per tier plan Google News + Google (date range via `tbs`,
+ *    `withGoogleRecencyFilter`) + YouTube; plus `buildNewsTopicSearchPlans` short
+ *    topic queries (Google News + Google, 15s cap each, dropped when slow).
+ *    Payloads are interleaved round-robin so every query reaches the candidate list.
  *    If merged Google search has `ai_overview`, run
  *    `runGaiOverviewSearchGeneratorAgent`, fetch extra `searchGoogle` (news tab)
  *    per generated query (shared `num`, `gl`, `hl`, local `location` when set),
  *    and append into the search payload.
- *    Normalize → date window filter → drop trading-tip articles → apply
+ *    Normalize → request-day + previous-day window → drop trading-tip articles → apply
  *    selection-weight boost (1.3) for URLs found only on AI-overview follow-up.
  *    Append “Finding relevant stories.”
  *    Output: `{ articles, youtubeSerpPayload }` (≤10 video rows).
@@ -151,6 +153,8 @@ import {
   articleCandidateBudget,
   buildArticleSelectionPrompt,
   buildNewsSearchExecutionPlans,
+  buildNewsTopicSearchPlans,
+  withGoogleRecencyFilter,
   maxArticlesToScrape,
   pickSerpSharedGeoFromSearchParams,
   preferArticlesFromSources,
@@ -183,8 +187,9 @@ import {
   appendGoogleSearchSerpResults,
   excludeTradingRecommendationArticles,
   extractAiOverviewTextFromSerpPayload,
-  filterArticlesNearRequestDate,
+  filterArticlesInRequestWindow,
   followUpBoostedUrlKeys,
+  interleaveSerpPayloads,
   isTradingRecommendationArticle,
   mergeSerpPayloads,
   normalizeSerpArticles,
@@ -213,6 +218,24 @@ export const newsPipelineEventDataSchema = z
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;
 
 const PIPELINE_LOG_PREFIX = "[news-pipeline]";
+/** Topic queries are additive; drop a slow one rather than hold up the step. */
+const TOPIC_SERP_TIMEOUT_MS = 15_000;
+
+function resolveWithin<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
 const pipelineLog = createPipelineLogger(PIPELINE_LOG_PREFIX);
 
 const DEFAULT_NEWS_SYNTHESIZER_MODEL = "gpt-5.4-mini";
@@ -290,6 +313,7 @@ export const newsPipelineFunction = inngest.createFunction(
       const plans = await step.run("plan-search-queries", async () => {
         pipelineLog("plan-search-queries", "start");
         const executionPlans = buildNewsSearchExecutionPlans(config);
+        const topicPlans = buildNewsTopicSearchPlans(config);
         const primary = executionPlans[0]!;
         pipelineLog("plan-search-queries", "done", {
           pairCount: executionPlans.length,
@@ -300,6 +324,7 @@ export const newsPipelineFunction = inngest.createFunction(
         });
         return {
           executionPlans,
+          topicPlans,
           news: primary.news,
           search: primary.search,
         };
@@ -316,6 +341,10 @@ export const newsPipelineFunction = inngest.createFunction(
               tier: pair.tier,
               news: pair.news.query,
               search: pair.search.query,
+            })),
+            topicQueries: plans.topicPlans.map((plan) => ({
+              tier: plan.tier,
+              query: plan.query,
             })),
             ...(config.latitude != null && config.longitude != null
               ? {
@@ -347,35 +376,74 @@ export const newsPipelineFunction = inngest.createFunction(
       const serpBundle = await step.run(
         "fetch-and-normalize-serp",
         async () => {
-          pipelineLog("fetch-and-normalize-serp", "start");
-          let googleNewsPayload: unknown = {};
-          let googleSearchPayload: unknown = {};
-          let youtubePayload: unknown = {};
+          pipelineLog("fetch-and-normalize-serp", "start", {
+            tierPlans: plans.executionPlans.length,
+            topicPlans: plans.topicPlans.length,
+          });
 
           const serpNum = serpResultsPerEngine(config.storyCount);
+          const settledValue = <T,>(result: PromiseSettledResult<T>) =>
+            result.status === "fulfilled" ? result.value : null;
 
-          for (const plan of plans.executionPlans) {
-            const [newsPayload, searchPayload, ytPayload] = await Promise.all([
-              serpEngines.searchGoogleNews.fn({
-                ...plan.googleNewsParams,
-                num: serpNum,
+          // Tier plans (with AI overview + YouTube) and short topic queries all run
+          // in parallel; one failed/timed-out Serp call does not sink the run.
+          const [tierResults, topicResults] = await Promise.all([
+            Promise.all(
+              plans.executionPlans.map(async (plan) => {
+                const [newsPayload, searchPayload, ytPayload] =
+                  await Promise.allSettled([
+                    serpEngines.searchGoogleNews.fn({
+                      ...plan.googleNewsParams,
+                      num: serpNum,
+                    }),
+                    serpEngines.searchGoogle.fn({
+                      ...withGoogleRecencyFilter(
+                        plan.googleSearchParams,
+                        config.date,
+                      ),
+                      num: serpNum,
+                      trigger_ai_overview: true,
+                    }),
+                    serpEngines.searchYoutube.fn(plan.youtubeParams),
+                  ]);
+                return {
+                  news: settledValue(newsPayload),
+                  search: settledValue(searchPayload),
+                  youtube: settledValue(ytPayload),
+                };
               }),
-              serpEngines.searchGoogle.fn({
-                ...plan.googleSearchParams,
-                num: serpNum,
-                trigger_ai_overview: true,
+            ),
+            Promise.all(
+              plans.topicPlans.map(async (plan) => {
+                const [news, search] = await Promise.all([
+                  resolveWithin(
+                    serpEngines.searchGoogleNews.fn(plan.googleNewsParams),
+                    TOPIC_SERP_TIMEOUT_MS,
+                  ),
+                  resolveWithin(
+                    serpEngines.searchGoogle.fn({
+                      ...plan.googleSearchParams,
+                      num: serpNum,
+                    }),
+                    TOPIC_SERP_TIMEOUT_MS,
+                  ),
+                ]);
+                return { news, search };
               }),
-              serpEngines.searchYoutube.fn(plan.youtubeParams),
-            ]);
-            googleNewsPayload = mergeSerpPayloads(
-              googleNewsPayload,
-              newsPayload,
-            );
-            googleSearchPayload = mergeSerpPayloads(
-              googleSearchPayload,
-              searchPayload,
-            );
-            youtubePayload = mergeSerpPayloads(youtubePayload, ytPayload);
+            ),
+          ]);
+
+          const googleNewsPayload: unknown = interleaveSerpPayloads([
+            ...tierResults.map((row) => row.news),
+            ...topicResults.map((row) => row.news),
+          ]);
+          const googleSearchPayload: unknown = interleaveSerpPayloads([
+            ...tierResults.map((row) => row.search),
+            ...topicResults.map((row) => row.search),
+          ]);
+          let youtubePayload: unknown = {};
+          for (const row of tierResults) {
+            youtubePayload = mergeSerpPayloads(youtubePayload, row.youtube);
           }
 
           let mergedGoogleSearchPayload: unknown = googleSearchPayload;
@@ -448,16 +516,25 @@ export const newsPipelineFunction = inngest.createFunction(
             }
           }
 
-          const limitPerEngine = serpResultsPerEngine(config.storyCount);
+          // Budget scales with query count so later queries are not cut off.
+          const limitPerEngine = Math.min(
+            80,
+            serpNum *
+              (plans.executionPlans.length + plans.topicPlans.length),
+          );
           const articles = normalizeSerpArticles({
-            googleNewsPayload: slimSerpPayloadForNormalize(googleNewsPayload),
+            googleNewsPayload: slimSerpPayloadForNormalize(
+              googleNewsPayload,
+              limitPerEngine,
+            ),
             googleSearchPayload: slimSerpPayloadForNormalize(
               mergedGoogleSearchPayload,
+              limitPerEngine,
             ),
             limitPerEngine,
           });
 
-          const filtered = filterArticlesNearRequestDate(articles, config.date);
+          const filtered = filterArticlesInRequestWindow(articles, config.date);
           const eligible = excludeTradingRecommendationArticles(filtered);
           const boostedUrls = followUpBoostedUrlKeys(
             googleSearchPayload,

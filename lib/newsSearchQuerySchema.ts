@@ -12,6 +12,15 @@ export const newsSearchQuerySchema = z.object({
       }),
     )
     .optional(),
+  /** Focused topic queries run alongside the tier plans (news pipeline). */
+  topicQueries: z
+    .array(
+      z.object({
+        tier: z.enum(["local", "world"]),
+        query: z.string().min(1),
+      }),
+    )
+    .optional(),
   locationGeo: z
     .object({
       latitude: z.number(),
