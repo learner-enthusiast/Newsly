@@ -328,3 +328,38 @@ model SearchAutocompleteCache {
   @@index([expiresAt])
   @@map("search_autocomplete_cache")
 }
+
+/// Upstox BOD instruments — one row per instrument_key; derivative-only columns are nullable.
+model Instrument {
+  instrumentKey  String  @id @map("instrument_key")
+  segment        String
+  exchange       String
+  instrumentType String  @map("instrument_type")
+  tradingSymbol  String  @map("trading_symbol")
+  name           String
+  exchangeToken  String  @map("exchange_token")
+
+  isin         String?
+  shortName    String? @map("short_name")
+  securityType String? @map("security_type")
+
+  lotSize        Int?     @map("lot_size")
+  freezeQuantity Decimal? @map("freeze_quantity") @db.Decimal
+  tickSize       Decimal? @map("tick_size") @db.Decimal
+
+  expiry           DateTime? @db.Timestamptz(6)
+  strikePrice      Decimal?  @map("strike_price") @db.Decimal
+  weekly           Boolean?
+  minimumLot       Int?      @map("minimum_lot")
+  underlyingSymbol String?   @map("underlying_symbol")
+  underlyingKey    String?   @map("underlying_key")
+  underlyingType   String?   @map("underlying_type")
+
+  raw       Json     @db.JsonB
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([segment, instrumentType, tradingSymbol], map: "idx_instruments_symbol")
+  @@index([name], map: "idx_instruments_name")
+  @@index([shortName], map: "idx_instruments_short_name")
+  @@map("instruments")
+}
