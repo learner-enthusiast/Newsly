@@ -21,6 +21,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const QUICK_ACTION_MESSAGE_LIMIT = 20;
 const MESSAGE_CHARS = 800;
@@ -216,8 +217,10 @@ export function createQuickActionAgent(options: AIClientOptions = {}) {
 }
 
 /** Generate exactly five quick-action labels from recent chat messages. */
-export async function runQuickActionAgent(
+async function runQuickActionAgentUntraced(
   params: QuickActionAgentParams,
 ): Promise<QuickActionsOutput> {
   return runQuickActionAgentCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runQuickActionAgent = agent("chat.quickActions", runQuickActionAgentUntraced);

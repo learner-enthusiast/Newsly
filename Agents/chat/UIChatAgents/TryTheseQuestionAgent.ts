@@ -21,6 +21,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const TRY_THESE_QUESTIONS_COUNT = 5;
 const RECENT_MESSAGE_LIMIT = 20;
@@ -181,8 +182,10 @@ export function createTryTheseQuestionAgent(options: AIClientOptions = {}) {
 }
 
 /** Generate 5 suggested follow-up questions from recent chat messages. */
-export async function runTryTheseQuestionAgent(
+async function runTryTheseQuestionAgentUntraced(
   params: TryTheseQuestionParams,
 ): Promise<TryTheseQuestionsOutput & { model: string }> {
   return runTryTheseQuestions(params, aiClient.generate.bind(aiClient));
 }
+
+export const runTryTheseQuestionAgent = agent("chat.tryTheseQuestions", runTryTheseQuestionAgentUntraced);

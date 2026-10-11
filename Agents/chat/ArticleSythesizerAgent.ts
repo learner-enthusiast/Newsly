@@ -30,6 +30,7 @@ import {
 import { buildResearchPromptWithHistory } from "@/services/chat/researchPrompt";
 import { normalizedSerpHitSchema } from "@/services/chat/normalizeSerpResults";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const AI_OVERVIEW_FOLLOW_UP_ENGINE = "google_search_ai_overview_follow_up";
 
@@ -61,7 +62,7 @@ export type ArticleSynthesizerResult = SelectedResearchArticle[];
 /**
  * Pick the best Serp hits to scrape for chat research (Firecrawl downstream).
  */
-export async function runArticleSynthesizerAgent(
+async function runArticleSynthesizerAgentUntraced(
   params: ArticleSynthesizerParams,
 ): Promise<ArticleSynthesizerResult> {
   const { abortSignal, ...rawParams } = params;
@@ -97,3 +98,5 @@ export async function runArticleSynthesizerAgent(
 
   return selected.slice(0, parsed.maxArticles);
 }
+
+export const runArticleSynthesizerAgent = agent("chat.articleSynthesizer", runArticleSynthesizerAgentUntraced);

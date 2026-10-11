@@ -22,6 +22,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const MAX_VIDEOS_IN = 10;
 const MAX_SELECTED = 4;
@@ -319,8 +320,10 @@ export function createYoutubeVideoAgent(options: AIClientOptions = {}) {
 }
 
 /** Rank Serp YouTube results and return the best video IDs for transcript fetch (metadata only). */
-export async function runYoutubeVideoAgent(
+async function runYoutubeVideoAgentUntraced(
   params: YoutubeVideoAgentParams,
 ): Promise<YoutubeVideoSelection & { model: string }> {
   return runYoutubeVideoSelection(params, aiClient.generate.bind(aiClient));
 }
+
+export const runYoutubeVideoAgent = agent("news.youtubeVideo", runYoutubeVideoAgentUntraced);

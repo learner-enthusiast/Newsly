@@ -9,8 +9,11 @@ import "dotenv/config";
 import { parseArgs } from "node:util";
 import { neatlogsClient } from "@/clients/neatlogsClient";
 import { prisma } from "@/db";
-import { enqueueStockResearchPipeline } from "@/inngest/stockResearch/stockResearchPipeline";
-import { startRun } from "@/lib/observability";
+import {
+  enqueueStockResearchPipeline,
+  STOCK_RESEARCH_PROMPT_VERSIONS,
+} from "@/inngest/stockResearch/stockResearchPipeline";
+import { runWorkflow, WORKFLOWS } from "@/lib/observability";
 import { createStockResearch, getStockResearchById } from "@/repositories/stockResearch";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 
@@ -52,28 +55,34 @@ async function main() {
     status: "PENDING",
   });
 
-  const run = await startRun({
-    agentGroup: "stock-research",
-    source: "web",
-    endUserId: user.clerkId,
-    userId: user.id,
-    market: "IN",
-    assetType: "STOCK",
-    input: { stockResearchId: row.id, userPrompt: values.prompt, symbol: instrument.tradingSymbol },
-  });
-  await enqueueStockResearchPipeline({
-    userId: user.id,
-    stockResearchId: row.id,
-    userPrompt: values.prompt,
-    assetType: "STOCK",
-    instrument: toJsonSafeStepOutput(instrument) as Record<string, unknown>,
-    endUserId: user.clerkId,
-    run,
-  });
+  await neatlogsClient.ready();
+  const trace = await runWorkflow(
+    WORKFLOWS.stockResearch,
+    {
+      endUserId: user.clerkId,
+      userId: user.id,
+      source: "web",
+      market: "IN",
+      assetType: "STOCK",
+      promptVersions: STOCK_RESEARCH_PROMPT_VERSIONS,
+      input: { stockResearchId: row.id, userPrompt: values.prompt, symbol: instrument.tradingSymbol },
+    },
+    async (ref) => {
+      await enqueueStockResearchPipeline({
+        userId: user.id,
+        stockResearchId: row.id,
+        userPrompt: values.prompt,
+        assetType: "STOCK",
+        instrument: toJsonSafeStepOutput(instrument) as Record<string, unknown>,
+        trace: ref,
+      });
+      return ref;
+    },
+  );
   await neatlogsClient.flush();
 
-  const traceId = run.traceparent?.split("-")[1] ?? null;
-  console.log(JSON.stringify({ stockResearchId: row.id, runId: run.runId, traceId }));
+  const traceId = trace.carrier.traceparent?.split("-")[1] ?? null;
+  console.log(JSON.stringify({ stockResearchId: row.id, runId: trace.runId, traceId }));
 
   const deadline = Date.now() + Number(values["timeout-min"]) * 60_000;
   while (Date.now() < deadline) {

@@ -1,6 +1,7 @@
 import { Inngest, type ClientOptions, type InngestFunction } from "inngest";
 import { serve as serveInngest } from "inngest/next";
 import { z } from "zod";
+import { NeatlogsInngestMiddleware } from "@/lib/observability/inngestMiddleware";
 
 const inngestClientOptionsSchema = z.object({
   id: z.string().min(1).optional(),
@@ -19,6 +20,7 @@ export function createInngestClient(options: InngestClientOptions = {}) {
   });
 
   const client = new Inngest({
+    middleware: [NeatlogsInngestMiddleware],
     ...options,
     id: parsed.id ?? "my-app",
     eventKey: parsed.eventKey,

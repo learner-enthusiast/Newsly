@@ -46,6 +46,8 @@ import {
 import { saveChatResourceEmbedding } from "@/repositories/pgVectorFunctions";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import { z } from "zod";
+import { runWorkflow, WORKFLOWS } from "@/lib/observability";
+import { endUserForChatSession } from "@/lib/observability/endUser";
 
 export const RESEARCH_SOURCE_INDEX_EVENT =
   "research/source.index.requested" as const;
@@ -67,11 +69,24 @@ export function enqueueResearchSourceIndexing(
   data: ResearchSourceIndexEventData,
 ): void {
   const parsed = researchSourceIndexEventDataSchema.parse(data);
-  void inngest
-    .send({
-      name: RESEARCH_SOURCE_INDEX_EVENT,
-      data: parsed,
-    })
+  void endUserForChatSession(parsed.chatSessionId)
+    .then(({ endUserId, userId }) =>
+      runWorkflow(
+        WORKFLOWS.embeddings,
+        {
+          endUserId,
+          userId,
+          sessionId: parsed.chatSessionId,
+          source: "chat",
+          input: parsed,
+        },
+        (trace) =>
+          inngest.send({
+            name: RESEARCH_SOURCE_INDEX_EVENT,
+            data: { ...parsed, trace },
+          }),
+      ),
+    )
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       indexLog("enqueue", "failed", {

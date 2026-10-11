@@ -29,6 +29,7 @@ import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { synthesizedTranscriptFactSchema } from "@/Agents/news/YoutubeTranscriptSyntesizeAgent";
 import { isTradingRecommendationArticle } from "@/services/news/normalizeArticles";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const TRACKING_PARAMS = new Set(["fbclid", "gclid", "mc_cid", "mc_eid"]);
 /** Per-article text sent to the model; 4k cut most articles before the key details. */
@@ -691,15 +692,19 @@ export function createNewsSynthesizerAgent(options: AIClientOptions = {}) {
 }
 
 /** Same as `runNewsSynthesizerAgent`, plus per-pass counts for the pipeline funnel. */
-export async function runNewsSynthesizerAgentWithStats(
+async function runNewsSynthesizerAgentWithStatsUntraced(
   params: NewsSynthesizerParams,
 ): Promise<NewsSynthesizerResult> {
   return runSynthesizerWithStats(params, aiClient.generate.bind(aiClient));
 }
 
 /** Cluster researched articles into ranked NewsStory results for one news request. */
-export async function runNewsSynthesizerAgent(
+async function runNewsSynthesizerAgentUntraced(
   params: NewsSynthesizerParams,
 ): Promise<SynthesizedNewsStory[]> {
   return runSynthesizer(params, aiClient.generate.bind(aiClient));
 }
+
+export const runNewsSynthesizerAgentWithStats = agent("news.synthesizer", runNewsSynthesizerAgentWithStatsUntraced);
+
+export const runNewsSynthesizerAgent = agent("news.synthesizer", runNewsSynthesizerAgentUntraced);

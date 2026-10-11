@@ -40,6 +40,7 @@ export async function POST(request: Request) {
   try {
     const result = await startNewsStoryChat({
       userId: user.id,
+      endUserId: user.clerkId,
       newsStoryId: parsed.data.newsStoryId,
       researchRequest: parsed.data.researchRequest,
     });

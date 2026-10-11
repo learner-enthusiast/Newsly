@@ -3,7 +3,11 @@ import OpenAI from "openai";
 import { neatlogsClient } from "@/clients/neatlogsClient";
 import { zodTextFormat } from "openai/helpers/zod";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
-import { priceLlmUsage, recordLlmUsage } from "@/lib/observability";
+import { priceLlmUsage } from "@/lib/observability/llmUsage";
+import {
+  embedding as embeddingSpan,
+  recordLlmUsage,
+} from "@/lib/observability/neatlogs";
 import { z } from "zod";
 
 const extraContextSchema = z.unknown().optional();
@@ -549,18 +553,12 @@ export function createAIClient(options: AIClientOptions = {}) {
       }
 
       const embeddingModel = resolveOpenAiEmbeddingModel(options);
-      const response = await neatlogsClient.trace(
-        {
-          name: "openai.embeddings.create",
-          kind: "EMBEDDING",
-          model: embeddingModel,
-        },
-        async () =>
-          openai.embeddings.create({
-            model: embeddingModel,
-            input: trimmed,
-          }),
-      );
+      const response = await embeddingSpan(
+        "openai.embeddings.create",
+        embeddingModel,
+        (input: string) =>
+          openai.embeddings.create({ model: embeddingModel, input }),
+      )(trimmed);
 
       const embedding = response.data[0]?.embedding;
       if (!embedding?.length) {

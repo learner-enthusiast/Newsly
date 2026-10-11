@@ -15,6 +15,7 @@ import sourcesConfig from "@/config/newsSources.json";
 import { canonicalResearchUrl } from "@/services/chat/normalizeSerpResults";
 import type { NormalizedArticleLink } from "@/services/news/normalizeArticles";
 import { z } from "zod";
+import { tool } from "@/lib/observability";
 
 export const FEED_FETCH_TIMEOUT_MS = 5_000;
 const FEED_CACHE_TTL_MS = 5 * 60_000;
@@ -63,7 +64,9 @@ export function listNewsFeedSources(region: NewsSourceRegion): NewsFeedSource[] 
 
 const feedCache = new Map<string, { at: number; body: string }>();
 
-async function fetchFeedText(url: string, timeoutMs: number): Promise<string> {
+const fetchFeedText = tool("feed.fetch", fetchFeedTextUntraced);
+
+async function fetchFeedTextUntraced(url: string, timeoutMs: number): Promise<string> {
   const cached = feedCache.get(url);
   if (cached && Date.now() - cached.at < FEED_CACHE_TTL_MS) {
     return cached.body;

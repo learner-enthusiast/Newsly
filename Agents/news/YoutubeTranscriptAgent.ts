@@ -24,6 +24,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -285,8 +286,10 @@ export function createYoutubeTranscriptAgent(options: AIClientOptions = {}) {
 }
 
 /** Extract structured news facts from a YouTube transcript (transcript-only; no tools). */
-export async function runYoutubeTranscriptAgent(
+async function runYoutubeTranscriptAgentUntraced(
   params: YoutubeTranscriptAgentParams,
 ): Promise<YoutubeTranscriptAnalysis & { model: string }> {
   return runYoutubeTranscriptAnalysis(params, aiClient.generate.bind(aiClient));
 }
+
+export const runYoutubeTranscriptAgent = agent("news.youtubeTranscript", runYoutubeTranscriptAgentUntraced);

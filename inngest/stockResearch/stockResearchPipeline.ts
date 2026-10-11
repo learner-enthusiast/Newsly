@@ -65,15 +65,16 @@ import {
 } from "@/services/stockResearch/researchContext";
 import { scrapeUrlsWithFirecrawlRaw } from "@/services/firecrawl/scrapeUrls";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
-import {
-  finishRun,
-  runContextSchema,
-  startRun,
-  withAgentSpan,
-  withStepSpan,
-  type RunContext,
-} from "@/lib/observability";
+import { workflowRefSchema } from "@/lib/observability";
 import { z } from "zod";
+
+/** Recorded on each run's trace root for before/after comparisons. */
+export const STOCK_RESEARCH_PROMPT_VERSIONS = {
+  "stockResearch.promptEnhancer": PROMPT_ENHANCER_PROMPT_VERSION,
+  "stockResearch.toolDeterminer": TOOL_DETERMINER_PROMPT_VERSION,
+  "stockResearch.linkSelector": LINK_SELECTOR_PROMPT_VERSION,
+  "stockResearch.reportSynthesizer": REPORT_SYNTHESIZER_PROMPT_VERSION,
+};
 
 export const STOCK_RESEARCH_PIPELINE_EVENT =
   "stock/research.requested" as const;
@@ -85,10 +86,8 @@ export const stockResearchPipelineEventDataSchema = z.object({
   assetType: z.enum(["STOCK", "ETF", "MUTUAL_FUND"]).default("STOCK"),
   /** Full BOD or Prisma instrument row. */
   instrument: z.record(z.string(), z.unknown()),
-  /** Clerk user id, for tracing (`endUserId`). */
-  endUserId: z.string().min(1).optional(),
-  /** Run opened by the API route; older events start one in `start-run`. */
-  run: runContextSchema.optional(),
+  /** Neatlogs run opened by the API route; each step joins it (see inngestMiddleware). */
+  trace: workflowRefSchema.optional(),
 });
 
 export type StockResearchPipelineEventData = z.infer<
@@ -149,27 +148,11 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         );
         await markStockResearchFailed(parsed.data.stockResearchId, message);
       });
-      if (parsed.data.run) {
-        await finishRun(parsed.data.run, { status: "error", error: message });
-      }
     },
   },
   async ({ event, step }) => {
     const input = stockResearchPipelineEventDataSchema.parse(event.data);
     const instrument = normalizeStockResearchInstrument(input.instrument);
-    const run: RunContext =
-      input.run ??
-      (await step.run("start-run", () =>
-        startRun({
-          agentGroup: "stock-research",
-          source: "web",
-          endUserId: input.endUserId ?? input.userId,
-          userId: input.userId,
-          market: "IN",
-          assetType: input.assetType,
-          input: { userPrompt: input.userPrompt, symbol: instrument.tradingSymbol },
-        }),
-      ));
 
     await step.run("load-stock-research", async () => {
       pipelineLog("load-stock-research", "start", {
@@ -196,22 +179,12 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         input.stockResearchId,
         "Understanding your question.",
       );
-      const enhancerInput = {
+      const result = await runPromptEnhancerAgent({
         userPrompt: input.userPrompt,
         instrument,
         assetType: input.assetType,
-      };
-      const result = await withAgentSpan(
-        "stockResearch.promptEnhancer",
-        run,
-        enhancerInput,
-        () =>
-          runPromptEnhancerAgent({
-            ...enhancerInput,
-            abortSignal: AbortSignal.timeout(120_000),
-          }),
-        { promptVersion: PROMPT_ENHANCER_PROMPT_VERSION },
-      );
+        abortSignal: AbortSignal.timeout(120_000),
+      });
       await patchStockResearch(input.stockResearchId, {
         query: result.enhancedPrompt,
       });
@@ -227,17 +200,10 @@ export const stockResearchPipelineFunction = inngest.createFunction(
       // ETFs / mutual funds use a fixed plan (company-fundamentals tools do not apply).
       const result =
         input.assetType === "STOCK"
-          ? await withAgentSpan(
-              "stockResearch.toolDeterminer",
-              run,
-              { userPrompt: enhanced.enhancedPrompt, instrument },
-              () =>
-                runToolDeterminerAgent({
-                  userPrompt: enhanced.enhancedPrompt,
-                  instrument: input.instrument,
-                }),
-              { promptVersion: TOOL_DETERMINER_PROMPT_VERSION },
-            )
+          ? await runToolDeterminerAgent({
+              userPrompt: enhanced.enhancedPrompt,
+              instrument: input.instrument,
+            })
           : buildFundToolPlan(input.assetType, instrument, enhanced.enhancedPrompt);
       return toJsonSafeStepOutput(result);
     })) as ToolDeterminerResult;
@@ -280,15 +246,9 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         "Fetching Upstox market data.",
       );
       pipelineLog("execute-upstox-tools", "start");
-      const results = await withStepSpan(
-        "execute-upstox-tools",
-        run,
-        { upstox: determiner.upstox },
-        () =>
-          executeStockResearchUpstoxTools(
-            determiner.upstox,
-            determiner.instrument,
-          ),
+      const results = await executeStockResearchUpstoxTools(
+        determiner.upstox,
+        determiner.instrument,
       );
       return toJsonSafeStepOutput(results);
     })) as StockResearchToolExecutionResult[];
@@ -299,17 +259,11 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         "Searching web and news sources.",
       );
       pipelineLog("execute-serp-tools", "start");
-      const results = await withStepSpan(
-        "execute-serp-tools",
-        run,
-        { serp: determiner.serp },
-        () =>
-          executeStockResearchSerpTools(
-            determiner.serp,
-            determiner.instrument,
-            enhanced.enhancedPrompt,
-            input.assetType,
-          ),
+      const results = await executeStockResearchSerpTools(
+        determiner.serp,
+        determiner.instrument,
+        enhanced.enhancedPrompt,
+        input.assetType,
       );
       return toJsonSafeStepOutput(results);
     })) as StockResearchToolExecutionResult[];
@@ -360,25 +314,15 @@ export const stockResearchPipelineFunction = inngest.createFunction(
       pipelineLog("select-links-to-scrape", "start", {
         candidateCount: links.length,
       });
-      const selectorInput = {
+      const selected = await runLinkSelectorAgent({
         userPrompt: input.userPrompt,
         enhancedPrompt: enhanced.enhancedPrompt,
         instrument: determiner.instrument,
         links,
         serpSummaries,
         assetType: input.assetType,
-      };
-      const selected = await withAgentSpan(
-        "stockResearch.linkSelector",
-        run,
-        selectorInput,
-        () =>
-          runLinkSelectorAgent({
-            ...selectorInput,
-            abortSignal: AbortSignal.timeout(180_000),
-          }),
-        { promptVersion: LINK_SELECTOR_PROMPT_VERSION },
-      );
+        abortSignal: AbortSignal.timeout(180_000),
+      });
       pipelineLog("select-links-to-scrape", "done", {
         selectedCount: selected.length,
       });
@@ -393,9 +337,8 @@ export const stockResearchPipelineFunction = inngest.createFunction(
       pipelineLog("scrape-selected-links", "start", {
         urlCount: selectedLinks.length,
       });
-      const urls = selectedLinks.map((link) => link.url);
-      const bundles = await withStepSpan("scrape-selected-links", run, { urls }, () =>
-        scrapeUrlsWithFirecrawlRaw(urls),
+      const bundles = await scrapeUrlsWithFirecrawlRaw(
+        selectedLinks.map((link) => link.url),
       );
 
       const rows = await Promise.all(
@@ -480,7 +423,7 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         webPageCount: webPages.length,
         serpSummaryCount: serpSummaries.length,
       });
-      const synthesizerInput = {
+      const result = await runReportSynthesizerAgent({
         userPrompt: input.userPrompt,
         enhancedPrompt: enhanced.enhancedPrompt,
         focusAreas: enhanced.focusAreas,
@@ -490,18 +433,8 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         serpSummaries,
         unavailableTools,
         assetType: input.assetType,
-      };
-      const result = await withAgentSpan(
-        "stockResearch.reportSynthesizer",
-        run,
-        synthesizerInput,
-        () =>
-          runReportSynthesizerAgent({
-            ...synthesizerInput,
-            abortSignal: AbortSignal.timeout(600_000),
-          }),
-        { promptVersion: REPORT_SYNTHESIZER_PROMPT_VERSION },
-      );
+        abortSignal: AbortSignal.timeout(600_000),
+      });
       pipelineLog("synthesize-report", "done", {
         model: result.model,
         markdownLength: result.markdown.length,
@@ -530,16 +463,6 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         reportMarkdown: report.markdown,
       });
       pipelineLog("mark-stock-research-completed", "done", summary);
-      await finishRun(run, {
-        status: "ok",
-        output: {
-          stockResearchId: input.stockResearchId,
-          summary,
-          scraped,
-          synthesizerModel: report.model,
-          reportMarkdown: report.markdown,
-        },
-      });
     });
 
     return {

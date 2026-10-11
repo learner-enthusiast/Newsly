@@ -38,6 +38,7 @@ import {
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import { upstoxApis } from "@/services/upstox/index";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const MAX_ENTITIES = 3;
 const MAX_SEARCH_TERMS = 2;
@@ -408,7 +409,7 @@ export function createInstrumentDeterminerAgent(options: AIClientOptions = {}) {
   };
 }
 
-export async function runInstrumentDeterminerAgent(
+async function runInstrumentDeterminerAgentUntraced(
   params: InstrumentDeterminerAgentParams,
 ): Promise<InstrumentDeterminerResult> {
   return await runInstrumentDeterminerCore(
@@ -416,3 +417,5 @@ export async function runInstrumentDeterminerAgent(
     aiClient.generate.bind(aiClient),
   );
 }
+
+export const runInstrumentDeterminerAgent = agent("chat.instrumentDeterminer", runInstrumentDeterminerAgentUntraced);

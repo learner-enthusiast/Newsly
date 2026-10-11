@@ -21,6 +21,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const researchSourceDescriptionParamsSchema = z.object({
   title: z.string().min(1),
@@ -111,8 +112,10 @@ export function createResearchSourceDescriptionAgent(
   };
 }
 
-export async function runResearchSourceDescriptionAgent(
+async function runResearchSourceDescriptionAgentUntraced(
   params: ResearchSourceDescriptionParams,
 ): Promise<string> {
   return runResearchSourceDescriptionCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runResearchSourceDescriptionAgent = agent("chat.researchSourceDescription", runResearchSourceDescriptionAgentUntraced);

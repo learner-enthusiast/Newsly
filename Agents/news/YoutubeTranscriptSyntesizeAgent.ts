@@ -27,6 +27,7 @@ import {
   type YoutubeTranscriptAnalysis,
 } from "@/Agents/news/YoutubeTranscriptAgent";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const youtubeTranscriptAnalysisInputSchema = z.object({
   videoId: z.string().min(1),
@@ -216,7 +217,7 @@ export function createYoutubeTranscriptSynthesizeAgent(
     runCore(params, client.generate.bind(client));
 }
 
-export async function runYoutubeTranscriptSynthesizeAgent(
+async function runYoutubeTranscriptSynthesizeAgentUntraced(
   params: YoutubeTranscriptSynthesizeParams,
 ): Promise<YoutubeTranscriptSynthesis & { model: string }> {
   return runCore(params, aiClient.generate.bind(aiClient));
@@ -227,3 +228,5 @@ export type YoutubeTranscriptAnalysisBundle = {
   title: string | null;
   analysis: YoutubeTranscriptAnalysis;
 };
+
+export const runYoutubeTranscriptSynthesizeAgent = agent("news.youtubeTranscriptSynthesize", runYoutubeTranscriptSynthesizeAgentUntraced);

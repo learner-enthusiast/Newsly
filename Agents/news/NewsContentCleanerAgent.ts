@@ -23,6 +23,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const isoDateSchema = z
   .string()
@@ -181,8 +182,10 @@ export function createNewsContentCleanerAgent(options: AIClientOptions = {}) {
 }
 
 /** Clean one scraped article body for the news synthesizer. */
-export async function runNewsContentCleanerAgent(
+async function runNewsContentCleanerAgentUntraced(
   params: NewsContentCleanerParams,
 ): Promise<NewsContentCleanerOutput & { model: string }> {
   return runContentCleaner(params, aiClient.generate.bind(aiClient));
 }
+
+export const runNewsContentCleanerAgent = agent("news.contentCleaner", runNewsContentCleanerAgentUntraced);

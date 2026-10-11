@@ -31,6 +31,7 @@ import {
 } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const CHAT_HISTORY_MAX_MESSAGES = 10;
 
@@ -188,7 +189,7 @@ export function createChatModelAgent(options: AIClientOptions = {}) {
 }
 
 /** Generate the final Markdown assistant reply for the current turn. */
-export async function runChatModelAgent(
+async function runChatModelAgentUntraced(
   params: ChatModelParams,
 ): Promise<string> {
   return runChatModelCore(params, aiClient.generate.bind(aiClient));
@@ -204,3 +205,5 @@ export function sliceChatHistoryForModel(
   }
   return messages.slice(-max);
 }
+
+export const runChatModelAgent = agent("chat.chatModel", runChatModelAgentUntraced);

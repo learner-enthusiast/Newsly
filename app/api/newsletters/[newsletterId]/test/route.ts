@@ -11,7 +11,7 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { newsletterId } = await context.params;
-  const ok = await sendNewsletterTest(user.id, newsletterId);
+  const ok = await sendNewsletterTest(user.id, newsletterId, user.clerkId);
   if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

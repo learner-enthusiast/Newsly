@@ -22,6 +22,7 @@ import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import type { ResearchAssetType } from "@/services/stockResearch/stockResearchTypes";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const DEFAULT_MAX_SCRAPE_LINKS = 8;
 
@@ -148,8 +149,10 @@ export function createLinkSelectorAgent(options: AIClientOptions = {}) {
   };
 }
 
-export async function runLinkSelectorAgent(
+async function runLinkSelectorAgentUntraced(
   params: LinkSelectorAgentParams,
 ): Promise<SelectedResearchLink[]> {
   return await runLinkSelectorCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runLinkSelectorAgent = agent("stockResearch.linkSelector", runLinkSelectorAgentUntraced);

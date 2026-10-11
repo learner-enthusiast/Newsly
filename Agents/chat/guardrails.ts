@@ -37,6 +37,7 @@ import {
 } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const MAX_PROMPT_CHARS = 8_000;
 const MIN_PROMPT_CHARS = 2;
@@ -641,7 +642,7 @@ export function createStockResearchGuardrails(options: AIClientOptions = {}) {
 }
 
 /** Run guardrails with the shared app `aiClient`. */
-export async function runStockResearchGuardrails(
+async function runStockResearchGuardrailsUntraced(
   params: RunStockResearchGuardrailsParams,
 ): Promise<GuardrailCheckResult> {
   return runGuardrailsWithGenerate(params, aiClient.generate.bind(aiClient));
@@ -654,3 +655,5 @@ export function runStockResearchGuardrailsWithGenerate(
 ): Promise<GuardrailCheckResult> {
   return runGuardrailsWithGenerate(params, generate);
 }
+
+export const runStockResearchGuardrails = agent("chat.guardrails", runStockResearchGuardrailsUntraced);

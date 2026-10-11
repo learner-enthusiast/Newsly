@@ -27,6 +27,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 /** Default user-facing research intent when the client does not override it. */
 export const DEFAULT_NEWS_RESEARCH_REQUEST =
@@ -238,8 +239,10 @@ export function createNewsNewChatAgent(options: AIClientOptions = {}) {
 }
 
 /** Build a Determiner-ready research prompt from a NewsStory and its sources. */
-export async function runNewsNewChatAgent(
+async function runNewsNewChatAgentUntraced(
   params: NewsNewChatParams,
 ): Promise<NewsNewChatResult> {
   return runNewsNewChatCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runNewsNewChatAgent = agent("chat.newsNewChat", runNewsNewChatAgentUntraced);

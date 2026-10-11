@@ -19,6 +19,7 @@ import { RESEARCH_ASSET_PROFILES } from "@/Agents/stockResearch/assetProfiles";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import type { ResearchAssetType } from "@/services/stockResearch/stockResearchTypes";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const DEFAULT_STOCK_RESEARCH_SYNTHESIZER_MODEL = "gpt-5.4-mini";
 
@@ -132,8 +133,10 @@ export function createReportSynthesizerAgent(options: AIClientOptions = {}) {
   };
 }
 
-export async function runReportSynthesizerAgent(
+async function runReportSynthesizerAgentUntraced(
   params: ReportSynthesizerAgentParams,
 ): Promise<ReportSynthesizerResult> {
   return await runReportSynthesizerCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runReportSynthesizerAgent = agent("stockResearch.reportSynthesizer", runReportSynthesizerAgentUntraced);

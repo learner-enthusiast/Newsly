@@ -28,6 +28,7 @@ import {
 import { listChatSessionsForUser } from "@/services/chat/chatSessionCrud";
 import { isChatAssistantProgressPlaceholder } from "@/services/chat/chatAssistantProgress";
 import { z } from "zod";
+import { runWorkflow, WORKFLOWS } from "@/lib/observability";
 
 export const newsStoryChatBodySchema = z.object({
   newsStoryId: z.uuid(),
@@ -165,6 +166,8 @@ async function resolveStorySourceIds(newsStoryId: string): Promise<string[]> {
 
 export async function startNewsStoryChat(input: {
   userId: string;
+  /** Clerk user id, the trace's end user. */
+  endUserId: string;
   newsStoryId: string;
   researchRequest?: string;
 }) {
@@ -201,14 +204,26 @@ export async function startNewsStoryChat(input: {
     content: researchRequest,
   });
 
-  await inngest.send({
-    name: CHAT_PIPELINE_EVENT,
-    data: {
+  await runWorkflow(
+    WORKFLOWS.chat,
+    {
+      endUserId: input.endUserId,
       userId: input.userId,
-      chatSessionId: chatSession.id,
-      userMessageId: userMessage.id,
+      sessionId: chatSession.id,
+      source: "chat",
+      input: { chatSessionId: chatSession.id, newsStoryId: story.id, researchRequest },
     },
-  });
+    (trace) =>
+      inngest.send({
+        name: CHAT_PIPELINE_EVENT,
+        data: {
+          userId: input.userId,
+          chatSessionId: chatSession.id,
+          userMessageId: userMessage.id,
+          trace,
+        },
+      }),
+  );
 
   return {
     chatSessionId: chatSession.id,

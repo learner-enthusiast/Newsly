@@ -42,6 +42,7 @@ import {
 import { findUserNewsRequest } from "@/repositories/user";
 import { z } from "zod";
 import { resolveCoordsFromNewsMetroLocation } from "@/services/news/metroLocation";
+import { runWorkflow, WORKFLOWS, type WorkflowRef } from "@/lib/observability";
 
 export const requestNewsBodySchema = newsGenerationRequestSchema;
 
@@ -216,12 +217,31 @@ async function loadStoriesIfReady(
 
 async function triggerNewsPipeline(params: {
   userId: string;
+  /** Clerk user id, the trace's end user. */
+  endUserId: string;
   newsRequestId: string;
   config: NewsGenerationConfig;
 }) {
-  await inngest.send({
+  await runWorkflow(
+    WORKFLOWS.news,
+    {
+      endUserId: params.endUserId,
+      userId: params.userId,
+      source: "web",
+      input: { newsRequestId: params.newsRequestId, config: params.config },
+    },
+    (trace) => sendNewsPipelineEvent(params, trace),
+  );
+}
+
+function sendNewsPipelineEvent(
+  params: { userId: string; newsRequestId: string; config: NewsGenerationConfig },
+  trace: WorkflowRef,
+) {
+  return inngest.send({
     name: NEWS_PIPELINE_EVENT,
     data: {
+      trace,
       userId: params.userId,
       newsRequestId: params.newsRequestId,
       date: params.config.date,
@@ -278,7 +298,11 @@ function newsRequestCreateFields(config: NewsGenerationConfig) {
 }
 
 /** Create or reuse a news request; trigger pipeline when new or retrying failed. */
-export async function requestNews(userId: string, body: RequestNewsBody) {
+export async function requestNews(
+  userId: string,
+  body: RequestNewsBody,
+  endUserId: string,
+) {
   let input = body;
   const needsLocation = body.scope === "local" || body.scope === "both";
   if (
@@ -328,6 +352,7 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
       );
       await triggerNewsPipeline({
         userId,
+        endUserId,
         newsRequestId: existing.id,
         config,
       });
@@ -360,6 +385,7 @@ export async function requestNews(userId: string, body: RequestNewsBody) {
 
   await triggerNewsPipeline({
     userId,
+    endUserId,
     newsRequestId: newsRequest.id,
     config,
   });
@@ -620,6 +646,7 @@ const RERUN_INITIAL_LOG = "Refreshing your briefing.";
 export async function startNewsRequestRerun(
   userId: string,
   newsRequestId: string,
+  endUserId: string,
 ) {
   const newsRequest = await getNewsRequestByIdForUser(newsRequestId, userId);
   if (!newsRequest) {
@@ -637,7 +664,16 @@ export async function startNewsRequestRerun(
     loadingLogs: [RERUN_INITIAL_LOG],
   });
 
-  await enqueueNewsRerunPipeline(newsRequest.id);
+  await runWorkflow(
+    WORKFLOWS.newsRerun,
+    {
+      endUserId,
+      userId,
+      source: "web",
+      input: { newsRequestId: newsRequest.id },
+    },
+    (trace) => enqueueNewsRerunPipeline(newsRequest.id, trace),
+  );
 
   const updated = await getNewsRequestByIdForUser(newsRequestId, userId);
   if (!updated) {
@@ -658,6 +694,7 @@ export async function startNewsRequestRerun(
 export async function retryFailedNewsRequest(
   userId: string,
   newsRequestId: string,
+  endUserId: string,
 ) {
   const newsRequest = await getNewsRequestByIdForUser(newsRequestId, userId);
   if (!newsRequest || newsRequest.status !== "failed") {
@@ -676,6 +713,7 @@ export async function retryFailedNewsRequest(
 
   await triggerNewsPipeline({
     userId,
+    endUserId,
     newsRequestId: newsRequest.id,
     config,
   });

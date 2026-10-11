@@ -26,6 +26,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const TRACKING_PARAMS = new Set([
   "fbclid",
@@ -368,8 +369,10 @@ export function createResearchArticleSelectorAgent(options: AIClientOptions = {}
 }
 
 /** Dedupe URLs, drop off-prompt links, and keep the top percent (default 50) to scrape. */
-export async function runResearchArticleSelectorAgent(
+async function runResearchArticleSelectorAgentUntraced(
   params: ResearchArticleSelectorParams,
 ): Promise<SelectedResearchArticle[]> {
   return runSelector(params, aiClient.generate.bind(aiClient));
 }
+
+export const runResearchArticleSelectorAgent = agent("news.articleSelector", runResearchArticleSelectorAgentUntraced);

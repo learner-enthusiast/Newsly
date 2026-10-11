@@ -21,6 +21,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const isoDateSchema = z
   .string()
@@ -153,8 +154,10 @@ export function createGaiOverviewSearchGeneratorAgent(
 }
 
 /** Generate 3–4 follow-up Google queries from AI Overview text. */
-export async function runGaiOverviewSearchGeneratorAgent(
+async function runGaiOverviewSearchGeneratorAgentUntraced(
   params: GaiOverviewSearchGeneratorParams,
 ): Promise<GaiOverviewSearchGeneratorOutput & { model: string }> {
   return runGaiOverviewSearchGenerator(params, aiClient.generate.bind(aiClient));
 }
+
+export const runGaiOverviewSearchGeneratorAgent = agent("news.gaiOverviewSearchGenerator", runGaiOverviewSearchGeneratorAgentUntraced);

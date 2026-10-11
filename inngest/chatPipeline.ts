@@ -201,6 +201,7 @@ import {
 import { CHAT_STORY_REQUEST_PENDING_CONTENT } from "@/services/chat/chatStoryRequestMessage";
 import { NonRetriableError } from "inngest";
 import { z } from "zod";
+import { traceField } from "@/lib/observability";
 
 export const MESSAGE_CHAT_PIPELINE_EVENT =
   "chat/message.research.requested" as const;
@@ -966,6 +967,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
         await step.sendEvent("trigger-chat-story-pipeline", {
           name: CHAT_STORY_PIPELINE_EVENT,
           data: {
+            ...traceField(event),
             storyId: storyShell.storyId,
             chatSessionId: input.chatSessionId,
             userId: chatContext.session.userId,
@@ -1132,6 +1134,7 @@ export const messageChatPipelineFunction = inngest.createFunction(
       await step.sendEvent("enqueue-potential-story-topics", {
         name: CHAT_POTENTIAL_STORY_TOPICS_EVENT,
         data: {
+          ...traceField(event),
           chatSessionId: input.chatSessionId,
           chatMessageId: input.chatMessageId,
           messages: buildRecentMessagesForPotentialStoryTopicAgent({

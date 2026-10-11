@@ -25,6 +25,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const RECENT_MESSAGE_LIMIT = 10;
 const RECENT_MESSAGE_CHARS = 500;
@@ -176,8 +177,10 @@ export function createQueryEnhancerAgent(options: AIClientOptions = {}) {
 }
 
 /** Return a grammar-corrected, clearer version of the user's query (plain text). */
-export async function runQueryEnhancerAgent(
+async function runQueryEnhancerAgentUntraced(
   params: QueryEnhancerParams,
 ): Promise<string> {
   return runQueryEnhancerCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runQueryEnhancerAgent = agent("chat.queryEnhancer", runQueryEnhancerAgentUntraced);

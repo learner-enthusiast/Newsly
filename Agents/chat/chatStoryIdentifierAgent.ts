@@ -22,6 +22,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const POTENTIAL_STORY_TOPIC_MESSAGE_LIMIT = 10;
 const MESSAGE_CONTENT_MAX_CHARS = 2_000;
@@ -288,7 +289,7 @@ export function createPotentialStoryTopicAgent(options: AIClientOptions = {}) {
   };
 }
 
-export async function runPotentialStoryTopicAgent(
+async function runPotentialStoryTopicAgentUntraced(
   params: PotentialStoryTopicAgentParams,
 ): Promise<PotentialStoryTopicAgentOutput> {
   return runPotentialStoryTopicAgentCore(
@@ -296,3 +297,5 @@ export async function runPotentialStoryTopicAgent(
     aiClient.generate.bind(aiClient),
   );
 }
+
+export const runPotentialStoryTopicAgent = agent("chat.potentialStoryTopics", runPotentialStoryTopicAgentUntraced);

@@ -25,6 +25,7 @@ import { serpToolNameSchema } from "@/Agents/chat/smallDeterminerAgent";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import type { StoryResearchGapResult } from "@/services/chat/chatStoryPipelineTypes";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const serpToolInputModelSchema = z.object({
   q: z.string().nullable(),
@@ -159,8 +160,10 @@ export function createChatStoryResearchGapAgent(options: AIClientOptions = {}) {
     runCore(params, client.generate.bind(client));
 }
 
-export async function runChatStoryResearchGapAgent(
+async function runChatStoryResearchGapAgentUntraced(
   params: ChatStoryResearchGapParams,
 ): Promise<StoryResearchGapResult> {
   return runCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runChatStoryResearchGapAgent = agent("chat.storyResearchGap", runChatStoryResearchGapAgentUntraced);

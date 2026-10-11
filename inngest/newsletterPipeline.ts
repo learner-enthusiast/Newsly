@@ -31,6 +31,13 @@ import { resolveSerpHl } from "@/services/news/newsGenerationRequest";
 import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
 import { DEFAULT_SERP_LOCATION_RADIUS_METERS } from "@/lib/serpLocationGeo";
 import { z } from "zod";
+import {
+  runWorkflow,
+  startWorkflow,
+  SYSTEM_END_USER_ID,
+  traceField,
+  WORKFLOWS,
+} from "@/lib/observability";
 
 export const NEWSLETTER_RUN_EVENT = "newsletter/run" as const;
 export const NEWSLETTER_SCHEDULER_CRON = "*/5 * * * *";
@@ -157,6 +164,7 @@ export const newsletterEditionBuildFunction = inngest.createFunction(
     await step.invoke("run-pipeline", {
       function: newsPipelineFunction,
       data: {
+        ...traceField(event),
         userId: systemUserId,
         newsRequestId: editionNewsRequestId,
         date: input.date,
@@ -206,7 +214,19 @@ export const newsletterSchedulerFunction = inngest.createFunction(
   },
   async ({ step }) => {
     const due = await step.run("load-due", () => listDueNewsletters(new Date()));
-    for (const row of due) {
+    // One Neatlogs run per delivery, opened inside a step so replays reuse it.
+    const traces = await step.run("open-run-traces", () =>
+      Promise.all(
+        due.map((row) =>
+          startWorkflow(WORKFLOWS.newsletter, {
+            endUserId: SYSTEM_END_USER_ID,
+            source: "cron",
+            input: { newsletterId: row.id, nextRunAt: row.nextRunAt },
+          }),
+        ),
+      ),
+    );
+    for (const [index, row] of due.entries()) {
       if (!row.nextRunAt) {
         continue;
       }
@@ -216,6 +236,7 @@ export const newsletterSchedulerFunction = inngest.createFunction(
         data: {
           newsletterId: row.id,
           scheduledFor: scheduledIso,
+          trace: traces[index],
         },
         id: `newsletter-run-${row.id}-${scheduledIso}`,
       });
@@ -287,6 +308,7 @@ export const newsletterRunFunction = inngest.createFunction(
     const edition = await step.invoke("ensure-edition", {
       function: newsletterEditionBuildFunction,
       data: {
+        ...traceField(event),
         fingerprint: fp,
         periodKey: window.periodKey,
         date: window.date,
@@ -380,15 +402,25 @@ export const newsletterRunFunction = inngest.createFunction(
   },
 );
 
-export async function enqueueNewsletterTestRun(newsletterId: string) {
+/** `endUserId`: Clerk id of the user who asked for the test send. */
+export async function enqueueNewsletterTestRun(
+  newsletterId: string,
+  endUserId: string,
+) {
   const now = new Date();
-  await inngest.send({
-    name: NEWSLETTER_RUN_EVENT,
-    data: {
-      newsletterId,
-      scheduledFor: now.toISOString(),
-      testRun: true,
-    },
-    id: `newsletter-test-${newsletterId}-${now.toISOString()}`,
-  });
+  await runWorkflow(
+    WORKFLOWS.newsletter,
+    { endUserId, source: "newsletter", input: { newsletterId, testRun: true } },
+    (trace) =>
+      inngest.send({
+        name: NEWSLETTER_RUN_EVENT,
+        data: {
+          newsletterId,
+          scheduledFor: now.toISOString(),
+          testRun: true,
+          trace,
+        },
+        id: `newsletter-test-${newsletterId}-${now.toISOString()}`,
+      }),
+  );
 }

@@ -47,6 +47,8 @@ import { getChatMessageById } from "@/repositories/chatMessage";
 import { saveChatMessageEmbedding } from "@/repositories/chatMessageEmbedding";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import { z } from "zod";
+import { runWorkflow, WORKFLOWS } from "@/lib/observability";
+import { endUserForChatSession } from "@/lib/observability/endUser";
 
 export const CHAT_MESSAGE_INDEX_EVENT = "chat/message.index.requested" as const;
 
@@ -67,11 +69,24 @@ export function enqueueChatMessageVectorIndexing(
   data: ChatMessageIndexEventData,
 ): void {
   const parsed = chatMessageIndexEventDataSchema.parse(data);
-  void inngest
-    .send({
-      name: CHAT_MESSAGE_INDEX_EVENT,
-      data: parsed,
-    })
+  void endUserForChatSession(parsed.chatSessionId)
+    .then(({ endUserId, userId }) =>
+      runWorkflow(
+        WORKFLOWS.embeddings,
+        {
+          endUserId,
+          userId,
+          sessionId: parsed.chatSessionId,
+          source: "chat",
+          input: parsed,
+        },
+        (trace) =>
+          inngest.send({
+            name: CHAT_MESSAGE_INDEX_EVENT,
+            data: { ...parsed, trace },
+          }),
+      ),
+    )
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       indexLog("enqueue", "failed", {

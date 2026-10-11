@@ -32,7 +32,7 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   const { newsId } = await context.params;
-  const result = await retryFailedNewsRequest(user.id, newsId);
+  const result = await retryFailedNewsRequest(user.id, newsId, user.clerkId);
 
   if (!result) {
     return NextResponse.json(

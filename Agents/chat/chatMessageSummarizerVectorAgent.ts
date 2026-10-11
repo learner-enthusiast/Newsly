@@ -22,6 +22,7 @@
 import { aiClient, createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const chatMessageSummarizerVectorParamsSchema = z.object({
   messageId: z.uuid(),
@@ -154,7 +155,7 @@ export function createChatMessageSummarizerVectorAgent(
   };
 }
 
-export async function runChatMessageSummarizerVectorAgent(
+async function runChatMessageSummarizerVectorAgentUntraced(
   params: ChatMessageSummarizerVectorParams,
 ): Promise<string> {
   return runChatMessageSummarizerVectorCore(
@@ -176,3 +177,5 @@ export function chatRoleForMemoryDescription(
   }
   return null;
 }
+
+export const runChatMessageSummarizerVectorAgent = agent("chat.messageSummarizerVector", runChatMessageSummarizerVectorAgentUntraced);

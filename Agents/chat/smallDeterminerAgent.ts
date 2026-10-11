@@ -51,6 +51,7 @@ import {
   validateDeterminerFirecrawlUrls,
 } from "@/services/chat/directUrlResearch";
 import { normalizeSerpApiLocation } from "@/services/chat/serpApiLocation";
+import { agent } from "@/lib/observability";
 
 const SERP_TOOL_NAMES = [
   "searchGoogle",
@@ -567,7 +568,7 @@ export function createSmallDeterminerAgent(options: AIClientOptions = {}) {
 }
 
 /** Run with the shared app `aiClient`. Guardrails run first; throws `GuardrailBlockedError` when blocked. */
-export async function runSmallDeterminerAgent(
+async function runSmallDeterminerAgentUntraced(
   params: SmallDeterminerAgentParams,
 ): Promise<SmallDeterminerRunResult> {
   const guardrail = await applyGuardrails(params);
@@ -581,3 +582,5 @@ export async function runSmallDeterminerAgent(
     researchPrompt: core.researchPrompt,
   };
 }
+
+export const runSmallDeterminerAgent = agent("chat.smallDeterminer", runSmallDeterminerAgentUntraced);

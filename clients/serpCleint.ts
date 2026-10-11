@@ -6,7 +6,7 @@ import {
   getLocations,
 } from "serpapi";
 import { z } from "zod";
-import { withToolSpan } from "@/lib/observability";
+import { tool } from "@/lib/observability";
 
 const serpEnvSchema = z.object({
   apiKey: z.string().min(1, "SERPAPI_API_KEY is required"),
@@ -65,30 +65,43 @@ export function createSerpClient(options: SerpClientOptions = {}) {
     return credentials;
   };
 
-  return {
-    async search<T = unknown>(
-      params: SerpSearchParams & Record<string, unknown>,
-      responseSchema?: z.ZodType<T>,
-    ): Promise<T> {
-      const { apiKey, timeout } = resolveCredentials();
-      serpSearchParamsSchema.parse(params);
-      const requestTimeout =
-        typeof params.timeout === "number" ? params.timeout : timeout;
-      const json = await withToolSpan(
-        `serp.${typeof params.engine === "string" ? params.engine : "google"}`,
-        null,
-        params,
-        () =>
-          getJson({
-            ...params,
-            api_key: apiKey,
-            timeout: requestTimeout,
-          }),
-        { provider: "serpapi" },
-      );
+  async function search<T = unknown>(
+    params: SerpSearchParams & Record<string, unknown>,
+    responseSchema?: z.ZodType<T>,
+  ): Promise<T> {
+    const { apiKey, timeout } = resolveCredentials();
+    serpSearchParamsSchema.parse(params);
+    const requestTimeout =
+      typeof params.timeout === "number" ? params.timeout : timeout;
+    const json = await getJson({
+      ...params,
+      api_key: apiKey,
+      timeout: requestTimeout,
+    });
 
-      return responseSchema ? responseSchema.parse(json) : (json as T);
-    },
+    return responseSchema ? responseSchema.parse(json) : (json as T);
+  }
+
+  async function getBySearchId<T = unknown>(
+    searchId: string,
+    responseSchema?: z.ZodType<T>,
+  ): Promise<T> {
+    const { apiKey, timeout } = resolveCredentials();
+    const json = await getJsonBySearchId(serpSearchIdSchema.parse(searchId), {
+      api_key: apiKey,
+      timeout,
+    });
+
+    return responseSchema ? responseSchema.parse(json) : (json as T);
+  }
+
+  return {
+    search: tool("serp.search", search) as typeof search,
+
+    getBySearchId: tool(
+      "serp.getBySearchId",
+      getBySearchId,
+    ) as typeof getBySearchId,
 
     async searchHtml(params: SerpSearchParams): Promise<string> {
       const { apiKey, timeout } = resolveCredentials();
@@ -99,26 +112,6 @@ export function createSerpClient(options: SerpClientOptions = {}) {
         api_key: apiKey,
         timeout: parsed.timeout ?? timeout,
       });
-    },
-
-    async getBySearchId<T = unknown>(
-      searchId: string,
-      responseSchema?: z.ZodType<T>,
-    ): Promise<T> {
-      const { apiKey, timeout } = resolveCredentials();
-      const json = await withToolSpan(
-        "serp.searchById",
-        null,
-        { searchId },
-        () =>
-          getJsonBySearchId(serpSearchIdSchema.parse(searchId), {
-            api_key: apiKey,
-            timeout,
-          }),
-        { provider: "serpapi" },
-      );
-
-      return responseSchema ? responseSchema.parse(json) : (json as T);
     },
 
     async account() {

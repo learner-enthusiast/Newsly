@@ -27,6 +27,7 @@
     "news:funnel": "node --import tsx --import dotenv/config scripts/newsFunnel.ts",
     "trace:stock-research": "node --import tsx scripts/observability/runStockResearch.ts",
     "trace:print": "node --import tsx scripts/observability/printTrace.ts",
+    "trace:flow": "node --import tsx scripts/observability/runFlow.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

@@ -213,11 +213,15 @@ export async function removeNewsletter(userId: string, id: string) {
   return await deleteNewsletter(id, userId);
 }
 
-export async function sendNewsletterTest(userId: string, id: string) {
+export async function sendNewsletterTest(
+  userId: string,
+  id: string,
+  endUserId: string,
+) {
   const existing = await getNewsletterForUser(id, userId);
   if (!existing) {
     return false;
   }
-  await enqueueNewsletterTestRun(id);
+  await enqueueNewsletterTestRun(id, endUserId);
   return true;
 }

@@ -112,6 +112,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const result = await sendChatMessage({
       userId: user.id,
+      endUserId: user.clerkId,
       chatSessionId,
       content: parsed.data.content,
       shouldCreateStory: parsed.data.shouldCreateStory,

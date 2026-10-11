@@ -1,6 +1,6 @@
 import { Firecrawl } from "firecrawl";
 import { z } from "zod";
-import { withToolSpan } from "@/lib/observability";
+import { tool } from "@/lib/observability";
 
 const firecrawlEnvSchema = z.object({
   apiKey: z.string().min(1, "FIRECRAWL_API_KEY is required"),
@@ -34,18 +34,14 @@ export function createFirecrawlClient(options: FirecrawlClientOptions = {}) {
     return client;
   };
 
-  return {
-    async scrape(params: FirecrawlScrapeParams) {
-      const { url, formats, onlyMainContent } = scrapeParamsSchema.parse(params);
+  async function scrape(params: FirecrawlScrapeParams) {
+    const { url, formats, onlyMainContent } = scrapeParamsSchema.parse(params);
 
-      return withToolSpan(
-        "firecrawl.scrape",
-        null,
-        { url, formats, onlyMainContent },
-        () => resolveClient().scrape(url, { formats, onlyMainContent }),
-        { provider: "firecrawl" },
-      );
-    },
+    return resolveClient().scrape(url, { formats, onlyMainContent });
+  }
+
+  return {
+    scrape: tool("firecrawl.scrape", scrape),
   };
 }
 

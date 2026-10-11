@@ -38,9 +38,12 @@ function short(value: unknown): string {
   return flat.length > width ? `${flat.slice(0, width)}… (${flat.length} chars)` : flat;
 }
 
-function attr(span: SpanRecord, suffix: string): unknown {
-  const key = Object.keys(span.attributes).find((k) => k.endsWith(suffix));
-  return key ? span.attributes[key] : undefined;
+/** `neatlogs.<kind>.input|output` as exported, else the raw OpenInference key. */
+function payload(span: SpanRecord, direction: "input" | "output"): unknown {
+  const key = Object.keys(span.attributes).find((k) =>
+    new RegExp(`^neatlogs\\.[a-z_]+\\.${direction}$`).test(k),
+  );
+  return key ? span.attributes[key] : span.attributes[`${direction}.value`];
 }
 
 function main() {
@@ -83,12 +86,14 @@ function main() {
         (tokens != null ? `  tokens=${String(tokens)}` : "") +
         (cost != null ? `  cost=$${Number(cost).toFixed(5)}` : ""),
     );
+    const workflow = span.attributes["neatlogs.workflow.name"];
+    if (workflow && depth === 0) console.log(`${pad}  workflow=${String(workflow)}`);
     const endUser = span.attributes["neatlogs.end_user.id"];
     if (endUser) console.log(`${pad}  endUser=${String(endUser)}`);
     const tags = span.attributes["neatlogs.tags"];
     if (tags) console.log(`${pad}  tags=${short(tags)}`);
-    const input = attr(span, ".input") ?? span.attributes["input.value"];
-    const output = attr(span, ".output") ?? span.attributes["output.value"];
+    const input = payload(span, "input");
+    const output = payload(span, "output");
     if (input) console.log(`${pad}  in : ${short(input)}`);
     if (output) console.log(`${pad}  out: ${short(output)}`);
     const error = span.attributes["error.message"] ?? span.status?.description;

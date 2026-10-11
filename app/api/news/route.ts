@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await requestNews(user.id, parsed.data);
+    const result = await requestNews(user.id, parsed.data, user.clerkId);
     return NextResponse.json(result, { status: result.created ? 201 : 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Request failed";

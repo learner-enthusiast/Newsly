@@ -6,6 +6,7 @@ import { getChatSessionByIdForUser } from "@/repositories/chatSession";
 import { createPendingChatNewsStory } from "@/repositories/newsStory";
 import type { ChatStoryCreationPayload } from "@/services/news/newsRequestTypes";
 import { z } from "zod";
+import { runWorkflow, WORKFLOWS } from "@/lib/observability";
 
 export const sendChatMessageBodySchema = z.object({
   content: z.string().min(1, "Message is required").max(100_000),
@@ -33,6 +34,8 @@ export type SendChatMessageResult = {
  */
 export async function sendChatMessage(input: {
   userId: string;
+  /** Clerk user id, the trace's end user. */
+  endUserId: string;
   chatSessionId: string;
   content: string;
   shouldCreateStory?: boolean;
@@ -70,15 +73,27 @@ export async function sendChatMessage(input: {
     storyCreation = toChatStoryCreationPayload(story);
   }
 
-  await inngest.send({
-    name: MESSAGE_CHAT_PIPELINE_EVENT,
-    data: {
-      chatSessionId: session.id,
-      chatMessageId: userMessage.id,
-      shouldCreateStory,
-      ...(storyId ? { storyId } : {}),
+  await runWorkflow(
+    WORKFLOWS.chat,
+    {
+      endUserId: input.endUserId,
+      userId: input.userId,
+      sessionId: session.id,
+      source: "chat",
+      input: { chatSessionId: session.id, chatMessageId: userMessage.id, content },
     },
-  });
+    (trace) =>
+      inngest.send({
+        name: MESSAGE_CHAT_PIPELINE_EVENT,
+        data: {
+          chatSessionId: session.id,
+          chatMessageId: userMessage.id,
+          shouldCreateStory,
+          ...(storyId ? { storyId } : {}),
+          trace,
+        },
+      }),
+  );
 
   return {
     chatSessionId: session.id,

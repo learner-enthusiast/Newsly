@@ -24,6 +24,7 @@ import {
   chatTitleFromFirstUserMessage,
 } from "@/services/chat/chatSessionTitle";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const chatSessionTitleAgentParamsSchema = z.object({
   message: z.string().min(1),
@@ -121,7 +122,7 @@ export function createChatSessionTitleAgent(options: AIClientOptions = {}) {
   };
 }
 
-export async function runChatSessionTitleAgent(
+async function runChatSessionTitleAgentUntraced(
   params: ChatSessionTitleAgentParams,
 ): Promise<string> {
   return runChatSessionTitleAgentCore(
@@ -129,3 +130,5 @@ export async function runChatSessionTitleAgent(
     aiClient.generate.bind(aiClient),
   );
 }
+
+export const runChatSessionTitleAgent = agent("chat.sessionTitle", runChatSessionTitleAgentUntraced);

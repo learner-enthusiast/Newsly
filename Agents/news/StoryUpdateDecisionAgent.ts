@@ -25,6 +25,7 @@
 import { createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const existingStorySchema = z.object({
   id: z.uuid(),
@@ -82,7 +83,7 @@ const SYSTEM = [
   "Be conservative — avoid unnecessary full story rewrites.",
 ].join("\n");
 
-export async function runStoryUpdateDecisionAgent(
+async function runStoryUpdateDecisionAgentUntraced(
   params: StoryUpdateDecisionParams,
   options: AIClientOptions = {},
 ): Promise<StoryUpdateDecisionResult> {
@@ -106,3 +107,5 @@ export async function runStoryUpdateDecisionAgent(
 
   return storyUpdateDecisionOutputSchema.parse(rawOut);
 }
+
+export const runStoryUpdateDecisionAgent = agent("news.storyUpdateDecision", runStoryUpdateDecisionAgentUntraced);

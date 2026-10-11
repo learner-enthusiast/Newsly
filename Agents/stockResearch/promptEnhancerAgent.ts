@@ -19,6 +19,7 @@ import { RESEARCH_ASSET_PROFILES } from "@/Agents/stockResearch/assetProfiles";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import type { ResearchAssetType } from "@/services/stockResearch/stockResearchTypes";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const promptEnhancerOutputSchema = z.object({
   enhancedPrompt: z.string().min(1).max(2000),
@@ -106,8 +107,10 @@ export function createPromptEnhancerAgent(options: AIClientOptions = {}) {
   };
 }
 
-export async function runPromptEnhancerAgent(
+async function runPromptEnhancerAgentUntraced(
   params: PromptEnhancerAgentParams,
 ): Promise<PromptEnhancerResult> {
   return await runPromptEnhancerCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runPromptEnhancerAgent = agent("stockResearch.promptEnhancer", runPromptEnhancerAgentUntraced);

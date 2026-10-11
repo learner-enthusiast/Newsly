@@ -5,26 +5,16 @@
  * `init()` runs once per process. Export stays off when `NEATLOGS_API_KEY`
  * is unset. Long-running Next.js servers call `ready()` from `instrumentation.ts`.
  *
- * `NEATLOGS_LOCAL_SPAN_LOG=<path>` (dev only) also appends every exported span,
- * exactly as sent, to a JSONL file — used to inspect span trees locally.
+ * Spans are redacted / clipped by `createNeatlogsMask` at export. Tracing
+ * helpers (workflows, agents, tools) live in `lib/observability/neatlogs.ts`.
  */
 
-import { appendFileSync } from "node:fs";
 import * as ai from "ai";
-import {
-  extractTraceContext,
-  flush,
-  init,
-  injectTraceContext,
-  log,
-  shutdown,
-  span,
-  trace,
-  type InitOptions,
-} from "neatlogs";
+import { flush, init, shutdown, type InitOptions } from "neatlogs";
 import { wrapAISDK } from "neatlogs/ai";
 import { wrapOpenAI } from "neatlogs/openai";
 import { z } from "zod";
+import { createNeatlogsMask } from "@/lib/observability/mask";
 
 const DEFAULT_WORKFLOW_NAME = "dainik-samachar";
 
@@ -93,21 +83,8 @@ export function createNeatlogsClient(options: NeatlogsClientOptions = {}) {
     ...(endpoint ? { endpoint } : {}),
     ...(debug != null ? { debug } : {}),
     ...(captureLogs != null ? { captureLogs } : {}),
+    mask: createNeatlogsMask(readOptional("NEATLOGS_LOCAL_SPAN_LOG")),
   };
-
-  const localSpanLog = readOptional("NEATLOGS_LOCAL_SPAN_LOG");
-  if (localSpanLog) {
-    initOptions.mask = (signalData, context) => {
-      if (context?.signalType !== "log") {
-        try {
-          appendFileSync(localSpanLog, `${JSON.stringify(signalData)}\n`);
-        } catch {
-          // Local inspection only; never affects export.
-        }
-      }
-      return signalData;
-    };
-  }
 
   let readyPromise: Promise<void> | undefined;
   let warnedMissingKey = false;
@@ -140,11 +117,6 @@ export function createNeatlogsClient(options: NeatlogsClientOptions = {}) {
     ready,
     flush,
     shutdown,
-    span,
-    trace,
-    log,
-    injectTraceContext,
-    extractTraceContext,
     wrapOpenAI,
     generateText: tracedAi.generateText,
     streamText: tracedAi.streamText,

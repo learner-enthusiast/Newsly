@@ -8,7 +8,7 @@
  * No business logic — use services/upstox/* for Dainik Samachar-facing APIs.
  */
 
-import { noteToolRetry } from "@/lib/observability";
+import { traceLog } from "@/lib/observability";
 
 export type UpstoxErrorKind =
   | "missing_token"
@@ -208,7 +208,7 @@ export function createUpstoxClient(options: UpstoxClientOptions = {}) {
     const attempts = init.noRetry ? 1 : maxRetries + 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (attempt > 0) {
-        noteToolRetry();
+        traceLog("upstox retry {attempt} for {path}", { attempt, path, level: "warn" });
         await sleep(250 * 2 ** (attempt - 1));
       }
 

@@ -180,6 +180,7 @@ import {
   tryCreatePipelineNotification,
 } from "@/services/notifications/pipelineNotifications";
 import { z } from "zod";
+import type { WorkflowRef } from "@/lib/observability";
 
 function youtubeVideoIdFromSerpRow(row: {
   video_id?: string;
@@ -268,10 +269,10 @@ async function runSequentially<T>(
   );
 }
 
-export function enqueueNewsRerunPipeline(newsId: string) {
+export function enqueueNewsRerunPipeline(newsId: string, trace?: WorkflowRef) {
   return inngest.send({
     name: NEWS_RERUN_PIPELINE_EVENT,
-    data: { newsId },
+    data: { newsId, ...(trace ? { trace } : {}) },
   });
 }
 

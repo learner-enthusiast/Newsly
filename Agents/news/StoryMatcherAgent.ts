@@ -23,6 +23,7 @@
 import { createAIClient, type AIClientOptions } from "@/clients/AIClient";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 const storyMatcherInputStorySchema = z.object({
   id: z.uuid(),
@@ -83,7 +84,7 @@ const SYSTEM = [
   "Prefer fewer, higher-confidence matches over forcing everything into existing stories.",
 ].join("\n");
 
-export async function runStoryMatcherAgent(
+async function runStoryMatcherAgentUntraced(
   params: StoryMatcherParams,
   options: AIClientOptions = {},
 ): Promise<StoryMatcherResult> {
@@ -108,3 +109,4 @@ export async function runStoryMatcherAgent(
   return storyMatcherOutputSchema.parse(rawOut);
 }
 
+export const runStoryMatcherAgent = agent("news.storyMatcher", runStoryMatcherAgentUntraced);

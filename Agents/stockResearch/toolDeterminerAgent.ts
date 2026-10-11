@@ -13,6 +13,7 @@ import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import { serpEngines } from "@/SERP/index";
 import { upstoxApis, type UpstoxApiKey } from "@/services/upstox/index";
 import { z } from "zod";
+import { agent } from "@/lib/observability";
 
 export const UPSTOX_DETERMINER_TOOL_KEYS = Object.keys(upstoxApis).filter(
   (key) => key !== "assertMarginApiNotUsed" && key !== "testUpstoxConnection",
@@ -368,8 +369,10 @@ export function createToolDeterminerAgent(options: AIClientOptions = {}) {
   };
 }
 
-export async function runToolDeterminerAgent(
+async function runToolDeterminerAgentUntraced(
   params: ToolDeterminerAgentParams,
 ): Promise<ToolDeterminerResult> {
   return await runToolDeterminerCore(params, aiClient.generate.bind(aiClient));
 }
+
+export const runToolDeterminerAgent = agent("stockResearch.toolDeterminer", runToolDeterminerAgentUntraced);
