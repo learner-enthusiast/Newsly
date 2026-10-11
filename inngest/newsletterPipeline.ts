@@ -2,15 +2,13 @@ import { NewsletterDigestEmail } from "@/emails/NewsletterDigestEmail";
 import { inngest } from "@/clients/inngestClient";
 import { sendEmail } from "@/lib/email/sendEmail";
 import { getAppUrl } from "@/lib/email/resendClient";
-import { fingerprint, normalizeParams } from "@/lib/newsletter/fingerprint";
-import { computeNextRun, newsWindow } from "@/lib/newsletter/schedule";
+import { computeNextRun } from "@/lib/newsletter/schedule";
 import { resolveSystemUserId } from "@/lib/newsletter/systemUser";
 import { signNewsletterUnsubscribeToken } from "@/lib/newsletter/unsubscribeToken";
 import { newsPipelineFunction } from "@/inngest/newsPipeline";
 import { createNewsRequest } from "@/repositories/newsRequest";
 import {
   advanceNewsletterNextRunIfMatches,
-  getNewsletterById,
   listDueNewsletters,
 } from "@/repositories/newsletter";
 import {
@@ -19,10 +17,7 @@ import {
   getEditionById,
   patchNewsEdition,
 } from "@/repositories/newsEdition";
-import {
-  patchNewsletterDelivery,
-  upsertNewsletterDelivery,
-} from "@/repositories/newsletterDelivery";
+import { patchNewsletterDeliveryIfExists } from "@/repositories/newsletterDelivery";
 import {
   countStoriesByNewsRequestIds,
   listNewsStoriesByNewsRequestId,
@@ -30,6 +25,16 @@ import {
 import { resolveSerpHl } from "@/services/news/newsGenerationRequest";
 import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
 import { DEFAULT_SERP_LOCATION_RADIUS_METERS } from "@/lib/serpLocationGeo";
+import { createPipelineLogger } from "@/clients/pipelineLogger";
+import { cleanupOldEditions } from "@/services/newsletter/editionCleanup";
+import {
+  checkBeforeSend,
+  claimDeliverySlot,
+  editionKeyForRun,
+  loadNewsletterForRun,
+  selectStoriesForSend,
+  testRunScheduledFor,
+} from "@/services/newsletter/newsletterRun";
 import { z } from "zod";
 import {
   runWorkflow,
@@ -41,6 +46,10 @@ import {
 
 export const NEWSLETTER_RUN_EVENT = "newsletter/run" as const;
 export const NEWSLETTER_SCHEDULER_CRON = "*/5 * * * *";
+/** Daily at 03:30 UTC. */
+export const NEWSLETTER_EDITION_CLEANUP_CRON = "30 3 * * *";
+
+const cleanupLog = createPipelineLogger("[newsletter-edition-cleanup]");
 
 const runEventSchema = z.object({
   newsletterId: z.string().min(1),
@@ -254,22 +263,27 @@ export const newsletterRunFunction = inngest.createFunction(
   async ({ event, step }) => {
     const input = runEventSchema.parse(event.data);
     const scheduledFor = new Date(input.scheduledFor);
+    const testRun = input.testRun === true;
 
-    const newsletter = await step.run("load-newsletter", () =>
-      getNewsletterById(input.newsletterId),
+    // Fresh read before claiming a slot: a newsletter deleted or paused after
+    // this run was queued sends nothing and leaves no delivery row.
+    const loaded = await step.run("load-newsletter", () =>
+      loadNewsletterForRun(input.newsletterId, testRun),
     );
-    if (!newsletter || (!newsletter.isActive && !input.testRun)) {
-      return { skipped: true, reason: "inactive" };
+    if (loaded.skip !== null) {
+      return { skipped: true, reason: loaded.skip };
     }
+    const newsletter = loaded.newsletter;
 
-    const delivery = await step.run("upsert-delivery", () =>
-      upsertNewsletterDelivery({
-        newsletterId: newsletter.id,
-        scheduledFor,
-      }),
+    const claim = await step.run("upsert-delivery", () =>
+      claimDeliverySlot(newsletter.id, scheduledFor),
     );
+    if (claim.skip) {
+      return { skipped: true, reason: claim.skip };
+    }
+    const delivery = { id: claim.deliveryId };
 
-    if (!input.testRun && newsletter.nextRunAt) {
+    if (!testRun && newsletter.nextRunAt) {
       const expectedAt = new Date(String(newsletter.nextRunAt));
       const nextRunAt = computeNextRun({
         frequency: newsletter.frequency,
@@ -288,22 +302,8 @@ export const newsletterRunFunction = inngest.createFunction(
       );
     }
 
-    const normalized = normalizeParams({
-      location: newsletter.location,
-      latitude: newsletter.latitude,
-      longitude: newsletter.longitude,
-      scope: newsletter.scope,
-      categories: newsletter.categories,
-      customQuery: newsletter.customQuery,
-      language: newsletter.language,
-      sources: newsletter.sources,
-    });
-    const fp = fingerprint(normalized);
-    const window = newsWindow(
-      scheduledFor,
-      newsletter.timezone,
-      newsletter.frequency,
-    );
+    const window = editionKeyForRun(newsletter, scheduledFor);
+    const fp = window.fingerprint;
 
     const edition = await step.invoke("ensure-edition", {
       function: newsletterEditionBuildFunction,
@@ -329,13 +329,16 @@ export const newsletterRunFunction = inngest.createFunction(
       getEditionById(edition.editionId),
     );
     if (!editionRow || editionRow.status !== "READY") {
-      await step.run("mark-delivery-failed", () =>
-        patchNewsletterDelivery(delivery.id, {
+      const recorded = await step.run("mark-delivery-failed", () =>
+        patchNewsletterDeliveryIfExists(delivery.id, {
           status: "FAILED",
           error: "Edition not ready",
           editionId: edition.editionId,
         }),
       );
+      if (!recorded) {
+        return { skipped: true, reason: "deleted" as const };
+      }
       throw new Error("Edition build failed");
     }
 
@@ -343,31 +346,39 @@ export const newsletterRunFunction = inngest.createFunction(
       const rows = await listNewsStoriesByNewsRequestId(
         editionRow.newsRequestId,
       );
-      return rows.slice(0, newsletter.storyCount);
+      return selectStoriesForSend(rows, newsletter.storyCount);
     });
 
     if (stories.length === 0) {
-      await step.run("mark-skipped", () =>
-        patchNewsletterDelivery(delivery.id, {
+      const recorded = await step.run("mark-skipped", () =>
+        patchNewsletterDeliveryIfExists(delivery.id, {
           status: "SKIPPED",
           editionId: editionRow.id,
           storyCount: 0,
           error: "No stories available",
         }),
       );
-      return { skipped: true, reason: "empty" };
+      return { skipped: true, reason: recorded ? "empty" : "deleted" };
     }
 
     const appUrl = getAppUrl();
     const unsubscribeToken = signNewsletterUnsubscribeToken(newsletter.id);
     const unsubscribeUrl = `${appUrl}/unsubscribe?token=${encodeURIComponent(unsubscribeToken)}&id=${newsletter.id}`;
 
-    await step.run("send-email", async () => {
-      await patchNewsletterDelivery(delivery.id, {
+    const sent = await step.run("send-email", async () => {
+      // The edition build can take minutes: re-check right before sending.
+      const decision = await checkBeforeSend(newsletter.id, delivery.id, testRun);
+      if (decision !== "send") {
+        return { skipped: decision };
+      }
+      const claimed = await patchNewsletterDeliveryIfExists(delivery.id, {
         status: "SENDING",
         editionId: editionRow.id,
         storyCount: stories.length,
       });
+      if (!claimed) {
+        return { skipped: "deleted" as const };
+      }
       const result = await sendEmail({
         to: newsletter.email,
         subject: `${newsletter.name} — ${window.date}`,
@@ -389,15 +400,20 @@ export const newsletterRunFunction = inngest.createFunction(
           })),
         }),
       });
-      await patchNewsletterDelivery(delivery.id, {
+      // Deleted right after sending: nothing left to record.
+      await patchNewsletterDeliveryIfExists(delivery.id, {
         status: "SENT",
         sentAt: new Date(),
         resendId: result.id,
         editionId: editionRow.id,
         storyCount: stories.length,
       });
+      return { skipped: null };
     });
 
+    if (sent.skipped) {
+      return { skipped: true, reason: sent.skipped };
+    }
     return { sent: true, storyCount: stories.length };
   },
 );
@@ -407,7 +423,7 @@ export async function enqueueNewsletterTestRun(
   newsletterId: string,
   endUserId: string,
 ) {
-  const now = new Date();
+  const now = testRunScheduledFor();
   await runWorkflow(
     WORKFLOWS.newsletter,
     { endUserId, source: "newsletter", input: { newsletterId, testRun: true } },
@@ -424,3 +440,18 @@ export async function enqueueNewsletterTestRun(
       }),
   );
 }
+
+export const newsletterEditionCleanupFunction = inngest.createFunction(
+  {
+    id: "newsletter-edition-cleanup",
+    name: "Newsletter edition cleanup",
+    triggers: [{ cron: NEWSLETTER_EDITION_CLEANUP_CRON }],
+  },
+  async ({ step }) => {
+    const result = await step.run("delete-old-editions", () =>
+      cleanupOldEditions(),
+    );
+    cleanupLog("delete-old-editions", "done", result);
+    return result;
+  },
+);

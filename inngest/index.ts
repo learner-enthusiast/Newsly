@@ -155,6 +155,7 @@ import { chatStoryPipelineFunction } from "./chatstoryPipeline";
 import { stockResearchPipelineFunction } from "./stockResearch/stockResearchPipeline";
 import {
   newsletterEditionBuildFunction,
+  newsletterEditionCleanupFunction,
   newsletterRunFunction,
   newsletterSchedulerFunction,
 } from "./newsletterPipeline";
@@ -165,6 +166,7 @@ export const inngestFunctions = [
   newsletterSchedulerFunction,
   newsletterEditionBuildFunction,
   newsletterRunFunction,
+  newsletterEditionCleanupFunction,
   chatPipelineFunction,
   messageChatPipelineFunction,
   chatStoryPipelineFunction,

@@ -42,6 +42,21 @@ export async function patchNewsletterDelivery(
   });
 }
 
+/**
+ * Like `patchNewsletterDelivery`, but returns false instead of throwing when the
+ * row is gone (its newsletter was deleted mid-run and the delivery cascaded).
+ */
+export async function patchNewsletterDeliveryIfExists(
+  id: string,
+  data: Parameters<typeof patchNewsletterDelivery>[1],
+): Promise<boolean> {
+  const result = await prisma.newsletterDelivery.updateMany({
+    where: { id: deliveryIdSchema.parse(id) },
+    data,
+  });
+  return result.count > 0;
+}
+
 export async function getNewsletterDelivery(id: string) {
   return await prisma.newsletterDelivery.findUnique({
     where: { id: deliveryIdSchema.parse(id) },

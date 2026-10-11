@@ -58,3 +58,77 @@ export async function tryClaimEditionBuild(fingerprint: string, periodKey: strin
   }
   return null;
 }
+
+/** Editions created before `cutoff`, with their story ids (for the retention cleanup). */
+export async function listEditionsCreatedBefore(cutoff: Date) {
+  return await prisma.newsEdition.findMany({
+    where: { createdAt: { lt: cutoff }, newsRequest: { isEdition: true } },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      newsRequestId: true,
+      newsRequest: { select: { stories: { select: { id: true } } } },
+    },
+  });
+}
+
+const ACTIVITY_LOOKUP_CHUNK = 1_000;
+
+/**
+ * Story ids (from `storyIds`) that any user has saved/bookmarked, voted on, or
+ * linked to a chat. Saved stories live in `User.savedStories` (no FK), so they
+ * are checked explicitly.
+ */
+export async function findStoryIdsWithUserActivity(
+  storyIds: string[],
+): Promise<Set<string>> {
+  const active = new Set<string>();
+  for (let start = 0; start < storyIds.length; start += ACTIVITY_LOOKUP_CHUNK) {
+    const chunk = storyIds.slice(start, start + ACTIVITY_LOOKUP_CHUNK);
+    const inChunk = new Set(chunk);
+    const [votes, chatSessions, chatMessages, savers] = await Promise.all([
+      prisma.newsStoryVote.findMany({
+        where: { newsStoryId: { in: chunk } },
+        select: { newsStoryId: true },
+        distinct: ["newsStoryId"],
+      }),
+      prisma.chatSession.findMany({
+        where: { newsStoryId: { in: chunk } },
+        select: { newsStoryId: true },
+        distinct: ["newsStoryId"],
+      }),
+      prisma.chatMessage.findMany({
+        where: { newsStoryId: { in: chunk } },
+        select: { newsStoryId: true },
+        distinct: ["newsStoryId"],
+      }),
+      prisma.user.findMany({
+        where: { savedStories: { hasSome: chunk } },
+        select: { savedStories: true },
+      }),
+    ]);
+    for (const row of [...votes, ...chatSessions, ...chatMessages]) {
+      if (row.newsStoryId) active.add(row.newsStoryId);
+    }
+    for (const user of savers) {
+      for (const id of user.savedStories) {
+        if (inChunk.has(id)) active.add(id);
+      }
+    }
+  }
+  return active;
+}
+
+/**
+ * Deletes edition news requests; editions, stories and their sources cascade,
+ * and delivery `editionId`s are set to null. Never touches non-edition requests.
+ */
+export async function deleteEditionNewsRequests(newsRequestIds: string[]) {
+  if (newsRequestIds.length === 0) {
+    return 0;
+  }
+  const result = await prisma.newsRequest.deleteMany({
+    where: { id: { in: newsRequestIds }, isEdition: true },
+  });
+  return result.count;
+}

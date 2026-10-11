@@ -86,13 +86,16 @@ export async function patchNewsletter(
   });
 }
 
+/**
+ * Deletes the user's newsletter (deliveries cascade). One owner-scoped
+ * statement, so two concurrent deletes give one `true` and one `false`, never a
+ * "record not found" error.
+ */
 export async function deleteNewsletter(id: string, userId: string) {
-  const existing = await getNewsletterForUser(id, userId);
-  if (!existing) {
-    return false;
-  }
-  await prisma.newsletter.delete({ where: { id: existing.id } });
-  return true;
+  const result = await prisma.newsletter.deleteMany({
+    where: { id: idSchema.parse(id), userId: userIdSchema.parse(userId) },
+  });
+  return result.count > 0;
 }
 
 export async function listDueNewsletters(now: Date, limit = 50) {

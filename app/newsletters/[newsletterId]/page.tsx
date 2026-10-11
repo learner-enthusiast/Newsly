@@ -1,23 +1,24 @@
-"use client";
+import { EditNewsletterClient } from "@/components/newsletter/EditNewsletterClient";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { getNewsletterDetail } from "@/services/newsletter/newsletterService";
+import { notFound, redirect } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { useParams } from "next/navigation";
+/** Loads the newsletter on the server so the form renders already filled in. */
+export default async function EditNewsletterPage({
+  params,
+}: {
+  params: Promise<{ newsletterId: string }>;
+}) {
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    redirect("/sign-in");
+  }
 
-export default function EditNewsletterPage() {
-  const params = useParams<{ newsletterId: string }>();
-  return (
-    <div className="mx-auto max-w-lg px-4 py-12 text-center">
-      <p className="text-sm text-muted-foreground">
-        Full edit form for newsletter <code>{params.newsletterId}</code> is not
-        wired yet. Pause, resume, send test, and delete from the list page.
-      </p>
-      <Link
-        href="/newsletters"
-        className="mt-4 inline-flex h-9 items-center rounded-md border px-4 text-sm"
-      >
-        Back to newsletters
-      </Link>
-    </div>
-  );
+  const { newsletterId } = await params;
+  const newsletter = await getNewsletterDetail(user.id, newsletterId);
+  if (!newsletter) {
+    notFound();
+  }
+
+  return <EditNewsletterClient newsletter={newsletter} />;
 }

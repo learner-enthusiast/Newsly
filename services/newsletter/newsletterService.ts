@@ -29,6 +29,8 @@ function serializeNewsletter(
     email: row.email,
     isActive: row.isActive,
     location: row.location,
+    latitude: row.latitude,
+    longitude: row.longitude,
     scope: row.scope,
     storyCount: row.storyCount,
     categories: row.categories,
@@ -50,6 +52,13 @@ function serializeNewsletter(
       error: delivery.error,
     })),
   };
+}
+
+export type SerializedNewsletter = ReturnType<typeof serializeNewsletter>;
+
+export async function getNewsletterDetail(userId: string, id: string) {
+  const row = await getNewsletterForUser(id, userId);
+  return row ? serializeNewsletter(row) : null;
 }
 
 export async function createNewsletterForUser(
@@ -101,6 +110,11 @@ export async function createNewsletterForUser(
   return serializeNewsletter({ ...row, deliveries: [] });
 }
 
+/** `undefined` keeps the saved value; anything else (including `null`) replaces it. */
+function keep<T>(next: T | undefined, saved: T): T {
+  return next === undefined ? saved : next;
+}
+
 export async function updateNewsletterForUser(
   userId: string,
   id: string,
@@ -111,27 +125,58 @@ export async function updateNewsletterForUser(
     return null;
   }
   const parsed = updateNewsletterSchema.parse(body);
+
+  const scope = keep(parsed.scope, existing.scope);
+  const frequency = keep(parsed.frequency, existing.frequency);
+  const needsLocation = scope === "local" || scope === "both";
+
+  const location = needsLocation ? keep(parsed.location, existing.location) : null;
+  const locationChanged = location !== existing.location;
+  // Coordinates travel as a pair. A new location without new coordinates must
+  // not keep the old city's coordinates.
+  const coordsSent = parsed.latitude !== undefined || parsed.longitude !== undefined;
+  const coords = !needsLocation
+    ? { latitude: null, longitude: null }
+    : coordsSent
+      ? { latitude: parsed.latitude ?? null, longitude: parsed.longitude ?? null }
+      : locationChanged
+        ? { latitude: null, longitude: null }
+        : { latitude: existing.latitude, longitude: existing.longitude };
+
+  // Day fields only apply to their own frequency.
+  const dayOfWeek = frequency === "WEEKLY" ? keep(parsed.dayOfWeek, existing.dayOfWeek) : null;
+  const dayOfMonth = frequency === "MONTHLY" ? keep(parsed.dayOfMonth, existing.dayOfMonth) : null;
+
+  if (needsLocation && !location) {
+    throw new Error("location is required when scope is local or both");
+  }
+  if (frequency === "WEEKLY" && dayOfWeek == null) {
+    throw new Error("dayOfWeek is required for WEEKLY");
+  }
+  if (frequency === "MONTHLY" && dayOfMonth == null) {
+    throw new Error("dayOfMonth is required for MONTHLY");
+  }
+
   const merged = {
-    name: parsed.name ?? existing.name,
-    email: parsed.email ?? existing.email,
-    location: parsed.location ?? existing.location,
-    latitude: parsed.latitude ?? existing.latitude,
-    longitude: parsed.longitude ?? existing.longitude,
-    scope: parsed.scope ?? existing.scope,
-    storyCount: parsed.storyCount ?? existing.storyCount,
-    categories: parsed.categories ?? existing.categories,
-    customQuery: parsed.customQuery ?? existing.customQuery,
-    language: parsed.language ?? existing.language,
-    sources: parsed.sources ?? existing.sources,
-    frequency: parsed.frequency ?? existing.frequency,
-    sendTimeLocal: parsed.sendTimeLocal ?? existing.sendTimeLocal,
-    timezone: parsed.timezone ?? existing.timezone,
-    dayOfWeek: parsed.dayOfWeek ?? existing.dayOfWeek,
-    dayOfMonth: parsed.dayOfMonth ?? existing.dayOfMonth,
+    name: keep(parsed.name, existing.name),
+    email: keep(parsed.email, existing.email),
+    location,
+    ...coords,
+    scope,
+    storyCount: keep(parsed.storyCount, existing.storyCount),
+    categories: keep(parsed.categories, existing.categories),
+    customQuery: keep(parsed.customQuery, existing.customQuery),
+    language: keep(parsed.language, existing.language),
+    sources: keep(parsed.sources, existing.sources),
+    frequency,
+    sendTimeLocal: keep(parsed.sendTimeLocal, existing.sendTimeLocal),
+    timezone: keep(parsed.timezone, existing.timezone),
+    dayOfWeek,
+    dayOfMonth,
   };
 
   const normalized = normalizeParams({
-    location: merged.scope === "world" ? null : merged.location,
+    location: merged.location,
     latitude: merged.latitude,
     longitude: merged.longitude,
     scope: merged.scope,
@@ -142,39 +187,21 @@ export async function updateNewsletterForUser(
   });
 
   const scheduleChanged =
-    parsed.frequency != null ||
-    parsed.sendTimeLocal != null ||
-    parsed.timezone != null ||
-    parsed.dayOfWeek !== undefined ||
-    parsed.dayOfMonth !== undefined;
+    merged.frequency !== existing.frequency ||
+    merged.sendTimeLocal !== existing.sendTimeLocal ||
+    merged.timezone !== existing.timezone ||
+    merged.dayOfWeek !== existing.dayOfWeek ||
+    merged.dayOfMonth !== existing.dayOfMonth;
 
-  const nextRunAt = scheduleChanged
-    ? computeNextRunFromSchedule({
-        frequency: merged.frequency,
-        sendTimeLocal: merged.sendTimeLocal,
-        timezone: merged.timezone,
-        dayOfWeek: merged.dayOfWeek,
-        dayOfMonth: merged.dayOfMonth,
-      })
-    : existing.nextRunAt;
+  // A paused newsletter has no next run; resuming recomputes it.
+  const nextRunAt = !existing.isActive
+    ? null
+    : scheduleChanged || existing.nextRunAt == null
+      ? computeNextRunFromSchedule(merged)
+      : existing.nextRunAt;
 
   const updated = await patchNewsletter(id, userId, {
-    name: merged.name.trim(),
-    email: merged.email.trim(),
-    location: merged.scope === "world" ? null : merged.location,
-    latitude: merged.scope === "world" ? null : merged.latitude,
-    longitude: merged.scope === "world" ? null : merged.longitude,
-    scope: merged.scope,
-    storyCount: merged.storyCount,
-    categories: merged.categories,
-    customQuery: merged.customQuery,
-    language: merged.language,
-    sources: merged.sources,
-    frequency: merged.frequency,
-    sendTimeLocal: merged.sendTimeLocal,
-    timezone: merged.timezone,
-    dayOfWeek: merged.dayOfWeek,
-    dayOfMonth: merged.dayOfMonth,
+    ...merged,
     paramsFingerprint: fingerprint(normalized),
     nextRunAt,
   });

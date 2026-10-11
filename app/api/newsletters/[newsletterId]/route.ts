@@ -1,10 +1,27 @@
 import { requireAuthenticatedUser } from "@/lib/auth";
 import {
+  getNewsletterDetail,
   removeNewsletter,
   updateNewsletterForUser,
 } from "@/services/newsletter/newsletterService";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ newsletterId: string }> },
+) {
+  const user = await requireAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { newsletterId } = await context.params;
+  const newsletter = await getNewsletterDetail(user.id, newsletterId);
+  if (!newsletter) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  return NextResponse.json({ newsletter });
+}
 
 export async function PATCH(
   request: Request,

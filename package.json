@@ -16,6 +16,7 @@
     "test:youtube-research": "node --import tsx --test services/news/youtubeResearch.test.ts",
     "test:story-votes": "node --import tsx --test services/news/storyVoteLogic.test.ts",
     "test:news-generation": "node --import tsx --test services/news/newsGenerationRequest.test.ts services/news/newsSearchPlanning.test.ts services/news/newsRequestProgress.test.ts services/news/newsRequestPollingLogic.test.ts services/news/normalizeArticles.test.ts services/news/newsBriefingStages.test.ts",
+    "test:newsletter": "node --import tsx --test services/newsletter/newsletterLifecycle.test.ts",
     "test:billing": "node --import tsx --test services/billing/razorpaySignature.test.ts",
     "test:upstox": "node --import tsx --test clients/upstoxClient.test.ts services/upstox/upstoxServices.test.ts services/upstox/marketDataWebsocket.test.ts",
     "upstox:test": "node --import tsx --import dotenv/config scripts/upstoxTest.ts",

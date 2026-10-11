@@ -76,18 +76,23 @@ const scheduleSchema = z
 
 export const createNewsletterSchema =
   newsletterContentSchema.and(scheduleSchema);
+/**
+ * PATCH body. Omitted fields keep their saved value; `null` clears an optional
+ * field. Cross-field rules (location for local scope, day for WEEKLY/MONTHLY)
+ * are checked by the service after merging with the saved row.
+ */
 export const updateNewsletterSchema = z
   .object({
-    name: z.string().min(1).max(120).optional(),
-    email: z.string().email().max(200).optional(),
-    location: z.string().min(1).optional(),
-    latitude: z.number().min(-90).max(90).optional(),
-    longitude: z.number().min(-180).max(180).optional(),
+    name: z.string().trim().min(1).max(120).optional(),
+    email: z.string().trim().email().max(200).optional(),
+    location: z.string().trim().min(1).nullable().optional(),
+    latitude: z.number().min(-90).max(90).nullable().optional(),
+    longitude: z.number().min(-180).max(180).nullable().optional(),
     scope: newsScopeSchema.optional(),
     storyCount: z.number().int().min(1).max(NEWSLETTER_MAX_STORY_COUNT).optional(),
     categories: z.array(z.string().min(1).max(80)).max(10).optional(),
-    customQuery: z.string().min(1).max(500).optional(),
-    language: z.string().min(1).max(40).optional(),
+    customQuery: z.string().trim().min(1).max(500).nullable().optional(),
+    language: z.string().trim().min(1).max(40).nullable().optional(),
     sources: z.array(z.string().min(1).max(200)).max(10).optional(),
     frequency: z.enum(["DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY"]).optional(),
     sendTimeLocal: timeSchema.optional(),
@@ -101,6 +106,14 @@ export const updateNewsletterSchema = z
         code: "custom",
         message: "Invalid timezone",
         path: ["timezone"],
+      });
+    }
+    // Coordinates only make sense as a pair.
+    if ((data.latitude == null) !== (data.longitude == null)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "latitude and longitude must be set (or cleared) together",
+        path: ["latitude"],
       });
     }
   });
