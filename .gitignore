@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# local scratch (e.g. hero source video for scripts/build-hero-frames.sh)
+/tmp/
+
 # next.js
 /.next/
 /out/
