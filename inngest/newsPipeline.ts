@@ -199,6 +199,11 @@ export const newsPipelineEventDataSchema = z
     newsRequestId: z.uuid(),
   })
   .extend(newsPipelineGenerationEventSchema.shape)
+  .extend({
+    // Older events (and in-flight retries) predate this field; config is reloaded from the DB anyway.
+    locationRadiusMeters:
+      newsPipelineGenerationEventSchema.shape.locationRadiusMeters.default(null),
+  })
   .extend(newsPipelineControlSchema.shape);
 
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;

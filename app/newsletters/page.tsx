@@ -81,7 +81,7 @@ export default function NewslettersPage() {
           href="/newsletters/new"
           className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm text-primary-foreground"
         >
-          Create newsletter & Subscribe
+          Create newsletter
         </Link>
       </div>
 

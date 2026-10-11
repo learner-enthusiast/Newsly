@@ -304,7 +304,7 @@ export default function NewNewsletterPage() {
           <span className="text-foreground">New</span>
         </div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">
-          Create newsletter & Subscribe
+          Create newsletter
         </h1>
         <p className="max-w-xl text-sm text-muted-foreground">
           A research-backed news briefing delivered to your inbox on your

@@ -1,25 +1,32 @@
 /**
- * Idempotent system user for shared news editions.
+ * Ensures the newsletter system user exists (SYSTEM_USER_ID path only).
+ * For SYSTEM_USER_CLERK_ID, sign in once — no seed needed.
  * Usage: pnpm system-user:seed
  */
 import "dotenv/config";
+import {
+  ensureSyntheticSystemUser,
+  readSystemUserConfig,
+  resolveSystemUserId,
+} from "@/lib/newsletter/systemUser";
 import { prisma } from "@/db";
-import { getSystemUserId } from "@/lib/newsletter/systemUser";
 
 async function main() {
-  const id = getSystemUserId();
-  await prisma.user.upsert({
-    where: { id },
-    create: {
-      id,
-      clerkId: "system-newsletter-editions",
-      email: "system-newsletter@internal.local",
-      firstName: "System",
-      lastName: "Newsletter",
-    },
-    update: {},
-  });
-  console.log(`System user ready: ${id}`);
+  const config = readSystemUserConfig();
+  if (!config) {
+    throw new Error(
+      "Set SYSTEM_USER_CLERK_ID or SYSTEM_USER_ID in .env before seeding.",
+    );
+  }
+
+  if (config.kind === "clerk") {
+    const id = await resolveSystemUserId();
+    console.log(`System user (Clerk ${config.clerkId}) → internal id: ${id}`);
+    return;
+  }
+
+  await ensureSyntheticSystemUser(config.userId);
+  console.log(`Synthetic system user ready: ${config.userId}`);
 }
 
 main()

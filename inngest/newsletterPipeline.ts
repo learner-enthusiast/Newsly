@@ -4,7 +4,7 @@ import { sendEmail } from "@/lib/email/sendEmail";
 import { getAppUrl } from "@/lib/email/resendClient";
 import { fingerprint, normalizeParams } from "@/lib/newsletter/fingerprint";
 import { computeNextRun, newsWindow } from "@/lib/newsletter/schedule";
-import { getSystemUserId } from "@/lib/newsletter/systemUser";
+import { resolveSystemUserId } from "@/lib/newsletter/systemUser";
 import { signNewsletterUnsubscribeToken } from "@/lib/newsletter/unsubscribeToken";
 import { newsPipelineFunction } from "@/inngest/newsPipeline";
 import { createNewsRequest } from "@/repositories/newsRequest";
@@ -29,6 +29,7 @@ import {
 } from "@/repositories/newsStory";
 import { resolveSerpHl } from "@/services/news/newsGenerationRequest";
 import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
+import { DEFAULT_SERP_LOCATION_RADIUS_METERS } from "@/lib/serpLocationGeo";
 import { z } from "zod";
 
 export const NEWSLETTER_RUN_EVENT = "newsletter/run" as const;
@@ -68,7 +69,9 @@ export const newsletterEditionBuildFunction = inngest.createFunction(
   },
   async ({ event, step }) => {
     const input = editionBuildEventSchema.parse(event.data);
-    const systemUserId = getSystemUserId();
+    const systemUserId = await step.run("resolve-system-user", () =>
+      resolveSystemUserId(),
+    );
 
     let editionId: string | null = null;
     let editionNewsRequestId: string | null = null;
@@ -161,6 +164,10 @@ export const newsletterEditionBuildFunction = inngest.createFunction(
         location: input.location,
         latitude: input.latitude,
         longitude: input.longitude,
+        locationRadiusMeters:
+          input.latitude != null && input.longitude != null
+            ? DEFAULT_SERP_LOCATION_RADIUS_METERS
+            : null,
         categories: input.categories,
         customQuery: input.customQuery,
         storyCount: target,
