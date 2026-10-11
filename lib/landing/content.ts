@@ -10,8 +10,11 @@ export function dark(alpha: number): string {
   return `rgb(29 48 69 / ${alpha})`;
 }
 
-// TODO: self-host — third-party CloudFront host.
-export const VIDEO_SRC =
+/**
+ * Source clip for `scripts/build-hero-frames.sh` only — the page plays the
+ * self-hosted image sequence in `public/landing/frames/` and never loads this.
+ */
+export const HERO_SOURCE_VIDEO =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260821_114821_a8ca298f-be2c-4613-a4dd-51b69e16bbde.mp4";
 
 // TODO: licensing — this font is served by a third-party site; replace with a

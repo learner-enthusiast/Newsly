@@ -4,9 +4,9 @@ import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { HeroCta } from "@/components/landing/sections/HeroCta";
 import { HeroIntro } from "@/components/landing/sections/HeroIntro";
 import { HeroMission } from "@/components/landing/sections/HeroMission";
-import { useVideoScrub } from "@/hooks/useVideoScrub";
-import { VIDEO_SRC } from "@/lib/landing/content";
-import { useCallback, useRef } from "react";
+import { useImageSequence } from "@/hooks/useImageSequence";
+import { MOBILE_FRAMES_QUERY, POSTER } from "@/lib/landing/frames";
+import { useCallback } from "react";
 
 /** Sequential section opacities — each fades out before the next appears. */
 function s1Opacity(p: number) {
@@ -28,14 +28,13 @@ function s3Opacity(p: number) {
 const S3_PROGRESS = 0.75;
 
 export function ScrollHero() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { progress: p, canvasLive } = useVideoScrub(VIDEO_SRC, {
-    container: containerRef,
-    video: videoRef,
-    canvas: canvasRef,
-  });
+  const {
+    containerRef,
+    canvasRef,
+    posterRef,
+    progress: p,
+    canvasLive,
+  } = useImageSequence();
 
   const scrollToProgress = useCallback((target: number) => {
     const el = containerRef.current;
@@ -43,7 +42,7 @@ export function ScrollHero() {
     const span = el.offsetHeight - window.innerHeight;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     window.scrollTo({ top: target * span, behavior: reduce ? "auto" : "smooth" });
-  }, []);
+  }, [containerRef]);
   const toSection3 = useCallback(() => scrollToProgress(S3_PROGRESS), [scrollToProgress]);
   const toTop = useCallback(() => scrollToProgress(0), [scrollToProgress]);
 
@@ -51,19 +50,20 @@ export function ScrollHero() {
     <main data-landing>
       <div ref={containerRef} className="relative h-[500vh]">
         <div className="sticky top-0 h-screen w-full overflow-hidden">
-          <video
-            ref={videoRef}
-            src={VIDEO_SRC}
-            muted
-            playsInline
-            preload="auto"
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+          {/* Frame 0 as a plain image so the first screen paints from SSR. */}
+          <picture>
+            <source media={MOBILE_FRAMES_QUERY} srcSet={POSTER.mobile} />
+            <img
+              ref={posterRef}
+              src={POSTER.desktop}
+              alt=""
+              aria-hidden="true"
+              fetchPriority="high"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          </picture>
           <canvas
             ref={canvasRef}
-            width={1920}
-            height={1080}
             aria-hidden="true"
             className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
               canvasLive ? "opacity-100" : "opacity-0"

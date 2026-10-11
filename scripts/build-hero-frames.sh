@@ -3,7 +3,7 @@
 #
 #   scripts/build-hero-frames.sh
 #
-# Source: tmp/hero-source.mp4 (downloaded from VIDEO_SRC in lib/landing/content.ts
+# Source: tmp/hero-source.mp4 (downloaded from HERO_SOURCE_VIDEO in lib/landing/content.ts
 # if missing). Output: public/landing/frames/$VERSION/{desktop,mobile}/0000.webp…
 # plus manifest.json ({ count, width, height }) per set.
 #
