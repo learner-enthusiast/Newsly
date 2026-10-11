@@ -68,10 +68,26 @@ jobs:
               pm2 restart dainiksamachar --update-env
               pm2 save
 
-              echo "Checking application health..."
-              curl --fail --silent --show-error \
-                --max-time 15 http://127.0.0.1:3000/ \
-                -o /dev/null
+              echo "Waiting for application to accept connections..."
+              HEALTH_URL="http://127.0.0.1:3000/"
+              MAX_ATTEMPTS=30
+              SLEEP_SEC=2
+              attempt=1
+              while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
+                if curl --fail --silent --show-error --max-time 5 "$HEALTH_URL" -o /dev/null; then
+                  echo "Health check passed (attempt ${attempt}/${MAX_ATTEMPTS})."
+                  break
+                fi
+                if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
+                  echo "Health check failed: nothing listening on 127.0.0.1:3000 after $((MAX_ATTEMPTS * SLEEP_SEC))s."
+                  pm2 describe dainiksamachar || true
+                  pm2 logs dainiksamachar --lines 40 --nostream || true
+                  exit 1
+                fi
+                echo "Not ready yet (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${SLEEP_SEC}s..."
+                sleep "$SLEEP_SEC"
+                attempt=$((attempt + 1))
+              done
 
               echo "Deployment completed successfully."
           REMOTE
