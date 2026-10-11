@@ -29,10 +29,10 @@ export function NewsStoryPageHeader({
   return (
     <header ref={headerRef} className={cn("space-y-4", className)}>
       <Link
-        href="/#topics"
+        href="/newsStory"
         className="inline-flex text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
-        ← Back to trending
+        ← Back to stories
       </Link>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

@@ -1581,7 +1581,7 @@ Values are never committed. Required variables cause a startup error when missin
 | `SERPAPI_API_KEY` | Yes | All search, YouTube, Maps |
 | `FIRECRAWL_API_KEY` | Yes | Scraping |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | No | Defaults `/sign-in`, `/sign-up` |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` | No | Default `/` |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` | No | Default `/home` |
 | `OPENAI_MODEL` | No | Default model (`gpt-4o-mini`) |
 | `OPENAI_EMBEDDING_MODEL` | No | Default `text-embedding-3-small` |
 | `OPENAI_BASE_URL`, `OPENAI_PROJECT_ID`, `OPENAI_STRUCTURED_RETRY_MODEL` | No | OpenAI client options |

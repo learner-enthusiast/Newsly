@@ -9,8 +9,8 @@ const LOG_PREFIX = "[env]";
 
 const DEFAULT_CLERK_SIGN_IN_URL = "/sign-in";
 const DEFAULT_CLERK_SIGN_UP_URL = "/sign-up";
-const DEFAULT_CLERK_SIGN_IN_FALLBACK = "/";
-const DEFAULT_CLERK_SIGN_UP_FALLBACK = "/";
+const DEFAULT_CLERK_SIGN_IN_FALLBACK = "/home";
+const DEFAULT_CLERK_SIGN_UP_FALLBACK = "/home";
 const DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
 const DEFAULT_NEWS_SYNTHESIZER_MODEL = "gpt-5.4-mini";
 const DEFAULT_INNGEST_APP_ID = "my-app";

@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { HideOnLanding } from "@/components/nav/HideOnLanding";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Toaster } from "@/components/ui/sonner";
@@ -39,13 +40,15 @@ export default function RootLayout({
       <body className="h-dvh overflow-hidden bg-background text-foreground">
         <ClerkProvider>
           <TooltipProvider>
-            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+            <div data-app-shell className="flex h-full min-h-0 flex-col overflow-hidden">
               <SyncLocalUser />
               <SiteHeader />
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div data-app-shell className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {children}
               </div>
-              <SiteFooter />
+              <HideOnLanding>
+                <SiteFooter />
+              </HideOnLanding>
               <Toaster richColors closeButton position="top-center" />
             </div>
           </TooltipProvider>

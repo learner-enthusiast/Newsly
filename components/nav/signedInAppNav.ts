@@ -6,7 +6,7 @@ export type SignedInAppNavItem = {
 };
 
 export const SIGNED_IN_APP_NAV: SignedInAppNavItem[] = [
-  { href: "/", label: "Home", match: (p) => p === "/" },
+  { href: "/home", label: "Home", match: (p) => p === "/home" },
   {
     href: "/news",
     label: "News",

@@ -219,6 +219,22 @@
   }
 }
 
+/*
+ * Public landing (`app/(marketing)`): release the root layout's fixed-height,
+ * overflow-hidden shell so the window scrolls. Unlayered so it beats the
+ * `h-dvh overflow-hidden` utilities; only matches while the landing is mounted.
+ */
+body:has([data-landing-root]) {
+  height: auto;
+  overflow-y: visible;
+}
+
+body:has([data-landing-root]) [data-app-shell] {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
 /* Independently scrolling pane: no track, thumb only while hovered/focused. */
 @utility scroll-pane {
   overflow-y: auto;
