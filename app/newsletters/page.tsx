@@ -2,8 +2,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+
+const SEND_TEST_COOLDOWN_MS = 10_000;
 
 type NewsletterRow = {
   id: string;
@@ -42,6 +46,11 @@ export default function NewslettersPage() {
   const [rows, setRows] = useState<NewsletterRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [testSendingId, setTestSendingId] = useState<string | null>(null);
+  const [testCooldownUntil, setTestCooldownUntil] = useState<
+    Record<string, number>
+  >({});
+  const [cooldownNow, setCooldownNow] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +78,24 @@ export default function NewslettersPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const hasActiveCooldown = Object.values(testCooldownUntil).some(
+      (until) => until > Date.now(),
+    );
+    if (!hasActiveCooldown) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setCooldownNow(Date.now());
+    }, 500);
+    return () => clearInterval(timer);
+  }, [testCooldownUntil]);
+
+  function testCooldownSeconds(newsletterId: string): number {
+    const until = testCooldownUntil[newsletterId] ?? 0;
+    return Math.max(0, Math.ceil((until - cooldownNow) / 1000));
+  }
+
   async function reload() {
     try {
       const newsletters = await fetchNewsletters();
@@ -88,8 +115,48 @@ export default function NewslettersPage() {
     void reload();
   }
 
-  async function sendTest(id: string) {
-    await fetch(`/api/newsletters/${id}/test`, { method: "POST" });
+  async function sendTest(row: NewsletterRow) {
+    const cooldownLeft = testCooldownSeconds(row.id);
+    if (cooldownLeft > 0) {
+      toast.message("Please wait before sending another test", {
+        description: `You can send another test for “${row.name}” in ${cooldownLeft}s.`,
+      });
+      return;
+    }
+    if (testSendingId === row.id) {
+      return;
+    }
+
+    setTestSendingId(row.id);
+    try {
+      const response = await fetch(`/api/newsletters/${row.id}/test`, {
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not queue test email");
+      }
+
+      setTestCooldownUntil((previous) => ({
+        ...previous,
+        [row.id]: Date.now() + SEND_TEST_COOLDOWN_MS,
+      }));
+
+      toast.success("Test digest queued", {
+        description: `We’re building “${row.name}” and will email ${row.email} when it’s ready—usually within a few minutes. Check spam if you don’t see it.`,
+        duration: 10_000,
+      });
+    } catch (err) {
+      toast.error("Test send failed", {
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
+      });
+    } finally {
+      setTestSendingId(null);
+    }
   }
 
   return (
@@ -152,13 +219,30 @@ export default function NewslettersPage() {
                 >
                   {row.isActive ? "Pause" : "Resume"}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void sendTest(row.id)}
-                >
-                  Send test
-                </Button>
+                {(() => {
+                  const cooldownLeft = testCooldownSeconds(row.id);
+                  const isSending = testSendingId === row.id;
+                  const disabled = isSending || cooldownLeft > 0;
+                  let label = "Send test";
+                  if (isSending) {
+                    label = "Queuing…";
+                  } else if (cooldownLeft > 0) {
+                    label = `Send test (${cooldownLeft}s)`;
+                  }
+                  return (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={disabled}
+                      onClick={() => void sendTest(row)}
+                    >
+                      {isSending ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : null}
+                      {label}
+                    </Button>
+                  );
+                })()}
                 <Link
                   href={`/newsletters/${row.id}`}
                   className="inline-flex h-8 items-center rounded-md bg-secondary px-3 text-xs"
