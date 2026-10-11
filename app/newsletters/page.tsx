@@ -26,33 +26,58 @@ type NewsletterRow = {
   }>;
 };
 
+async function fetchNewsletters(): Promise<NewsletterRow[]> {
+  const response = await fetch("/api/newsletters");
+  const payload = (await response.json()) as {
+    newsletters?: NewsletterRow[];
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Failed to load newsletters");
+  }
+  return payload.newsletters ?? [];
+}
+
 export default function NewslettersPage() {
   const [rows, setRows] = useState<NewsletterRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
-    setLoading(true);
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchNewsletters()
+      .then((newsletters) => {
+        if (!cancelled) {
+          setRows(newsletters);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Load failed");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function reload() {
     try {
-      const response = await fetch("/api/newsletters");
-      const payload = (await response.json()) as {
-        newsletters?: NewsletterRow[];
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load newsletters");
-      }
-      setRows(payload.newsletters ?? []);
+      const newsletters = await fetchNewsletters();
+      setRows(newsletters);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Load failed");
-    } finally {
-      setLoading(false);
     }
   }
-
-  useEffect(() => {
-    void load();
-  }, []);
 
   async function toggleActive(id: string, isActive: boolean) {
     await fetch(`/api/newsletters/${id}/pause`, {
@@ -60,7 +85,7 @@ export default function NewslettersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !isActive }),
     });
-    void load();
+    void reload();
   }
 
   async function sendTest(id: string) {
