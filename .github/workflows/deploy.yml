@@ -57,6 +57,9 @@ jobs:
               echo "Installing dependencies..."
               pnpm install --frozen-lockfile
 
+              echo "Applying database migrations..."
+              pnpm db:migrate:deploy
+
               echo "Building Next.js..."
               pnpm build
 
