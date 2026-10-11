@@ -226,13 +226,38 @@
  */
 body:has([data-landing-root]) {
   height: auto;
+  overflow-x: hidden;
   overflow-y: visible;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:has([data-landing-root]) {
+    scroll-behavior: smooth;
+  }
 }
 
 body:has([data-landing-root]) [data-app-shell] {
   height: auto;
   min-height: 0;
   overflow: visible;
+}
+
+/* Landing type: undo the app's display-serif heading defaults (still below utilities). */
+@layer base {
+  [data-landing-root] {
+    line-height: 1.5;
+  }
+
+  [data-landing-root] :is(h1, h2, h3) {
+    font-family: inherit;
+    letter-spacing: normal;
+    line-height: inherit;
+    text-wrap: wrap;
+  }
+
+  [data-landing-root] p {
+    text-wrap: wrap;
+  }
 }
 
 /* Independently scrolling pane: no track, thumb only while hovered/focused. */

@@ -1,3 +1,4 @@
+import { FONT_FAMILY, FONT_HREF } from "@/lib/landing/content";
 import type { ReactNode } from "react";
 
 /**
@@ -7,5 +8,13 @@ import type { ReactNode } from "react";
  * page load on every navigation between `/` and the app.
  */
 export default function MarketingLayout({ children }: { children: ReactNode }) {
-  return <div data-landing-root>{children}</div>;
+  return (
+    <>
+      {/* TODO: licensing — third-party font host; see FONT_HREF. React hoists this into <head>. */}
+      <link rel="stylesheet" href={FONT_HREF} precedence="default" />
+      <div data-landing-root style={{ fontFamily: FONT_FAMILY }}>
+        {children}
+      </div>
+    </>
+  );
 }
