@@ -7,8 +7,8 @@ import { FALLBACK_OPENAI_MODEL } from "@/lib/openAiModel";
 
 const LOG_PREFIX = "[env]";
 
-const DEFAULT_CLERK_SIGN_IN_URL = "/sign-in";
-const DEFAULT_CLERK_SIGN_UP_URL = "/sign-up";
+const DEFAULT_CLERK_SIGN_IN_URL = "/";
+const DEFAULT_CLERK_SIGN_UP_URL = "/";
 const DEFAULT_CLERK_SIGN_IN_FALLBACK = "/home";
 const DEFAULT_CLERK_SIGN_UP_FALLBACK = "/home";
 const DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";

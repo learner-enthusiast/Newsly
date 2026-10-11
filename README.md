@@ -1580,7 +1580,7 @@ Values are never committed. Required variables cause a startup error when missin
 | `OPENAI_API_KEY` | Yes | Agents and embeddings |
 | `SERPAPI_API_KEY` | Yes | All search, YouTube, Maps |
 | `FIRECRAWL_API_KEY` | Yes | Scraping |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | No | Defaults `/sign-in`, `/sign-up` |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | No | Default `/` — there are no auth pages; `ClerkModalBridge` opens the Clerk modal there |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL` | No | Default `/home` |
 | `OPENAI_MODEL` | No | Default model (`gpt-4o-mini`) |
 | `OPENAI_EMBEDDING_MODEL` | No | Default `text-embedding-3-small` |

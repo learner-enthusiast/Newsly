@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { ClerkModalBridge } from "@/components/auth/ClerkModalBridge";
 import { HideOnLanding } from "@/components/nav/HideOnLanding";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -28,6 +29,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      // The landing (`/`) scrolls smoothly; this lets Next disable it during route changes.
+      data-scroll-behavior="smooth"
       className={cn(
         "h-full antialiased font-sans",
         fontSans.variable,
@@ -42,6 +45,9 @@ export default function RootLayout({
           <TooltipProvider>
             <div data-app-shell className="flex h-full min-h-0 flex-col overflow-hidden">
               <SyncLocalUser />
+              <Suspense fallback={null}>
+                <ClerkModalBridge />
+              </Suspense>
               <SiteHeader />
               <div data-app-shell className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {children}

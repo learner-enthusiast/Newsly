@@ -2,6 +2,7 @@
 
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { DARK, NAV_COPY, NAV_LINKS, ROUTES } from "@/lib/landing/content";
+import { SignInButton, SignUpButton } from "@clerk/nextjs";
 import { X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, type RefObject } from "react";
@@ -63,15 +64,7 @@ export function LandingMobileMenu({
     }
   };
 
-  const footerLinks = isSignedIn
-    ? [
-        { label: NAV_COPY.openApp, href: ROUTES.app },
-        { label: NAV_COPY.newsletters, href: ROUTES.newsletters },
-      ]
-    : [
-        { label: NAV_COPY.signIn, href: ROUTES.signIn },
-        { label: NAV_COPY.signUp, href: ROUTES.signUp },
-      ];
+  const footerClass = `text-xs tracking-[0.2em] text-white/60 uppercase transition-colors hover:text-white ${FOCUS}`;
 
   const transitionDuration = reduced ? "0s" : undefined;
 
@@ -141,16 +134,29 @@ export function LandingMobileMenu({
         </nav>
 
         <div className="flex gap-6 px-8 pb-10 sm:px-12">
-          {footerLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={onClose}
-              className={`text-xs tracking-[0.2em] text-white/60 uppercase transition-colors hover:text-white ${FOCUS}`}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {isSignedIn ? (
+            <>
+              <Link href={ROUTES.app} onClick={onClose} className={footerClass}>
+                {NAV_COPY.openApp}
+              </Link>
+              <Link href={ROUTES.newsletters} onClick={onClose} className={footerClass}>
+                {NAV_COPY.newsletters}
+              </Link>
+            </>
+          ) : (
+            <>
+              <SignInButton mode="modal">
+                <button type="button" onClick={onClose} className={footerClass}>
+                  {NAV_COPY.signIn}
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button type="button" onClick={onClose} className={footerClass}>
+                  {NAV_COPY.signUp}
+                </button>
+              </SignUpButton>
+            </>
+          )}
         </div>
       </div>
     </div>

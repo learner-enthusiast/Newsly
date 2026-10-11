@@ -19,7 +19,7 @@ type StoryVoteControlsProps = {
   onVote: (storyId: string, desiredVote: "UP" | "DOWN") => Promise<void>;
   voting?: boolean;
   className?: string;
-  /** When set, vote buttons redirect to sign-in instead of calling onVote. */
+  /** When set, vote buttons open the sign-in modal instead of calling onVote. */
   signInRedirectUrl?: string;
 };
 
@@ -42,7 +42,7 @@ function VoteButton({
 }) {
   if (signInRedirectUrl) {
     return (
-      <SignInButton mode="redirect" forceRedirectUrl={signInRedirectUrl}>
+      <SignInButton mode="modal" forceRedirectUrl={signInRedirectUrl}>
         <button
           type="button"
           className={className}

@@ -27,7 +27,7 @@ export function NewsStorySignInBanner({
         <p className="text-sm text-foreground">
           Sign in to vote, start a deep dive, and use all story tools.
         </p>
-        <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+        <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
           <Button type="button" variant="brand-accent" size="sm">
             Sign in
           </Button>

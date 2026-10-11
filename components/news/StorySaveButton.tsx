@@ -26,7 +26,7 @@ export function StorySaveButton({
 
   if (signInRedirectUrl) {
     return (
-      <SignInButton mode="redirect" forceRedirectUrl={signInRedirectUrl}>
+      <SignInButton mode="modal" forceRedirectUrl={signInRedirectUrl}>
         <Button type="button" variant="outline" size="sm" className={className}>
           <Bookmark data-icon="inline-start" />
           Save

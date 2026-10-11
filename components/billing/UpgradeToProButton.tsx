@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { useUser } from "@clerk/nextjs";
+import { useClerk, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -60,6 +60,7 @@ export function UpgradeToProButton({
   className,
 }: UpgradeToProButtonProps) {
   const { isSignedIn } = useUser();
+  const clerk = useClerk();
   const router = useRouter();
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const busyRef = useRef(false);
@@ -74,7 +75,7 @@ export function UpgradeToProButton({
       return;
     }
     if (!isSignedIn) {
-      router.push("/sign-in?redirect_url=/pricing");
+      clerk.openSignIn({ forceRedirectUrl: "/pricing" });
       return;
     }
 
@@ -182,7 +183,7 @@ export function UpgradeToProButton({
         current === "checkout_open" || current === "loading" ? "idle" : current,
       );
     }
-  }, [disabled, isSignedIn, phase, productId, router]);
+  }, [clerk, disabled, isSignedIn, phase, productId, router]);
 
   let buttonLabel = label;
   if (phase === "loading") {

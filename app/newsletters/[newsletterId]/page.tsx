@@ -1,7 +1,8 @@
 import { EditNewsletterClient } from "@/components/newsletter/EditNewsletterClient";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { getNewsletterDetail } from "@/services/newsletter/newsletterService";
-import { notFound, redirect } from "next/navigation";
+import { redirectToSignInModal } from "@/lib/redirectToSignInModal";
+import { notFound } from "next/navigation";
 
 /** Loads the newsletter on the server so the form renders already filled in. */
 export default async function EditNewsletterPage({
@@ -11,7 +12,7 @@ export default async function EditNewsletterPage({
 }) {
   const user = await getAuthenticatedUser();
   if (!user) {
-    redirect("/sign-in");
+    return redirectToSignInModal();
   }
 
   const { newsletterId } = await params;

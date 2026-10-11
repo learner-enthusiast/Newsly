@@ -30,11 +30,8 @@ export const ROUTES = {
   chat: "/chat",
   newsletters: "/newsletters",
   newsletterCreate: "/newsletters/new",
-  signIn: "/sign-in",
-  signUp: "/sign-up",
-  /** Sign up, then land on newsletter create (Clerk `redirect_url`). */
-  signUpThenNewsletter: "/sign-up?redirect_url=/newsletters/new",
 } as const;
+// Sign-in / sign-up are Clerk modals (SignInButton / SignUpButton), not routes.
 
 export const NAV_LINKS = [
   { label: "Dainik Samachar", href: ROUTES.landing, active: true },

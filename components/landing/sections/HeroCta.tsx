@@ -6,10 +6,24 @@ import {
   type HeroSectionProps,
 } from "@/components/landing/Stagger";
 import { HERO_CTA, ROUTES } from "@/lib/landing/content";
-import { useAuth } from "@clerk/nextjs";
+import { SignUpButton, useAuth } from "@clerk/nextjs";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { memo } from "react";
+
+const CTA_CLASS =
+  "pointer-events-auto inline-flex items-center gap-4 text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-current";
+
+const ctaContent = (
+  <>
+    <span className="text-sm tracking-[0.3em] text-white/80 uppercase">
+      {HERO_CTA.cta}
+    </span>
+    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-800 transition-transform duration-300 hover:scale-110">
+      <ArrowRight size={16} />
+    </span>
+  </>
+);
 
 export const HeroCta = memo(function HeroCta({ opacity }: HeroSectionProps) {
   const visible = opacity > 0.3;
@@ -37,19 +51,21 @@ export const HeroCta = memo(function HeroCta({ opacity }: HeroSectionProps) {
           </h2>
         </Stagger>
         <Stagger visible={visible} delay={300}>
-          <Link
-            href={
-              isSignedIn ? ROUTES.newsletterCreate : ROUTES.signUpThenNewsletter
-            }
-            className="pointer-events-auto inline-flex items-center gap-4 text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-current"
-          >
-            <span className="text-sm tracking-[0.3em] text-white/80 uppercase">
-              {HERO_CTA.cta}
-            </span>
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-800 transition-transform duration-300 hover:scale-110">
-              <ArrowRight size={16} />
-            </span>
-          </Link>
+          {isSignedIn ? (
+            <Link href={ROUTES.newsletterCreate} className={CTA_CLASS}>
+              {ctaContent}
+            </Link>
+          ) : (
+            <SignUpButton
+              mode="modal"
+              forceRedirectUrl={ROUTES.newsletterCreate}
+              signInForceRedirectUrl={ROUTES.newsletterCreate}
+            >
+              <button type="button" className={CTA_CLASS}>
+                {ctaContent}
+              </button>
+            </SignUpButton>
+          )}
         </Stagger>
       </div>
     </section>

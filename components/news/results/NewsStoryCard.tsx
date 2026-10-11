@@ -146,7 +146,7 @@ export function NewsStoryCard({
   if (fullStoryContent) {
     if (guestGated) {
       readFullStoryControl = (
-        <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+        <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
           {readFullStoryTrigger}
         </SignInButton>
       );
@@ -261,7 +261,7 @@ export function NewsStoryCard({
           <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
             <div className="flex flex-wrap items-center gap-2">
               {guestGated ? (
-                <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+                <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
                   <Button type="button" variant="ghost" size="sm">
                     Key Takeaways
                   </Button>
@@ -271,7 +271,7 @@ export function NewsStoryCard({
               )}
               <NewsStorySources sources={story.sourceUrls ?? []} />
               {guestGated ? (
-                <SignInButton mode="redirect" forceRedirectUrl={redirectUrl}>
+                <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
                   <Button type="button" variant="ghost" size="sm">
                     {useBackToChat ? "Back to chat" : "Deep Dive"}
                   </Button>

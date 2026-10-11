@@ -3,7 +3,7 @@
 import { LandingMobileMenu } from "@/components/landing/LandingMobileMenu";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { DARK, NAV_COPY, NAV_LINKS, ROUTES } from "@/lib/landing/content";
-import { useAuth } from "@clerk/nextjs";
+import { SignInButton, useAuth } from "@clerk/nextjs";
 import { Info } from "lucide-react";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -46,6 +46,22 @@ export const LandingNavbar = memo(function LandingNavbar({
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   const color = isLight ? "#ffffff" : DARK;
+  const clusterClass = `flex items-center gap-3 transition-opacity hover:opacity-70 ${LABEL} ${FOCUS}`;
+  const clusterContent = (label: string) => (
+    <>
+      <span>{label}</span>
+      <span
+        aria-hidden="true"
+        className="flex h-5 w-5 items-center justify-center rounded-full bg-current"
+      >
+        <Info
+          size={10}
+          className="transition-colors duration-500"
+          style={{ color: isLight ? DARK : "#ffffff" }}
+        />
+      </span>
+    </>
+  );
 
   return (
     <nav
@@ -88,22 +104,17 @@ export const LandingNavbar = memo(function LandingNavbar({
 
       {/* Right cluster (sm+) */}
       <div className="hidden items-center gap-8 sm:flex" style={entrance(500)}>
-        <Link
-          href={isSignedIn ? ROUTES.app : ROUTES.signIn}
-          className={`flex items-center gap-3 transition-opacity hover:opacity-70 ${LABEL} ${FOCUS}`}
-        >
-          <span>{isSignedIn ? NAV_COPY.openApp : NAV_COPY.signIn}</span>
-          <span
-            aria-hidden="true"
-            className="flex h-5 w-5 items-center justify-center rounded-full bg-current"
-          >
-            <Info
-              size={10}
-              className="transition-colors duration-500"
-              style={{ color: isLight ? DARK : "#ffffff" }}
-            />
-          </span>
-        </Link>
+        {isSignedIn ? (
+          <Link href={ROUTES.app} className={clusterClass}>
+            {clusterContent(NAV_COPY.openApp)}
+          </Link>
+        ) : (
+          <SignInButton mode="modal">
+            <button type="button" className={clusterClass}>
+              {clusterContent(NAV_COPY.signIn)}
+            </button>
+          </SignInButton>
+        )}
         <span className={`hidden lg:inline ${LABEL}`}>{NAV_COPY.menu}</span>
         <button
           type="button"

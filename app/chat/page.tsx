@@ -5,11 +5,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { redirectToSignInModal } from "@/lib/redirectToSignInModal";
 
 export default async function ChatIndexPage() {
   const user = await getAuthenticatedUser();
   if (!user) {
-    redirect("/sign-in");
+    return redirectToSignInModal();
   }
 
   const sessions = await listUserChatSessionsForUi(user.id);
