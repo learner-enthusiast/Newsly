@@ -17,7 +17,9 @@ import {
   type AIClientOptions,
 } from "@/clients/AIClient";
 import type { StockResearchInstrument } from "@/Agents/stockResearch/toolDeterminerAgent";
+import { RESEARCH_ASSET_PROFILES } from "@/Agents/stockResearch/assetProfiles";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
+import type { ResearchAssetType } from "@/services/stockResearch/stockResearchTypes";
 import type { NormalizedSerpHit } from "@/services/chat/normalizeSerpResults";
 import { z } from "zod";
 
@@ -44,6 +46,7 @@ export type LinkSelectorAgentParams = {
   /** AI overview / AI mode text from Serp, when present. */
   serpSummaries?: string[];
   maxLinks?: number;
+  assetType?: ResearchAssetType;
   model?: string;
   abortSignal?: AbortSignal;
 };
@@ -55,14 +58,15 @@ export function resolveLinkSelectorModel(override?: string): string {
   );
 }
 
-function buildSystemPrompt(maxLinks: number): string {
+function buildSystemPrompt(maxLinks: number, assetType: ResearchAssetType): string {
+  const profile = RESEARCH_ASSET_PROFILES[assetType];
   return [
-    "You select web pages to scrape for an investment research report on one listed instrument.",
+    `You select web pages to scrape for an investment research report on one ${profile.noun}.`,
     `Pick at most ${maxLinks} candidates whose full text will add the most to answering the research brief.`,
     "",
     "Prefer:",
     "- Pages specifically about this company/instrument (not generic market wraps or other companies).",
-    "- Recent results coverage, earnings call notes, management commentary, analyst/broker views, regulatory filings, credible business press.",
+    ...profile.linkSelectorGuidance.map((line) => `- ${line}`),
     "- Distinct angles: avoid several pages repeating the same news item.",
     "",
     "Avoid:",
@@ -94,7 +98,7 @@ async function runLinkSelectorCore(
 
   const output = await generate({
     model: resolveLinkSelectorModel(params.model),
-    system: buildSystemPrompt(maxLinks),
+    system: buildSystemPrompt(maxLinks, params.assetType ?? "STOCK"),
     prompt: params.enhancedPrompt,
     extraContext: {
       originalUserPrompt: params.userPrompt,

@@ -28,6 +28,7 @@ const newsStoryWriteSchema = z.object({
   location: z.string().min(1).nullable().optional(),
   publishedAt: z.coerce.date().nullable().optional(),
   importanceScore: z.coerce.number().nullable().optional(),
+  rank: z.number().int().min(1).nullable().optional(),
   newsSourceIds: z.array(newsSourceIdSchema).optional(),
   imageUrl: z.string().url().nullable().optional(),
   loadingLogs: z.array(z.string()).optional(),
@@ -663,7 +664,7 @@ export async function countStoriesByNewsRequestIds(
 export async function listNewsStoriesByNewsRequestId(newsRequestId: string) {
   const rows = await prisma.newsStory.findMany({
     where: { newsRequestId: newsRequestIdSchema.parse(newsRequestId) },
-    orderBy: [{ importanceScore: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ rank: "asc" }, { importanceScore: "desc" }, { createdAt: "desc" }],
     include: {
       sources: {
         select: { id: true, url: true, title: true, domain: true },

@@ -14,7 +14,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { useRecentStockResearches } from "@/hooks/useRecentStockResearches";
 import type { InstrumentSuggestion } from "@/app/api/instruments/suggest/route";
-import type { SerializedStockResearch } from "@/services/stockResearch/stockResearchTypes";
+import {
+  RESEARCH_ASSET_CONFIG,
+  type ResearchAssetType,
+  type SerializedStockResearch,
+} from "@/services/stockResearch/stockResearchTypes";
 import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -23,13 +27,22 @@ import { toast } from "sonner";
 const MIN_PROMPT_CHARS = 3;
 const MAX_PROMPT_CHARS = 2000;
 
-export function StockResearchWorkspace() {
+export function StockResearchWorkspace({
+  assetType = "STOCK",
+}: {
+  assetType?: ResearchAssetType;
+}) {
+  const asset = RESEARCH_ASSET_CONFIG[assetType];
   const router = useRouter();
   const [selectedStock, setSelectedStock] =
     useState<InstrumentSuggestion | null>(null);
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { recentResearches, total, recentLoading } = useRecentStockResearches();
+  const { recentResearches, total, recentLoading } = useRecentStockResearches(
+    undefined,
+    null,
+    assetType,
+  );
 
   const trimmedPrompt = prompt.trim();
   const canSubmit =
@@ -48,6 +61,7 @@ export function StockResearchWorkspace() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          assetType,
           instrumentKey: selectedStock.instrumentKey,
           prompt: trimmedPrompt,
         }),
@@ -59,7 +73,7 @@ export function StockResearchWorkspace() {
       if (!response.ok || !payload.stockResearch) {
         throw new Error(payload.error ?? "Failed to start research");
       }
-      router.push(`/stockResearch/${payload.stockResearch.id}`);
+      router.push(`${asset.basePath}/${payload.stockResearch.id}`);
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to start research",
@@ -75,16 +89,15 @@ export function StockResearchWorkspace() {
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 md:px-8 md:py-12">
           <div className="flex flex-col gap-3">
             <h1 className="font-display text-3xl tracking-tight">
-              Stock research
+              {asset.title}
             </h1>
-            <p className="text-muted-foreground">
-              Pick a stock, tell us what you want to know, and we&apos;ll pull
-              market data, fundamentals and recent coverage into one report.
-            </p>
+            <p className="text-muted-foreground">{asset.description}</p>
           </div>
 
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
             <StockSearch
+              endpoint={asset.suggestPath}
+              placeholder={asset.searchPlaceholder}
               onSelect={setSelectedStock}
               onClear={() => setSelectedStock(null)}
             />
@@ -113,7 +126,7 @@ export function StockResearchWorkspace() {
                     onChange={(event) => setPrompt(event.target.value)}
                     maxLength={MAX_PROMPT_CHARS}
                     rows={4}
-                    placeholder={`e.g. Should I invest in ${selectedStock.name} for the next 2–3 years? How are its valuation and recent results?`}
+                    placeholder={asset.promptPlaceholder(selectedStock.name)}
                     disabled={submitting}
                   />
                   <div className="flex items-center justify-between gap-3">
@@ -143,6 +156,7 @@ export function StockResearchWorkspace() {
 
       <div className="border-t border-border/60 bg-muted/20 px-4 py-6 lg:scroll-pane lg:w-[320px] lg:shrink-0 lg:border-t-0 lg:border-l">
         <StockResearchRecentSidebar
+          basePath={asset.basePath}
           recentResearches={recentResearches}
           recentLoading={recentLoading}
           total={total}

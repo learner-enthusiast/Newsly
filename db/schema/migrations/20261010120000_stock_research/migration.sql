@@ -16,6 +16,7 @@ CREATE TABLE "stock_researches" (
     "exchange" TEXT,
     "isin" TEXT,
     "instrument_key" TEXT,
+    "user_prompt" TEXT,
     "query" TEXT NOT NULL,
     "status" "StockResearchStatus" NOT NULL DEFAULT 'PENDING',
     "run_count" INTEGER NOT NULL DEFAULT 0,

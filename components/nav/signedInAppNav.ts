@@ -10,7 +10,14 @@ export const SIGNED_IN_APP_NAV: SignedInAppNavItem[] = [
   {
     href: "/news",
     label: "News",
-    match: (p) => p === "/news" || p.startsWith("/news/"),
+    match: (p) =>
+      p === "/news" ||
+      (p.startsWith("/news/") && !p.startsWith("/newsletters")),
+  },
+  {
+    href: "/newsletters",
+    label: "Newsletters",
+    match: (p) => p === "/newsletters" || p.startsWith("/newsletters/"),
   },
   {
     href: "/chat",

@@ -137,6 +137,7 @@ import { newsSearchQuerySchema } from "@/lib/newsSearchQuerySchema";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
 import {
   appendNewsRequestLoadingLog,
+  getNewsRequestById,
   getNewsRequestByIdForUser,
   patchNewsRequest,
 } from "@/repositories/newsRequest";
@@ -185,12 +186,20 @@ import { z } from "zod";
 
 export const NEWS_PIPELINE_EVENT = "news/pipeline.requested" as const;
 
+const newsPipelineControlSchema = z.object({
+  editionBuild: z.boolean().optional(),
+  skipCompletionNotification: z.boolean().optional(),
+  append: z.boolean().optional(),
+  overrideStoryCount: z.number().int().min(1).max(20).optional(),
+});
+
 export const newsPipelineEventDataSchema = z
   .object({
     userId: z.string().min(1),
     newsRequestId: z.uuid(),
   })
-  .extend(newsPipelineGenerationEventSchema.shape);
+  .extend(newsPipelineGenerationEventSchema.shape)
+  .extend(newsPipelineControlSchema.shape);
 
 export type NewsPipelineEventData = z.infer<typeof newsPipelineEventDataSchema>;
 
@@ -240,10 +249,9 @@ export const newsPipelineFunction = inngest.createFunction(
     pipelineLog("step", "entering load-news-request");
     const loaded = await step.run("load-news-request", async () => {
       pipelineLog("load-news-request", "start");
-      const row = await getNewsRequestByIdForUser(
-        input.newsRequestId,
-        input.userId,
-      );
+      const row = input.editionBuild
+        ? await getNewsRequestById(input.newsRequestId)
+        : await getNewsRequestByIdForUser(input.newsRequestId, input.userId);
       if (!row) {
         throw new Error("News request not found for user");
       }
@@ -257,7 +265,10 @@ export const newsPipelineFunction = inngest.createFunction(
     });
 
     const newsRequest = { id: loaded.id as string };
-    const config = newsGenerationConfigSchema.parse(loaded.config);
+    let config = newsGenerationConfigSchema.parse(loaded.config);
+    if (input.overrideStoryCount != null) {
+      config = { ...config, storyCount: input.overrideStoryCount };
+    }
 
     pipelineLog("run", "started", {
       newsRequestId: input.newsRequestId,
@@ -613,6 +624,24 @@ export const newsPipelineFunction = inngest.createFunction(
         pipelineLog("persist-stories-and-sources", "start", {
           storyCount: synthesized.length,
         });
+        const existingStories = input.append
+          ? await listNewsStoriesByNewsRequestId(newsRequest.id)
+          : [];
+        const existingUrlKeys = new Set<string>();
+        for (const row of existingStories) {
+          for (const source of row.sourceUrls ?? []) {
+            const key = canonicalResearchUrl(source.url);
+            if (key) {
+              existingUrlKeys.add(key);
+            }
+          }
+        }
+        let nextRank =
+          existingStories.reduce(
+            (max, row) => Math.max(max, row.rank ?? 0),
+            0,
+          ) || 0;
+        const targetTotal = config.storyCount;
         const transcriptByVideoId = new Map(
           youtubeTranscripts.map((row) => [row.videoId, row.transcript]),
         );
@@ -624,6 +653,16 @@ export const newsPipelineFunction = inngest.createFunction(
           }
         }
         for (const story of synthesized) {
+          if (input.append && nextRank >= targetTotal) {
+            break;
+          }
+          const primaryUrl = story.sources[0]?.url;
+          const primaryKey = primaryUrl
+            ? canonicalResearchUrl(primaryUrl)
+            : null;
+          if (input.append && primaryKey && existingUrlKeys.has(primaryKey)) {
+            continue;
+          }
           if (!storyHasPrimaryArticleSource(story)) {
             pipelineLog(
               "persist-stories-and-sources",
@@ -641,6 +680,7 @@ export const newsPipelineFunction = inngest.createFunction(
             imageByUrl,
           });
 
+          nextRank += 1;
           const savedStory = await createNewsStory({
             newsRequestId: newsRequest.id,
             title: story.title,
@@ -652,10 +692,14 @@ export const newsPipelineFunction = inngest.createFunction(
             location: story.location,
             publishedAt: story.publishedAt,
             importanceScore: story.importanceScore,
+            rank: nextRank,
             newsSourceIds: [],
             imageUrl: storyImageUrl,
             loadingLogs: ["Story added to your briefing."],
           });
+          if (primaryKey) {
+            existingUrlKeys.add(primaryKey);
+          }
 
           const newsSourceIds: string[] = [];
           for (const source of story.sources) {
@@ -697,17 +741,19 @@ export const newsPipelineFunction = inngest.createFunction(
         pipelineLog("mark-request-success", "done");
       });
 
-      await step.run("create-completion-notification", async () => {
-        pipelineLog("create-completion-notification", "start");
-        await tryCreatePipelineNotification(
-          newsPipelineCompletedNotification({
-            userId: input.userId,
-            newsRequestId: newsRequest.id,
-          }),
-          { newsRequestId: newsRequest.id },
-        );
-        pipelineLog("create-completion-notification", "done");
-      });
+      if (!input.skipCompletionNotification) {
+        await step.run("create-completion-notification", async () => {
+          pipelineLog("create-completion-notification", "start");
+          await tryCreatePipelineNotification(
+            newsPipelineCompletedNotification({
+              userId: input.userId,
+              newsRequestId: newsRequest.id,
+            }),
+            { newsRequestId: newsRequest.id },
+          );
+          pipelineLog("create-completion-notification", "done");
+        });
+      }
 
       pipelineLog("step", "entering load-stories");
       const stories = await step.run("load-stories", async () => {

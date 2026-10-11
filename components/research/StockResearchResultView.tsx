@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import {
   formatStockResearchStatusLabel,
   formatStockResearchTitle,
+  RESEARCH_ASSET_CONFIG,
   isStockResearchInProgress,
   type SerializedStockResearch,
   type StockResearchDetailPayload,
@@ -186,11 +187,13 @@ export function StockResearchResultView({
   data,
 }: StockResearchResultViewProps) {
   const research = data.stockResearch;
+  const asset = RESEARCH_ASSET_CONFIG[research.assetType ?? "STOCK"];
   const busy = isStockResearchInProgress(research.status);
   // Refetch the sidebar when this research changes status.
   const { recentResearches, total, recentLoading } = useRecentStockResearches(
     undefined,
     research.status,
+    research.assetType ?? "STOCK",
   );
 
   const webSources = data.resources.filter(
@@ -213,6 +216,7 @@ export function StockResearchResultView({
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       <div className="scroll-pane hidden w-[280px] shrink-0 border-r border-border/60 bg-muted/20 px-4 py-6 lg:block">
         <StockResearchRecentSidebar
+          basePath={asset.basePath}
           recentResearches={recentResearches}
           recentLoading={recentLoading}
           total={total}
@@ -262,7 +266,7 @@ export function StockResearchResultView({
               </CardHeader>
               <CardContent>
                 <Link
-                  href="/stockResearch"
+                  href={asset.basePath}
                   className={cn(
                     buttonVariants({ variant: "outline", size: "sm" }),
                   )}

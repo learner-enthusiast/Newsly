@@ -6,6 +6,8 @@ import { prisma } from "@/db";
 const stockResearchIdSchema = z.string().min(1, "id is required");
 const userIdSchema = z.string().min(1, "userId is required");
 
+export const researchAssetTypeSchema = z.enum(["STOCK", "ETF", "MUTUAL_FUND"]);
+
 export const stockResearchStatusSchema = z.enum([
   "PENDING",
   "RUNNING",
@@ -26,6 +28,7 @@ const stockResearchWriteSchema = z.object({
   isin: z.string().min(1).nullable().optional(),
   instrumentKey: z.string().min(1).nullable().optional(),
   userPrompt: z.string().min(1).nullable().optional(),
+  assetType: researchAssetTypeSchema.optional(),
   query: z.string().min(1),
   status: stockResearchStatusSchema.optional(),
   runCount: z.number().int().min(0).optional(),
@@ -120,8 +123,12 @@ export async function listStockResearchesByUserIdPage(input: {
   userId: string;
   skip: number;
   take: number;
+  assetType?: z.infer<typeof researchAssetTypeSchema>;
 }) {
-  const where = { userId: userIdSchema.parse(input.userId) };
+  const where = {
+    userId: userIdSchema.parse(input.userId),
+    ...(input.assetType ? { assetType: input.assetType } : {}),
+  };
   const [total, rows] = await prisma.$transaction([
     prisma.stockResearch.count({ where }),
     prisma.stockResearch.findMany({

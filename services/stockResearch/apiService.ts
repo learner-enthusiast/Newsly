@@ -1,9 +1,15 @@
 import { after } from "next/server";
 import type { StockResearch, StockResearchResource } from "@/db/generated/client";
 import { enqueueStockResearchPipeline } from "@/inngest/stockResearch/stockResearchPipeline";
-import { getInstrumentByKey } from "@/repositories/instrument";
+import {
+  getInstrumentByKey,
+  instrumentIsEtf,
+  instrumentIsFundUnit,
+  instrumentIsMutualFund,
+} from "@/repositories/instrument";
 import {
   appendStockResearchLoadingLog,
+  researchAssetTypeSchema,
   createStockResearch,
   getStockResearchWithResourcesByIdForUser,
   listStockResearchesByUserIdPage,
@@ -11,7 +17,9 @@ import {
 } from "@/repositories/stockResearch";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import {
+  RESEARCH_ASSET_CONFIG,
   STOCK_RESEARCHES_MAX_LIMIT,
+  type ResearchAssetType,
   type SerializedStockResearch,
   type SerializedStockResearchResource,
   type StockResearchDetailPayload,
@@ -20,7 +28,8 @@ import {
 import { z } from "zod";
 
 export const startStockResearchBodySchema = z.object({
-  instrumentKey: z.string().trim().min(1, "Pick a stock first"),
+  assetType: researchAssetTypeSchema.default("STOCK"),
+  instrumentKey: z.string().trim().min(1, "Pick an instrument first"),
   prompt: z
     .string()
     .trim()
@@ -33,6 +42,7 @@ export type StartStockResearchBody = z.infer<typeof startStockResearchBodySchema
 export function serializeStockResearch(row: StockResearch): SerializedStockResearch {
   return {
     id: row.id,
+    assetType: row.assetType,
     companyName: row.companyName,
     symbol: row.symbol,
     exchange: row.exchange,
@@ -67,6 +77,21 @@ function serializeResource(
 
 export class StockResearchInputError extends Error {}
 
+/** Uses the repository's ISIN + name rules (ETF / mutual fund / stock). */
+function instrumentMatchesAssetType(
+  instrument: NonNullable<Awaited<ReturnType<typeof getInstrumentByKey>>>,
+  assetType: ResearchAssetType,
+): boolean {
+  switch (assetType) {
+    case "ETF":
+      return instrumentIsEtf(instrument);
+    case "MUTUAL_FUND":
+      return instrumentIsMutualFund(instrument);
+    default:
+      return !instrumentIsFundUnit(instrument);
+  }
+}
+
 /**
  * Create a PENDING research row and return it immediately. The pipeline event is
  * sent after the response, so the client can redirect to `/stockResearch/:id`
@@ -80,6 +105,11 @@ export async function startStockResearch(
   if (!instrument) {
     throw new StockResearchInputError("Unknown instrument");
   }
+  if (!instrumentMatchesAssetType(instrument, body.assetType)) {
+    throw new StockResearchInputError(
+      `This instrument is not a ${RESEARCH_ASSET_CONFIG[body.assetType].label}`,
+    );
+  }
 
   const row = await createStockResearch({
     userId,
@@ -90,6 +120,7 @@ export async function startStockResearch(
     instrumentKey: instrument.instrumentKey,
     userPrompt: body.prompt,
     query: body.prompt,
+    assetType: body.assetType,
     status: "PENDING",
   });
 
@@ -99,6 +130,7 @@ export async function startStockResearch(
         userId,
         stockResearchId: row.id,
         userPrompt: body.prompt,
+        assetType: body.assetType,
         instrument: toJsonSafeStepOutput(instrument) as Record<string, unknown>,
       });
     } catch (error) {
@@ -120,6 +152,7 @@ export async function listUserStockResearchesPage(input: {
   userId: string;
   page: number;
   limit: number;
+  assetType?: ResearchAssetType;
 }): Promise<StockResearchListPayload> {
   const limit = Math.min(Math.max(1, input.limit), STOCK_RESEARCHES_MAX_LIMIT);
   const page = Math.max(1, input.page);
@@ -127,6 +160,7 @@ export async function listUserStockResearchesPage(input: {
     userId: input.userId,
     skip: (page - 1) * limit,
     take: limit,
+    assetType: input.assetType,
   });
 
   return {

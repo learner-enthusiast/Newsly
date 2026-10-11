@@ -45,6 +45,8 @@ type StockResearchRecentSidebarProps = {
   total: number;
   activeResearchId?: string;
   showNewButton?: boolean;
+  /** Route prefix for links, e.g. `/etfResearch`. */
+  basePath?: string;
   className?: string;
 };
 
@@ -54,6 +56,7 @@ export function StockResearchRecentSidebar({
   total,
   activeResearchId,
   showNewButton = false,
+  basePath = "/stockResearch",
   className,
 }: StockResearchRecentSidebarProps) {
   return (
@@ -63,14 +66,14 @@ export function StockResearchRecentSidebar({
     >
       {showNewButton ? (
         <Link
-          href="/stockResearch"
+          href={basePath}
           className={cn(
             buttonVariants({ variant: "brand-accent", size: "sm" }),
             "w-full justify-center",
           )}
         >
           <Plus data-icon="inline-start" />
-          New stock research
+          New research
         </Link>
       ) : null}
 
@@ -81,7 +84,7 @@ export function StockResearchRecentSidebar({
           </h2>
           {total > 0 ? (
             <Link
-              href="/stockResearch/history"
+              href={`${basePath}/history`}
               className="text-xs font-medium text-primary hover:underline"
             >
               Show all
@@ -104,7 +107,7 @@ export function StockResearchRecentSidebar({
               return (
                 <li key={research.id}>
                   <Link
-                    href={`/stockResearch/${research.id}`}
+                    href={`${basePath}/${research.id}`}
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "block rounded-xl border bg-card/80 px-3 py-3 shadow-paper transition-colors hover:bg-muted/35",

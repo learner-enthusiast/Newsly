@@ -5,6 +5,7 @@ import { z } from "zod";
 
 export const DEFAULT_STORY_COUNT = 5;
 export const MAX_STORY_COUNT = 12;
+export const EDITION_MAX_STORY_COUNT = 20;
 export const MAX_CATEGORIES = 10;
 export const MAX_SOURCES = 10;
 export const DEFAULT_LANGUAGE = "English";

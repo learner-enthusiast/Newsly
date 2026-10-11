@@ -1,0 +1,37 @@
+{
+  "id": "trail-risk",
+  "display_name": "Risk Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a risk evaluator for Dainik Samachar (briefings, research chat, chat→story, Pro billing, Upstox market data). Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes, then score **risk** from 0 to 100 (higher = more potential damage if something is wrong).\n\nDimensions:\n1. Research integrity — wrong or unsourced `NewsStory` rows, chat answers detached from scraped sources, rerun overwriting a good briefing, or dropped primary-article / date filters.\n2. Money and entitlement — Razorpay order, verify, or webhook changes that can grant or extend Pro; paise, receipt, or grace-window mistakes; Pro-only routes (`stockResearch`, `MfResearch`, `etfResearch`) opened or closed incorrectly.\n3. Durability and cost — Inngest idempotency, status, and notification changes; Prisma migrations that drop rows, embeddings, or constraints; loops that multiply SerpAPI, Firecrawl, or OpenAI calls.\n4. Tenant data — owner scoping for `NewsRequest`, `ChatSession`, `NewsStory`, bookmarks, and cover photos; session-scoped pgvector retrieval.\n5. Market data — `services/upstox` or instrument mapping that can show wrong quotes, fundamentals, or options data, or that calls trading/margin APIs with the read-only analytics token.\n\nScore bands:\n- 0–15: copy, styles, or marketing pages with no data path.\n- 16–35: read-only UI or pure helpers (query schema, countries, formatting) with no persistence.\n- 36–60: agent prompts, article normalization, or stock-research UI that still writes through existing services.\n- 61–80: Inngest pipelines, Prisma schema/migrations, vector SQL, or auth/ownership changes.\n- 81–100: billing grant/expiry, secret or token handling, destructive migrations, or bypassing the evidence store.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "risk",
+      "label": "Risk",
+      "value_type": "percent",
+      "polarity": "lower_is_better"
+    }
+  }
+}

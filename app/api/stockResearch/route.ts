@@ -7,6 +7,7 @@ import {
   startStockResearchBodySchema,
   StockResearchInputError,
 } from "@/services/stockResearch/apiService";
+import { researchAssetTypeSchema } from "@/repositories/stockResearch";
 import {
   STOCK_RESEARCHES_MAX_LIMIT,
   STOCK_RESEARCHES_PAGE_SIZE,
@@ -20,6 +21,7 @@ const listQuerySchema = z.object({
     .min(1)
     .max(STOCK_RESEARCHES_MAX_LIMIT)
     .default(STOCK_RESEARCHES_PAGE_SIZE),
+  assetType: researchAssetTypeSchema.optional(),
 });
 
 /** Recent stock researches, newest first. `?page=&limit=` (limit ≤ 10). */
@@ -33,6 +35,7 @@ export async function GET(request: Request) {
   const parsed = listQuerySchema.safeParse({
     page: searchParams.get("page") ?? undefined,
     limit: searchParams.get("limit") ?? undefined,
+    assetType: searchParams.get("assetType") ?? undefined,
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -45,6 +48,7 @@ export async function GET(request: Request) {
     userId: user.id,
     page: parsed.data.page,
     limit: parsed.data.limit,
+    assetType: parsed.data.assetType,
   });
   return NextResponse.json(result);
 }

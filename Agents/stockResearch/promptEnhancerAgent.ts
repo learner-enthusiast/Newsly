@@ -15,7 +15,9 @@ import {
   type AIClientOptions,
 } from "@/clients/AIClient";
 import type { StockResearchInstrument } from "@/Agents/stockResearch/toolDeterminerAgent";
+import { RESEARCH_ASSET_PROFILES } from "@/Agents/stockResearch/assetProfiles";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
+import type { ResearchAssetType } from "@/services/stockResearch/stockResearchTypes";
 import { z } from "zod";
 
 export const promptEnhancerOutputSchema = z.object({
@@ -28,6 +30,7 @@ export type PromptEnhancerOutput = z.infer<typeof promptEnhancerOutputSchema>;
 export type PromptEnhancerAgentParams = {
   userPrompt: string;
   instrument: StockResearchInstrument;
+  assetType?: ResearchAssetType;
   model?: string;
   abortSignal?: AbortSignal;
 };
@@ -41,10 +44,11 @@ export function resolvePromptEnhancerModel(override?: string): string {
   );
 }
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(assetType: ResearchAssetType): string {
+  const profile = RESEARCH_ASSET_PROFILES[assetType];
   return [
     "You are a prompt enhancement agent for an Indian stock market research product.",
-    "The user picked a specific instrument and wrote a research prompt about it.",
+    `The user picked a specific ${profile.noun} and wrote a research prompt about it.`,
     "",
     "Rewrite the prompt into a clear, self-contained research brief:",
     "- Fix grammar, spelling and obvious typos in financial terminology.",
@@ -54,7 +58,8 @@ function buildSystemPrompt(): string {
     "- If the prompt is vague (e.g. \"is it good?\"), frame it as a balanced investment research question about the instrument.",
     "- Do not answer the question or add facts.",
     "",
-    "Also return 3–8 short focusAreas the final report should cover (e.g. \"valuation vs peers\", \"recent quarterly results\", \"promoter holding trend\"), derived from the prompt and the instrument type.",
+    "Also return 3–8 short focusAreas the final report should cover, derived from the prompt and the instrument type.",
+    ...profile.enhancerGuidance,
   ].join("\n");
 }
 
@@ -65,7 +70,7 @@ async function runPromptEnhancerCore(
   const model = resolvePromptEnhancerModel(params.model);
   const output = await generate({
     model,
-    system: buildSystemPrompt(),
+    system: buildSystemPrompt(params.assetType ?? "STOCK"),
     prompt: params.userPrompt,
     extraContext: {
       instrument: {

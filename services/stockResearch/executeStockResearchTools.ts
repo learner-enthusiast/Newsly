@@ -7,7 +7,9 @@ import {
   type ToolDeterminerResult,
   type UpstoxToolFlags,
 } from "@/Agents/stockResearch/toolDeterminerAgent";
+import { serpAssetTerms } from "@/Agents/stockResearch/assetProfiles";
 import { serpEngines } from "@/SERP/index";
+import type { ResearchAssetType } from "@/services/stockResearch/stockResearchTypes";
 import { upstoxApis } from "@/services/upstox/index";
 import { todayIsoDateUtc } from "@/services/chat/researchPrompt";
 import { serpSearchWithLocationFallback } from "@/services/chat/serpApiLocation";
@@ -249,19 +251,21 @@ function buildSerpInput(
   tool: (typeof SERP_DETERMINER_TOOL_KEYS)[number],
   instrument: StockResearchInstrument,
   userPrompt: string,
+  assetType: ResearchAssetType,
 ): Record<string, unknown> {
   const label = instrument.shortName ?? instrument.name;
   const sym = instrument.tradingSymbol;
   const ex = instrument.exchange;
   const base = { gl: "in", hl: "en" };
+  const terms = serpAssetTerms(assetType);
 
   switch (tool) {
     case "searchGoogleFinance":
       return { ...base, q: `${sym}:${ex}` };
     case "searchGoogleNews":
-      return { ...base, q: `${label} ${sym} stock news` };
+      return { ...base, q: `${label} ${sym} ${terms.news}` };
     case "searchGoogleNewsTab":
-      return { ...base, q: `${label} ${sym} investment analysis` };
+      return { ...base, q: `${label} ${sym} ${terms.analysis}` };
     case "searchGoogle":
       return {
         ...base,
@@ -271,12 +275,12 @@ function buildSerpInput(
     case "searchGoogleAiMode":
       return {
         ...base,
-        q: `Should I invest in ${label} (${sym})? ${userPrompt}`.slice(0, 240),
+        q: `${terms.invest} ${label} (${sym})? ${userPrompt}`.slice(0, 240),
       };
     case "searchYoutube":
       return {
         ...base,
-        search_query: `${label} ${sym} stock analysis`,
+        search_query: `${label} ${sym} ${terms.video}`,
       };
     case "searchYoutubeVideoTranscript":
       throw new Error("searchYoutubeVideoTranscript requires video id");
@@ -303,9 +307,10 @@ async function runSerpTool(
   tool: (typeof SERP_DETERMINER_TOOL_KEYS)[number],
   instrument: StockResearchInstrument,
   userPrompt: string,
+  assetType: ResearchAssetType,
 ): Promise<unknown> {
   const engine = serpEngines[tool];
-  const input = buildSerpInput(tool, instrument, userPrompt);
+  const input = buildSerpInput(tool, instrument, userPrompt, assetType);
   return serpSearchWithLocationFallback(
     (params) => engine.fn(params as never),
     input,
@@ -391,13 +396,14 @@ export async function executeStockResearchSerpTools(
   flags: SerpToolFlags,
   instrument: StockResearchInstrument,
   userPrompt: string,
+  assetType: ResearchAssetType = "STOCK",
 ): Promise<StockResearchToolExecutionResult[]> {
   return executeFlaggedTools({
     provider: "SERP",
     flags,
     toolKeys: SERP_DETERMINER_TOOL_KEYS,
     instrument,
-    run: (tool) => runSerpTool(tool, instrument, userPrompt),
+    run: (tool) => runSerpTool(tool, instrument, userPrompt, assetType),
     resourceTypeForTool: (tool) => serpResourceType(tool),
   });
 }

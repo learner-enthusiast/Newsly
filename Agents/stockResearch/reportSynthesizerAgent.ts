@@ -15,7 +15,9 @@ import {
   type AIClientOptions,
 } from "@/clients/AIClient";
 import type { StockResearchInstrument } from "@/Agents/stockResearch/toolDeterminerAgent";
+import { RESEARCH_ASSET_PROFILES } from "@/Agents/stockResearch/assetProfiles";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
+import type { ResearchAssetType } from "@/services/stockResearch/stockResearchTypes";
 import { z } from "zod";
 
 const DEFAULT_STOCK_RESEARCH_SYNTHESIZER_MODEL = "gpt-5.4-mini";
@@ -48,6 +50,7 @@ export type ReportSynthesizerAgentParams = {
   serpSummaries: string[];
   /** Tools that were planned but failed, so the report can note data gaps. */
   unavailableTools: string[];
+  assetType?: ResearchAssetType;
   model?: string;
   abortSignal?: AbortSignal;
 };
@@ -62,34 +65,26 @@ export function resolveReportSynthesizerModel(override?: string): string {
   );
 }
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(assetType: ResearchAssetType): string {
+  const profile = RESEARCH_ASSET_PROFILES[assetType];
   return [
-    "You are an equity research analyst writing for Indian retail investors.",
-    "Write one Markdown research report on the given instrument that answers the research brief.",
+    `You are ${profile.analystRole} writing for Indian retail investors.`,
+    `Write one Markdown research report on the given ${profile.noun} that answers the research brief.`,
     "",
     "Sources you may use (and nothing else):",
-    "- upstoxData: market quotes, candles, fundamentals, shareholding, corporate actions, derivatives analytics, FII/DII flows (JSON, possibly truncated).",
+    "- upstoxData: market quotes, candles, news and (for stocks) fundamentals, shareholding, corporate actions, derivatives analytics, FII/DII flows (JSON, possibly truncated).",
     "- webPages: scraped article text, each with a url.",
     "- serpSummaries: search engine AI summaries — treat as leads, not facts, unless a webPage or upstoxData confirms them.",
     "",
     "Rules:",
-    "- Every number must come from the supplied data. Never invent prices, ratios, dates or targets.",
+    "- Every number must come from the supplied data. Never invent prices, ratios, returns, expense ratios, dates or targets.",
     "- Cite web-derived claims inline as Markdown links to the page url, e.g. ([Economic Times](https://...)).",
     "- When data is missing or a tool is listed in unavailableTools, say so briefly instead of guessing.",
-    "- Present both bull and bear points; do not give a personalised buy/sell instruction.",
+    "- Present both positives and negatives; do not give a personalised buy/sell instruction.",
     "- Use Indian number formatting conventions (₹, lakh, crore) where natural.",
     "",
     "Structure (skip a section when there is no data for it):",
-    "# <Company> (<SYMBOL>) — <short title reflecting the brief>",
-    "## Summary — 3–5 bullet answer to the brief",
-    "## Price & trading snapshot — table of key quote/OHLC/52-week figures",
-    "## Business & fundamentals — profile, key ratios, financial statement trends (tables welcome)",
-    "## Ownership & flows — shareholding pattern, FII/DII context",
-    "## Recent news & developments — dated, cited",
-    "## Derivatives view — only for F&O instruments or when option data exists",
-    "## Risks",
-    "## Bull vs bear case",
-    "## Sources — bullet list of the web page links used",
+    ...profile.reportStructure,
     "",
     "End with one italic line: research summary, not investment advice.",
     "Return only the Markdown in the `markdown` field.",
@@ -103,7 +98,7 @@ async function runReportSynthesizerCore(
   const model = resolveReportSynthesizerModel(params.model);
   const output = await generate({
     model,
-    system: buildSystemPrompt(),
+    system: buildSystemPrompt(params.assetType ?? "STOCK"),
     prompt: params.enhancedPrompt,
     extraContext: {
       originalUserPrompt: params.userPrompt,

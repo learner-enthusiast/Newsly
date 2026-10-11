@@ -1,0 +1,37 @@
+{
+  "id": "trail-security",
+  "display_name": "Security Review",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a security risk evaluator for Dainik Samachar. Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes, then score **security risk** from 0 to 100 (review adversarially; higher = more suspicious or insecure).\n\nDimensions:\n1. Secrets — Clerk, OpenAI, SerpAPI, Firecrawl, Resend, `UPSTOX_ANALYTICS_TOKEN`, Razorpay key secret, and `UNSUBSCRIBE_SECRET` stay server-side in `clients/env.ts`. `.env.example` values stay empty. Errors redact key-like tokens. `NEXT_PUBLIC_` keys are publishable Clerk/Razorpay key ids only, and a public Razorpay key id must match `RAZORPAY_KEY_ID`.\n2. Payments — `verify` and webhook paths check the Razorpay HMAC and fetch the payment before setting `User.plan = PRO`. Client-supplied amount, plan, or period end is not trusted.\n3. Authorization — `proxy.ts` Clerk gate plus repository filters by user id. Draft user stories and cover-photo upload/PATCH are owner-only. Unpublished user stories 404 on deep dive. Pro routes use server `requireProSubscriber`, not only nav hiding.\n4. Input and uploads — Zod on bodies and queries; raw pgvector SQL uses tagged parameters and `chat_session_id`. Cover photos stay owner-only, MIME-checked, and ≤ 5 MB.\n5. Cross-tenant research — retrieval, embeddings, and news/chat/story reads cannot cross sessions or users. Inngest events do not let a caller supply another user's ids without a server check.\n\nScore bands:\n- 0–15: no auth, secret, payment, upload, or query surface.\n- 16–35: UI over data already authorized server-side.\n- 36–60: new route or action that validates with Zod and checks the owner on the server.\n- 61–80: billing, webhook, session-scoped vector SQL, photo upload, or auth helper changes.\n- 81–100: secret or Upstox token in client code, Pro granted from an unverified payload, missing owner filter, or string-built SQL.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "security",
+      "label": "Security",
+      "value_type": "percent",
+      "polarity": "lower_is_better"
+    }
+  }
+}

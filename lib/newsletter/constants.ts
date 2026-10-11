@@ -1,0 +1,2 @@
+export const MAX_NEWSLETTERS_PER_USER = 5;
+export const NEWSLETTER_MAX_STORY_COUNT = 20;

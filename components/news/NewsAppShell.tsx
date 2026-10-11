@@ -11,6 +11,7 @@ import {
   Home,
   Layers,
   LineChart,
+  Mail,
   MessageSquare,
   Newspaper,
   PieChart,
@@ -24,6 +25,7 @@ import type { LucideIcon } from "lucide-react";
 const SIDEBAR_ICONS: Record<string, LucideIcon> = {
   "/": Home,
   "/news": Newspaper,
+  "/newsletters": Mail,
   "/chat": MessageSquare,
   "/stockResearch": LineChart,
   "/MfResearch": PieChart,

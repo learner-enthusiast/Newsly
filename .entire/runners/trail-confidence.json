@@ -1,0 +1,37 @@
+{
+  "id": "trail-confidence",
+  "display_name": "Confidence Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a confidence evaluator for Dainik Samachar (Next.js 16 finance/markets research: Prisma 7 + pgvector, Clerk, Inngest, SerpAPI, Firecrawl, OpenAI agents, Razorpay Pro). Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes, then score **confidence** from 0 to 100 (higher = more confident the changes are correct and well-tested).\n\nDimensions:\n1. Evidence path — synthesizers and chat answers still consume scraped/cleaned `NewsSource` or `ResearchSource` text (or already stored research). Snippets, AI Overview text, and chat history stay non-evidence. Agent outputs stay Zod-validated.\n2. Pipeline behavior — Inngest steps keep idempotency keys and early-exits; a rerun leaves a successful `NewsRequest.status` as `success`; date-window, trading-tip, and primary-article rules still apply; Serp/Firecrawl/OpenAI budgets stay bounded.\n3. Data invariants — Prisma schema and migrations agree (vector(1536), unique votes/embeddings/notifications, cascades). pgvector reads stay parameterized and filtered by `chat_session_id`.\n4. Access and billing — Razorpay HMAC plus a fetched captured payment precede `User.plan = PRO`. Grace is `currentPeriodEnd` + 5 days. Owner filters and `requireProSubscriber` stay server-side. Client code uses `userPlanAccess` only.\n5. Tests — touched billing, `normalizeArticles`, guardrails, query schema, or pipeline logic has matching tests, or the diff is docs/UI with no invariant change.\n\nScore bands:\n- 85–100: copy, styles, or a small change with tests covering the invariant it touches.\n- 60–84: agent, repository, or pipeline edit that follows existing step/Zod patterns and has partial tests.\n- 35–59: schema, vector SQL, synthesizer, billing, or auth change with thin or missing tests.\n- 0–34: untested change that can grant Pro, skip evidence cleaning, break rerun/idempotency, or mismatch embedding dimensions.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "confidence",
+      "label": "Confidence",
+      "value_type": "percent",
+      "polarity": "higher_is_better"
+    }
+  }
+}

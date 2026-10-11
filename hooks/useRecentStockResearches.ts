@@ -2,6 +2,7 @@
 
 import {
   STOCK_RESEARCHES_SIDEBAR_LIMIT,
+  type ResearchAssetType,
   type SerializedStockResearch,
   type StockResearchListPayload,
 } from "@/services/stockResearch/stockResearchTypes";
@@ -11,6 +12,7 @@ import { useEffect, useState } from "react";
 export function useRecentStockResearches(
   limit = STOCK_RESEARCHES_SIDEBAR_LIMIT,
   refreshKey: unknown = null,
+  assetType?: ResearchAssetType,
 ) {
   const [recentResearches, setRecentResearches] = useState<
     SerializedStockResearch[]
@@ -24,6 +26,9 @@ export function useRecentStockResearches(
     async function load() {
       try {
         const params = new URLSearchParams({ page: "1", limit: String(limit) });
+        if (assetType) {
+          params.set("assetType", assetType);
+        }
         const response = await fetch(`/api/stockResearch?${params}`, {
           cache: "no-store",
         });
@@ -45,7 +50,7 @@ export function useRecentStockResearches(
     return () => {
       cancelled = true;
     };
-  }, [limit, refreshKey]);
+  }, [assetType, limit, refreshKey]);
 
   return { recentResearches, total, recentLoading };
 }

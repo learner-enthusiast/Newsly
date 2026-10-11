@@ -1,5 +1,4 @@
--- AlterTable
-ALTER TABLE "stock_researches" ADD COLUMN     "user_prompt" TEXT;
-
--- RenameIndex
-ALTER INDEX "stock_research_resources_stock_research_id_provider_content_has" RENAME TO "stock_research_resources_stock_research_id_provider_content_key";
+-- No-op (migration ordering fix).
+-- This revision originally ran before 20261010120000_stock_research and failed on empty/shadow DBs.
+-- `user_prompt` is created in 20261010120000_stock_research; existing DBs already got the column
+-- from the previous version of this migration.

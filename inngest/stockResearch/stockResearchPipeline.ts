@@ -18,6 +18,7 @@
  * onFailure marks the row FAILED with the error message.
  */
 
+import { buildFundToolPlan } from "@/Agents/stockResearch/assetProfiles";
 import { runLinkSelectorAgent } from "@/Agents/stockResearch/linkSelectorAgent";
 import { runPromptEnhancerAgent } from "@/Agents/stockResearch/promptEnhancerAgent";
 import { runReportSynthesizerAgent } from "@/Agents/stockResearch/reportSynthesizerAgent";
@@ -63,6 +64,7 @@ export const stockResearchPipelineEventDataSchema = z.object({
   userId: z.string().min(1),
   stockResearchId: z.string().min(1),
   userPrompt: z.string().min(1),
+  assetType: z.enum(["STOCK", "ETF", "MUTUAL_FUND"]).default("STOCK"),
   /** Full BOD or Prisma instrument row. */
   instrument: z.record(z.string(), z.unknown()),
 });
@@ -159,6 +161,7 @@ export const stockResearchPipelineFunction = inngest.createFunction(
       const result = await runPromptEnhancerAgent({
         userPrompt: input.userPrompt,
         instrument,
+        assetType: input.assetType,
         abortSignal: AbortSignal.timeout(120_000),
       });
       await patchStockResearch(input.stockResearchId, {
@@ -172,11 +175,15 @@ export const stockResearchPipelineFunction = inngest.createFunction(
     });
 
     const determiner = (await step.run("run-tool-determiner", async () => {
-      pipelineLog("run-tool-determiner", "start");
-      const result = await runToolDeterminerAgent({
-        userPrompt: enhanced.enhancedPrompt,
-        instrument: input.instrument,
-      });
+      pipelineLog("run-tool-determiner", "start", { assetType: input.assetType });
+      // ETFs / mutual funds use a fixed plan (company-fundamentals tools do not apply).
+      const result =
+        input.assetType === "STOCK"
+          ? await runToolDeterminerAgent({
+              userPrompt: enhanced.enhancedPrompt,
+              instrument: input.instrument,
+            })
+          : buildFundToolPlan(input.assetType, instrument, enhanced.enhancedPrompt);
       return toJsonSafeStepOutput(result);
     })) as ToolDeterminerResult;
 
@@ -235,6 +242,7 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         determiner.serp,
         determiner.instrument,
         enhanced.enhancedPrompt,
+        input.assetType,
       );
       return toJsonSafeStepOutput(results);
     })) as StockResearchToolExecutionResult[];
@@ -291,6 +299,7 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         instrument: determiner.instrument,
         links,
         serpSummaries,
+        assetType: input.assetType,
         abortSignal: AbortSignal.timeout(180_000),
       });
       pipelineLog("select-links-to-scrape", "done", {
@@ -402,6 +411,7 @@ export const stockResearchPipelineFunction = inngest.createFunction(
         webPages,
         serpSummaries,
         unavailableTools,
+        assetType: input.assetType,
         abortSignal: AbortSignal.timeout(600_000),
       });
       pipelineLog("synthesize-report", "done", {

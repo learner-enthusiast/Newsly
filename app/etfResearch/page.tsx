@@ -1,4 +1,4 @@
-import { ResearchPlaceholder } from "@/components/research/ResearchPlaceholder";
+import { StockResearchWorkspace } from "@/components/research/StockResearchWorkspace";
 import { requireProSubscriber } from "@/lib/requireProSubscriber";
 import type { Metadata } from "next";
 
@@ -7,13 +7,8 @@ export const metadata: Metadata = {
   description: "Pro ETF research workspace.",
 };
 
-export default async function EtfResearchPage() {
+export default async function ResearchPage() {
   await requireProSubscriber();
 
-  return (
-    <ResearchPlaceholder
-      title="ETF research"
-      description="ETF research tools will live here. This page is a placeholder for Pro subscribers."
-    />
-  );
+  return <StockResearchWorkspace assetType="ETF" />;
 }

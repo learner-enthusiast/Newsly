@@ -39,6 +39,7 @@ model User {
   subscription     Subscription?
   payments         Payment[]
   stockResearches  StockResearch[]
+  newsletters      Newsletter[]
 
   @@map("users")
 }
@@ -66,6 +67,34 @@ enum PublishStatus {
   @@map("publish_status")
 }
 
+enum NewsletterFrequency {
+  DAILY
+  WEEKDAYS
+  WEEKLY
+  MONTHLY
+
+  @@map("newsletter_frequency")
+}
+
+enum NewsletterDeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@map("newsletter_delivery_status")
+}
+
+enum NewsEditionStatus {
+  PENDING
+  BUILDING
+  READY
+  FAILED
+
+  @@map("news_edition_status")
+}
+
 model NewsRequest {
   id          String            @id @default(uuid()) @db.Uuid
   userId      String            @map("user_id")
@@ -85,6 +114,8 @@ model NewsRequest {
   createdAt   DateTime          @default(now()) @map("created_at")
   completedAt DateTime?         @map("completed_at")
   isRerunning Boolean           @default(false) @map("is_rerunning")
+  isEdition   Boolean           @default(false) @map("is_edition")
+  newsEdition NewsEdition?
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   stories     NewsStory[]
@@ -113,6 +144,7 @@ model NewsStory {
   location        String?
   publishedAt     DateTime?     @map("published_at")
   importanceScore Decimal?      @map("importance_score") @db.Decimal(10, 4)
+  rank            Int?
   upvotes         Int           @default(0)
   downvotes       Int           @default(0)
   createdAt       DateTime      @default(now()) @map("created_at")
@@ -130,6 +162,7 @@ model NewsStory {
 
   @@unique([newsRequestId, slug])
   @@index([newsRequestId])
+  @@index([newsRequestId, rank])
   @@index([chatSessionId])
   @@index([ownerId])
   @@index([isUserCreated, publishStatus])
@@ -347,6 +380,81 @@ model NewsMetro {
   @@map("news_metros")
 }
 
+model Newsletter {
+  id                String               @id @default(cuid())
+  userId            String               @map("user_id")
+  name              String
+  email             String
+  isActive          Boolean              @default(true) @map("is_active")
+  location          String?
+  latitude          Float?
+  longitude         Float?
+  scope             NewsScope
+  storyCount        Int                  @map("story_count")
+  categories        String[]             @default([])
+  customQuery       String?              @map("custom_query") @db.Text
+  language          String?
+  sources           String[]             @default([])
+  frequency         NewsletterFrequency
+  sendTimeLocal     String               @map("send_time_local")
+  timezone          String
+  dayOfWeek         Int?                 @map("day_of_week")
+  dayOfMonth        Int?                 @map("day_of_month")
+  paramsFingerprint String               @map("params_fingerprint")
+  nextRunAt         DateTime?            @map("next_run_at") @db.Timestamptz(6)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries NewsletterDelivery[]
+
+  @@index([userId])
+  @@index([isActive, nextRunAt])
+  @@index([paramsFingerprint])
+  @@map("newsletters")
+}
+
+model NewsletterDelivery {
+  id           String                   @id @default(uuid()) @db.Uuid
+  newsletterId String                   @map("newsletter_id")
+  scheduledFor DateTime                 @map("scheduled_for") @db.Timestamptz(6)
+  status       NewsletterDeliveryStatus @default(PENDING)
+  editionId    String?                  @map("edition_id") @db.Uuid
+  storyCount   Int?                     @map("story_count")
+  sentAt       DateTime?                @map("sent_at") @db.Timestamptz(6)
+  error        String?                  @db.Text
+  resendId     String?                  @map("resend_id")
+  createdAt    DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  newsletter Newsletter   @relation(fields: [newsletterId], references: [id], onDelete: Cascade)
+  edition    NewsEdition? @relation(fields: [editionId], references: [id], onDelete: SetNull)
+
+  @@unique([newsletterId, scheduledFor])
+  @@index([editionId])
+  @@index([status])
+  @@map("newsletter_deliveries")
+}
+
+model NewsEdition {
+  id               String            @id @default(uuid()) @db.Uuid
+  fingerprint      String
+  periodKey        String            @map("period_key")
+  newsRequestId    String            @unique @map("news_request_id") @db.Uuid
+  status           NewsEditionStatus @default(PENDING)
+  targetStoryCount Int               @map("target_story_count")
+  builtStoryCount  Int               @default(0) @map("built_story_count")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  newsRequest NewsRequest            @relation(fields: [newsRequestId], references: [id], onDelete: Cascade)
+  deliveries  NewsletterDelivery[]
+
+  @@unique([fingerprint, periodKey])
+  @@index([status])
+  @@map("news_editions")
+}
+
 /// Upstox BOD instruments — one row per instrument_key; derivative-only columns are nullable.
 model Instrument {
   instrumentKey  String  @id @map("instrument_key")
@@ -390,6 +498,13 @@ enum StockResearchStatus {
   FAILED
 }
 
+/// What a `StockResearch` row researches (stock, ETF or listed mutual fund units).
+enum ResearchAssetType {
+  STOCK
+  ETF
+  MUTUAL_FUND
+}
+
 enum StockResearchProvider {
   UPSTOX
   SERP
@@ -415,6 +530,7 @@ model StockResearch {
   userId         String              @map("user_id")
   companyName    String?             @map("company_name")
   userPrompt     String?             @map("user_prompt") @db.Text
+  assetType      ResearchAssetType   @default(STOCK) @map("asset_type")
   symbol         String?
   exchange       String?
   isin           String?
@@ -436,6 +552,7 @@ model StockResearch {
   resources StockResearchResource[]
 
   @@index([userId, createdAt])
+  @@index([userId, assetType, createdAt])
   @@index([status, createdAt])
   @@index([symbol, exchange])
   @@index([isin])

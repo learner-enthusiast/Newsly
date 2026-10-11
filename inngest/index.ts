@@ -153,10 +153,18 @@ import { researchSourceDescriptionFunction } from "./researchSourceDescriptionPi
 import { chatPotentialStoryTopicsFunction } from "./chatPotentialStoryTopicsPipeline";
 import { chatStoryPipelineFunction } from "./chatstoryPipeline";
 import { stockResearchPipelineFunction } from "./stockResearch/stockResearchPipeline";
+import {
+  newsletterEditionBuildFunction,
+  newsletterRunFunction,
+  newsletterSchedulerFunction,
+} from "./newsletterPipeline";
 
 export const inngestFunctions = [
   newsPipelineFunction,
   newsRerunPipelineFunction,
+  newsletterSchedulerFunction,
+  newsletterEditionBuildFunction,
+  newsletterRunFunction,
   chatPipelineFunction,
   messageChatPipelineFunction,
   chatStoryPipelineFunction,

@@ -8,12 +8,20 @@ import type { InstrumentSuggestion } from "@/app/api/instruments/suggest/route";
 const DEBOUNCE_MS = 250;
 
 type StockSearchProps = {
+  /** Suggestion endpoint (may include fixed query params). Defaults to stocks. */
+  endpoint?: string;
+  placeholder?: string;
   onSelect?: (instrument: InstrumentSuggestion) => void;
   /** Called when the user edits the text after picking a stock. */
   onClear?: () => void;
 };
 
-export function StockSearch({ onSelect, onClear }: StockSearchProps) {
+export function StockSearch({
+  onSelect,
+  onClear,
+  endpoint = "/api/instruments/suggest?segment=NSE_EQ",
+  placeholder = "Search a stock by name or symbol…",
+}: StockSearchProps) {
   const listId = useId();
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<InstrumentSuggestion[]>([]);
@@ -30,8 +38,9 @@ export function StockSearch({ onSelect, onClear }: StockSearchProps) {
     const timer = setTimeout(async () => {
       setIsLoading(true);
       try {
-        const params = new URLSearchParams({ q, segment: "NSE_EQ" });
-        const res = await fetch(`/api/instruments/suggest?${params}`, {
+        const url = new URL(endpoint, window.location.origin);
+        url.searchParams.set("q", q);
+        const res = await fetch(url, {
           signal: controller.signal,
         });
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
@@ -53,7 +62,7 @@ export function StockSearch({ onSelect, onClear }: StockSearchProps) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, selected]);
+  }, [endpoint, query, selected]);
 
   function handleSelect(instrument: InstrumentSuggestion) {
     setSelected(instrument);
@@ -90,7 +99,7 @@ export function StockSearch({ onSelect, onClear }: StockSearchProps) {
         aria-expanded={showList}
         aria-controls={listId}
         aria-autocomplete="list"
-        placeholder="Search a stock by name or symbol…"
+        placeholder={placeholder}
         value={query}
         onChange={(event) => {
           const value = event.target.value;

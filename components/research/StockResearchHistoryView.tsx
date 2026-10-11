@@ -10,14 +10,21 @@ import { cn } from "@/lib/utils";
 import {
   formatStockResearchStatusLabel,
   formatStockResearchTitle,
+  RESEARCH_ASSET_CONFIG,
   STOCK_RESEARCHES_PAGE_SIZE,
+  type ResearchAssetType,
   type StockResearchListPayload,
 } from "@/services/stockResearch/stockResearchTypes";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-export function StockResearchHistoryView() {
+export function StockResearchHistoryView({
+  assetType = "STOCK",
+}: {
+  assetType?: ResearchAssetType;
+}) {
+  const asset = RESEARCH_ASSET_CONFIG[assetType];
   const [page, setPage] = useState(1);
   const [data, setData] = useState<StockResearchListPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +40,7 @@ export function StockResearchHistoryView() {
         const params = new URLSearchParams({
           page: String(page),
           limit: String(STOCK_RESEARCHES_PAGE_SIZE),
+          assetType,
         });
         const response = await fetch(`/api/stockResearch?${params}`, {
           cache: "no-store",
@@ -65,24 +73,24 @@ export function StockResearchHistoryView() {
     return () => {
       cancelled = true;
     };
-  }, [page]);
+  }, [assetType, page]);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col px-4 py-6 md:px-6">
       <div className="mb-6 flex flex-col gap-3">
         <Link
-          href="/stockResearch"
+          href={asset.basePath}
           className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" />
-          Back to stock research
+          Back to {asset.title.toLowerCase()}
         </Link>
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight">
-            Stock research history
+            {asset.title} history
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Your stock researches, newest first.
+            Your {asset.label} researches, newest first.
           </p>
         </div>
       </div>
@@ -101,7 +109,7 @@ export function StockResearchHistoryView() {
         </div>
       ) : data && data.stockResearches.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No stock researches yet. Pick a stock to start one.
+          No {asset.label} researches yet. Pick one to start.
         </p>
       ) : data ? (
         <ul
@@ -113,7 +121,7 @@ export function StockResearchHistoryView() {
           {data.stockResearches.map((research) => (
             <li key={research.id}>
               <Link
-                href={`/stockResearch/${research.id}`}
+                href={`${asset.basePath}/${research.id}`}
                 className="group flex items-start justify-between gap-3 rounded-2xl border border-border/70 bg-card p-5 shadow-sm transition-[box-shadow,border-color] hover:border-border hover:shadow-md"
               >
                 <div className="min-w-0">
