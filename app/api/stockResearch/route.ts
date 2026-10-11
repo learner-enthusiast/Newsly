@@ -79,7 +79,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const stockResearch = await startStockResearch(user.id, parsed.data);
+    const stockResearch = await startStockResearch(user, parsed.data);
     return NextResponse.json({ stockResearch }, { status: 201 });
   } catch (error) {
     if (error instanceof StockResearchInputError) {

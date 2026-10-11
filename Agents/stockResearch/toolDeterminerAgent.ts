@@ -270,6 +270,9 @@ function buildSerpCatalog(): string {
   }).join("\n\n");
 }
 
+/** Bump whenever the system prompt below changes. */
+export const PROMPT_VERSION = "v1";
+
 function buildToolDeterminerSystemPrompt(): string {
   return [
     "You are a tool determiner for stock investment research.",

@@ -1,3 +1,4 @@
+import { traceToolFn } from "@/lib/observability";
 import type { z } from "zod";
 import { upstoxApiSchemas } from "@/services/upstox/apiSchemas";
 import { getBrokerageCharges } from "@/services/upstox/charges";
@@ -82,7 +83,7 @@ function defineUpstoxApi<
     output,
     inputSchema,
     outputSchema,
-    fn,
+    fn: traceToolFn(`upstox.${key}`, "upstox", fn),
   };
 }
 

@@ -65,6 +65,9 @@ export function resolveReportSynthesizerModel(override?: string): string {
   );
 }
 
+/** Bump whenever the system prompt below changes. */
+export const PROMPT_VERSION = "v1";
+
 function buildSystemPrompt(assetType: ResearchAssetType): string {
   const profile = RESEARCH_ASSET_PROFILES[assetType];
   return [

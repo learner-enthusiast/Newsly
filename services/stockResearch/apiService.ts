@@ -16,6 +16,7 @@ import {
   markStockResearchFailed,
 } from "@/repositories/stockResearch";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
+import { startRun } from "@/lib/observability";
 import {
   RESEARCH_ASSET_CONFIG,
   STOCK_RESEARCHES_MAX_LIMIT,
@@ -98,9 +99,10 @@ function instrumentMatchesAssetType(
  * and poll; a failed enqueue marks the row FAILED, which the poll picks up.
  */
 export async function startStockResearch(
-  userId: string,
+  user: { id: string; clerkId: string },
   body: StartStockResearchBody,
 ): Promise<SerializedStockResearch> {
+  const userId = user.id;
   const instrument = await getInstrumentByKey(body.instrumentKey);
   if (!instrument) {
     throw new StockResearchInputError("Unknown instrument");
@@ -126,12 +128,27 @@ export async function startStockResearch(
 
   after(async () => {
     try {
+      const run = await startRun({
+        agentGroup: "stock-research",
+        source: "web",
+        endUserId: user.clerkId,
+        userId,
+        market: "IN",
+        assetType: body.assetType,
+        input: {
+          stockResearchId: row.id,
+          userPrompt: body.prompt,
+          symbol: instrument.tradingSymbol,
+        },
+      });
       await enqueueStockResearchPipeline({
         userId,
         stockResearchId: row.id,
         userPrompt: body.prompt,
         assetType: body.assetType,
         instrument: toJsonSafeStepOutput(instrument) as Record<string, unknown>,
+        endUserId: user.clerkId,
+        run,
       });
     } catch (error) {
       const message =

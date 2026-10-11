@@ -27,6 +27,7 @@ type AssetProfile = {
   reportStructure: string[];
 };
 
+/** Prompt text: bump PROMPT_VERSION in the agent that uses a field when changing it. */
 export const RESEARCH_ASSET_PROFILES: Record<ResearchAssetType, AssetProfile> = {
   STOCK: {
     noun: "listed stock",

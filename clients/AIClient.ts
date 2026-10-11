@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { neatlogsClient } from "@/clients/neatlogsClient";
 import { zodTextFormat } from "openai/helpers/zod";
 import { resolveOpenAiModelId } from "@/lib/openAiModel";
+import { priceLlmUsage, recordLlmUsage } from "@/lib/observability";
 import { z } from "zod";
 
 const extraContextSchema = z.unknown().optional();
@@ -145,6 +146,13 @@ function withoutSamplingParams(
 }
 
 type OpenAiParsedResponse = {
+  model?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    input_tokens_details?: { cached_tokens?: number } | null;
+    output_tokens_details?: { reasoning_tokens?: number } | null;
+  } | null;
   status?: string;
   incomplete_details?: { reason?: string } | null;
   output_parsed?: unknown;
@@ -380,6 +388,16 @@ export function createAIClient(options: AIClientOptions = {}) {
       { signal: params.abortSignal },
     )) as OpenAiParsedResponse;
 
+    recordLlmUsage(
+      priceLlmUsage({
+        model: response.model ?? params.model,
+        inputTokens: response.usage?.input_tokens,
+        outputTokens: response.usage?.output_tokens,
+        cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens,
+        reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+      }),
+    );
+
     const structured = extractOpenAiStructuredOutput(
       response,
       params.outputSchema,
@@ -412,7 +430,7 @@ export function createAIClient(options: AIClientOptions = {}) {
       parsed.maxOutputTokens,
     );
 
-    const { output } = await neatlogsClient.generateText({
+    const { output, usage } = await neatlogsClient.generateText({
       model: params.model,
       prompt: buildPrompt(parsed.prompt, parsed.extraContext),
       system: parsed.system,
@@ -438,6 +456,14 @@ export function createAIClient(options: AIClientOptions = {}) {
       timeout: parsed.timeout ?? params.options.timeout,
       abortSignal: params.abortSignal,
     });
+
+    recordLlmUsage(
+      priceLlmUsage({
+        model: modelId || "unknown",
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+      }),
+    );
 
     return params.outputSchema.parse(output);
   }

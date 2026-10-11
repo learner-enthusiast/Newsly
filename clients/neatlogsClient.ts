@@ -4,12 +4,18 @@
  *
  * `init()` runs once per process. Export stays off when `NEATLOGS_API_KEY`
  * is unset. Long-running Next.js servers call `ready()` from `instrumentation.ts`.
+ *
+ * `NEATLOGS_LOCAL_SPAN_LOG=<path>` (dev only) also appends every exported span,
+ * exactly as sent, to a JSONL file — used to inspect span trees locally.
  */
 
+import { appendFileSync } from "node:fs";
 import * as ai from "ai";
 import {
+  extractTraceContext,
   flush,
   init,
+  injectTraceContext,
   log,
   shutdown,
   span,
@@ -89,6 +95,20 @@ export function createNeatlogsClient(options: NeatlogsClientOptions = {}) {
     ...(captureLogs != null ? { captureLogs } : {}),
   };
 
+  const localSpanLog = readOptional("NEATLOGS_LOCAL_SPAN_LOG");
+  if (localSpanLog) {
+    initOptions.mask = (signalData, context) => {
+      if (context?.signalType !== "log") {
+        try {
+          appendFileSync(localSpanLog, `${JSON.stringify(signalData)}\n`);
+        } catch {
+          // Local inspection only; never affects export.
+        }
+      }
+      return signalData;
+    };
+  }
+
   let readyPromise: Promise<void> | undefined;
   let warnedMissingKey = false;
 
@@ -123,6 +143,8 @@ export function createNeatlogsClient(options: NeatlogsClientOptions = {}) {
     span,
     trace,
     log,
+    injectTraceContext,
+    extractTraceContext,
     wrapOpenAI,
     generateText: tracedAi.generateText,
     streamText: tracedAi.streamText,
