@@ -1,0 +1,69 @@
+enum UsageProvider {
+  serpapi
+  firecrawl
+
+  @@map("usage_provider")
+}
+
+enum UsageReason {
+  /// Normal billed request.
+  charged
+  /// SerpApi served a cached result (free).
+  cached
+  /// HTTP error from the provider (not billed).
+  error
+  /// Firecrawl returned no document (not billed).
+  no_document
+  /// SerpApi search archive / getBySearchId (free).
+  archive
+  /// Client-side timeout or abort; the provider likely still billed it.
+  timeout_assumed
+
+  @@map("usage_reason")
+}
+
+/// One row per SerpApi / Firecrawl HTTP request, with who caused it and what it cost.
+/// Credit rules live in `lib/usage/creditRules.ts`.
+model ProviderUsage {
+  id String @id @default(uuid()) @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  provider UsageProvider
+  /// e.g. "google", "google_news", "google_ai_overview", "youtube_video_transcript", "scrape".
+  operation String
+
+  /// `users.id`; null = system (cron, newsletter editions, scripts, signed-out visitors).
+  userId String? @map("user_id")
+  /// Same id as the Neatlogs run.
+  runId  String? @map("run_id")
+  /// "web" | "web-anon" | "chat" | "api" | "newsletter" | "cron" | "script"
+  source String
+  /// Neatlogs workflow name, e.g. "Stock research", "News", "Chat", "Newsletter".
+  workflow String?
+  /// Shared newsletter edition the spend belongs to (not split across subscribers).
+  editionId String? @map("edition_id")
+  /// SHA-256 of the client IP (salted) for signed-out requests; never the raw IP.
+  ipHash String? @map("ip_hash")
+  /// Deployment the request came from (USAGE_ENVIRONMENT, else VERCEL_ENV / NODE_ENV).
+  environment String
+
+  credits  Int
+  billable Boolean
+  reason   UsageReason
+
+  httpStatus Int? @map("http_status")
+  durationMs Int  @map("duration_ms")
+
+  /// Engine, result/page counts, formats, URL host. Never API keys, raw queries
+  /// with personal data, or full URLs with tokens.
+  detail Json @default("{}")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([provider, createdAt])
+  @@index([runId])
+  @@index([editionId])
+  @@map("provider_usage")
+}
