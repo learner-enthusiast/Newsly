@@ -27,3 +27,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: OpenAPI builds and every route has schemas
         run: pnpm api:check
+      - name: API unit and contract tests (no database)
+        run: pnpm test:api:unit

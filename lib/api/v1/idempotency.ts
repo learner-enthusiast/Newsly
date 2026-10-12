@@ -7,8 +7,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { Prisma } from "@/db/generated/client";
-import { prisma } from "@/db";
+import type { Prisma } from "@/db/generated/client";
+
+/** Loaded on first use, so the in-memory store needs no database. */
+const db = () => import("@/db").then((m) => m.prisma);
 
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 export const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{1,255}$/;
@@ -64,6 +66,7 @@ function matches(row: { method: string; path: string; requestHash: string }, sco
 export class PostgresIdempotencyStore implements IdempotencyStore {
   async begin(scope: IdempotencyScope, now = new Date()): Promise<IdempotencyBegin> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const prisma = await db();
       try {
         await prisma.apiIdempotencyKey.create({
           data: {
@@ -76,10 +79,8 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
         });
         return { kind: "new" };
       } catch (error) {
-        if (
-          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-          error.code !== "P2002"
-        ) {
+        // Unique violation on (userId, key): someone used this key already.
+        if ((error as { code?: unknown }).code !== "P2002") {
           throw error;
         }
       }
@@ -113,6 +114,7 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
   }
 
   async complete(userId: string, key: string, status: number, body: unknown) {
+    const prisma = await db();
     await prisma.apiIdempotencyKey.updateMany({
       where: { userId, key },
       data: {
@@ -123,6 +125,7 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
   }
 
   async release(userId: string, key: string) {
+    const prisma = await db();
     await prisma.apiIdempotencyKey.deleteMany({
       where: { userId, key, responseStatus: null },
     });
@@ -163,6 +166,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 }
 
 export async function deleteExpiredIdempotencyKeys(now = new Date()): Promise<number> {
+  const prisma = await db();
   const result = await prisma.apiIdempotencyKey.deleteMany({
     where: { createdAt: { lt: new Date(now.getTime() - IDEMPOTENCY_TTL_MS) } },
   });

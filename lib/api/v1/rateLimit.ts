@@ -10,7 +10,8 @@
  * only depends on the interface.
  */
 
-import { prisma } from "@/db";
+/** Loaded on first use, so the in-memory limiter needs no database. */
+const db = () => import("@/db").then((m) => m.prisma);
 
 export const RATE_LIMIT_WINDOW_MS = 60_000;
 
@@ -85,6 +86,7 @@ export class PostgresRateLimiter implements RateLimiter {
   async consume(bucket: string, limit: number, now = new Date()): Promise<RateLimitResult> {
     const windowStart = windowStartOf(now, this.windowMs);
     const previousStart = new Date(windowStart.getTime() - this.windowMs);
+    const prisma = await db();
 
     // Count first (atomic upsert), then undo if over the limit, so concurrent
     // requests can never all slip in on the same read.
@@ -149,6 +151,7 @@ export class MemoryRateLimiter implements RateLimiter {
 
 /** Daily cleanup: windows older than `olderThan` are never read again. */
 export async function deleteOldRateLimitWindows(olderThan: Date): Promise<number> {
+  const prisma = await db();
   const result = await prisma.apiRateLimitWindow.deleteMany({
     where: { windowStart: { lt: olderThan } },
   });

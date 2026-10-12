@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireProApiUser } from "@/lib/requireProApiUser";
-import { getOrCreateWebhookSecret, rotateWebhookSecret } from "@/lib/api/v1/webhooks";
+import { getOrCreateWebhookSecret, rotateWebhookSecret } from "@/lib/api/v1/webhookSecrets";
 
 function serialize(row: { secret: string; createdAt: Date; rotatedAt: Date | null }) {
   return {

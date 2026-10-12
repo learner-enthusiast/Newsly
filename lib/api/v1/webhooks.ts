@@ -19,7 +19,6 @@ import { lookup as dnsLookupAsync } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
 import { BlockList, isIP, type LookupFunction } from "node:net";
-import { prisma } from "@/db";
 import { ApiError } from "@/lib/api/v1/errors";
 
 export const WEBHOOK_TIMEOUT_MS = 10_000;
@@ -51,7 +50,9 @@ for (const [net, prefix] of [
 for (const [net, prefix] of [
   ["::", 128],
   ["::1", 128],
-  ["::ffff:0:0", 96],
+  // IPv4-mapped (::ffff:0:0/96) is not listed: BlockList applies IPv6 rules to
+  // IPv4 checks, so it would block every IPv4 address. Mapped addresses are
+  // unwrapped and judged as IPv4 below.
   ["64:ff9b::", 96],
   ["100::", 64],
   ["2001::", 23],
@@ -68,9 +69,15 @@ export function isPrivateAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 0) return true;
   if (family === 6) {
-    // IPv4-mapped (::ffff:a.b.c.d): judge the IPv4 address.
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-    if (mapped) return blocked.check(mapped[1]!, "ipv4");
+    // IPv4-mapped (::ffff:a.b.c.d or ::ffff:7f00:1): judge the IPv4 address.
+    const dotted = /^(?:0{0,4}:){0,5}:?ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+    if (dotted) return blocked.check(dotted[1]!, "ipv4");
+    const hex = /^(?:0{0,4}:){0,5}:?ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
+    if (hex) {
+      const hi = Number.parseInt(hex[1]!, 16);
+      const lo = Number.parseInt(hex[2]!, 16);
+      return blocked.check(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`, "ipv4");
+    }
     return blocked.check(address, "ipv6");
   }
   return blocked.check(address, "ipv4");
@@ -212,32 +219,6 @@ export function postWebhook(input: {
   });
 }
 
-// ── Secrets ──
-
 export function generateWebhookSecret(): string {
   return `${WEBHOOK_SECRET_PREFIX}${randomBytes(32).toString("base64url")}`;
-}
-
-export async function getOrCreateWebhookSecret(userId: string): Promise<{
-  secret: string;
-  createdAt: Date;
-  rotatedAt: Date | null;
-}> {
-  return prisma.apiWebhookSecret.upsert({
-    where: { userId },
-    create: { userId, secret: generateWebhookSecret() },
-    update: {},
-    select: { secret: true, createdAt: true, rotatedAt: true },
-  });
-}
-
-/** New secret; webhooks signed after this use it. */
-export async function rotateWebhookSecret(userId: string) {
-  const secret = generateWebhookSecret();
-  return prisma.apiWebhookSecret.upsert({
-    where: { userId },
-    create: { userId, secret },
-    update: { secret, rotatedAt: new Date() },
-    select: { secret: true, createdAt: true, rotatedAt: true },
-  });
 }
