@@ -17,6 +17,7 @@ export const API_CHANGELOG: { date: string; version: string; notes: string[] }[]
     notes: [
       "First public release: stories, briefings, research reports, instrument search, newsletters.",
       "Async jobs for briefings and research, with signed webhooks.",
+      "Expanded narrative docs: endpoint map, product flows, local Inngest dev, troubleshooting.",
     ],
   },
 ];
@@ -67,9 +68,47 @@ export function apiDocsMarkdown(input: { baseUrl: string; limits: ApiPlanLimits 
   const api = `${input.baseUrl}/api/v1`;
   const { limits } = input;
   return `
-The Dainik Samachar API gives your code the same briefings, research reports, instrument search and newsletters as the app. JSON over HTTPS, one version (\`/api/v1\`), keys per account.
+The **Dainik Samachar REST API** is how server-side apps, scripts and integrations call the same product features you use in the browser: **news briefings**, a **public story feed**, **Indian instrument search**, **async research reports** (stock / ETF / mutual fund), and **email newsletters**. Everything is **JSON over HTTPS**, versioned under \`/api/v1\`, and authenticated with **per-account API keys**.
 
-> **Requires Pro.** Every endpoint needs an API key from an account on an active Pro plan. Create keys under **Settings → Developers**. If the plan lapses, keys answer \`403 plan_required\` until Pro is renewed; they are not deleted.
+> **Requires Pro.** Every \`/api/v1\` route checks an API key tied to an account on an **active Pro plan**. Create keys at **Settings → Developers** (or \`${input.baseUrl}/settings/developers\`). If Pro lapses, keys return \`403 plan_required\` until billing is fixed — keys are **not** deleted.
+
+## How the API fits together
+
+Think of three layers:
+
+1. **Your integration** — sends \`Authorization: Bearer ds_live_…\`, optional \`Idempotency-Key\` on pipeline POSTs, optional \`X-Request-Id\` for support.
+2. **The HTTP API** — validates the key, scopes, rate limits and quotas; returns JSON (or **202** + a **job** for long work).
+3. **Background pipelines** — briefings and research run on **Inngest** (same as the web app). The API exposes **jobs** and optional **webhooks** so you do not have to keep an HTTP connection open for minutes.
+
+**Sync vs async (read this once)**
+
+| Kind | What happens | Typical latency | Counts toward daily pipeline quota? |
+| --- | --- | --- | --- |
+| **Read / search** | Handler reads the database and responds | Usually &lt; 1 s | No — only the per-minute rate limit |
+| **Pipeline** | Handler enqueues work, returns a **job** immediately | Job finishes in ~1–5+ min | Yes — each **accepted** briefing or research POST (not dedupe 200) |
+
+**Resource ownership.** Lists and GET-by-id only return **your account's** briefings, research, newsletters and jobs. Public **stories** are readable with \`news:read\` but are not "owned" by you — they are curated feed items. **Instruments** search is global reference data.
+
+**Same rules as the app.** Briefing dedupe (one slot per date + scope + location), newsletter limits, story counts, and pipeline behavior match the UI. If something works in the app with your account, the API should behave the same with a key that has the right scopes.
+
+## Endpoint map
+
+Base URL for examples below: \`${api}\`. Paths in the sidebar match these exactly.
+
+| Area | Method & path | Scope(s) | Sync? | What you get |
+| --- | --- | --- | --- | --- |
+| Account | \`GET /me\` | any key | Yes | Plan, limits, today's pipeline usage, key metadata |
+| Stories | \`GET /stories\`, \`GET /stories/{id}\` | \`news:read\` | Yes | Public story feed (newest \`publishedAt\` first) |
+| Briefings | \`GET /news/briefings\`, \`GET /news/briefings/{id}\` | \`news:read\` | Yes | Your briefings; \`stories\` filled when succeeded |
+| Briefings | \`POST /news/briefings\` | \`news:write\` | **Async** → job | Starts briefing pipeline; **202** or dedupe **200** |
+| Research | \`GET /research/reports\`, \`GET /research/reports/{id}\` | \`research:read\` | Yes | Your reports; \`reportMarkdown\` when done |
+| Research | \`POST /research/reports\` | \`research:write\` | **Async** → job | Starts research pipeline; **202** |
+| Jobs | \`GET /jobs/{id}\` | \`news:read\` *or* \`research:read\` (by job type) | Yes | Live job status + \`resource.url\` when succeeded |
+| Instruments | \`GET /instruments/search?q=\` | \`instruments:read\` | Yes | Stocks, ETFs, mutual funds — use \`instrumentKey\` for research |
+| Newsletters | \`GET/POST /newsletters\`, \`GET/PATCH/DELETE /newsletters/{id}\` | read / write | Yes | CRUD on digests sent to **account email** |
+| Newsletters | \`POST /newsletters/{id}/pause\`, \`…/resume\` | \`newsletters:write\` | Yes | Pause or resume scheduled sends |
+
+OpenAPI (all request/response fields): [\`${api}/openapi.json\`](${api}/openapi.json). Interactive try-it UI: [\`${input.baseUrl}/docs/api\`](${input.baseUrl}/docs/api).
 
 ## Quickstart
 
@@ -117,6 +156,13 @@ const briefing = await (await fetch(job.resource.url, { headers })).json();
 console.log(briefing.stories.map((s) => s.title));
 \`\`\`
 
+**Minimal checklist after your first request**
+
+1. \`GET /me\` → confirm \`plan: "pro"\`, scopes you need, and \`usage.pipelineJobsToday\` vs \`limits.pipelineJobsPerDay\`.
+2. \`POST /news/briefings\` → note the job \`id\` and \`Location\` header (\`/jobs/{id}\`).
+3. \`GET /jobs/{id}\` every 5–10 s until \`status\` is \`succeeded\` or \`failed\`.
+4. \`GET\` the \`resource.url\` from the job (same host, same Bearer token) → read \`stories\`.
+
 **Python**
 
 \`\`\`python
@@ -151,6 +197,56 @@ ${scopesTable()}
 
 \`GET /me\` works with any scope. \`GET /jobs/{id}\` needs \`news:read\` for briefing jobs and \`research:read\` for research jobs.
 
+**Choosing scopes when creating a key**
+
+| If you want to… | Include at least |
+| --- | --- |
+| Poll briefing jobs and read briefings / stories | \`news:read\` + \`news:write\` to create |
+| Run research end-to-end | \`instruments:read\` + \`research:read\` + \`research:write\` |
+| Manage newsletters only | \`newsletters:read\` + \`newsletters:write\` |
+| Read-only dashboard | Default set on the Developers page (read scopes + instrument search) |
+
+Write scopes are required for **POST** pipeline endpoints; missing scope → \`403\` with \`details.requiredScope\`.
+
+## Product flows (step by step)
+
+### Flow A — World news briefing
+
+1. **POST** \`/news/briefings\` with body e.g. \`{ "scope": "world", "storyCount": 5, "categories": ["markets"] }\`.
+2. Response **202** → JSON **job** (\`id\`, \`status: "pending"\`, \`type: "briefing"\`).
+3. **GET** \`/jobs/{id}\` until \`status === "succeeded"\` (or handle \`failed\` + \`error\` on the job).
+4. **GET** \`job.resource.url\` (typically \`/news/briefings/{briefingId}\`) → briefing object with \`stories[]\` (title, summary, sources, etc.).
+
+Optional: set \`webhookUrl\` on the POST body to receive \`job.succeeded\` / \`job.failed\` instead of polling.
+
+**Local briefing** — use \`scope: "local"\` or \`"both"\` and a \`location\` string (e.g. \`"Hyderabad, Telangana, India"\`). You may also pass \`latitude\`, \`longitude\`, and \`radius\` (meters) for geo-filtered news.
+
+### Flow B — Stock / ETF / mutual fund research
+
+1. **GET** \`/instruments/search?q=Reliance\` (or symbol/name) → pick an item's \`instrumentKey\` and \`assetType\`.
+2. **POST** \`/research/reports\` with \`{ "assetType": "STOCK", "instrumentKey": "…", "prompt": "Your question…" }\`.
+3. Poll **GET** \`/jobs/{id}\` (needs \`research:read\`) until succeeded.
+4. **GET** \`/research/reports/{id}\` → \`reportMarkdown\` and metadata.
+
+Research jobs may show \`running\` while the model and data pipeline work; briefing jobs usually go \`pending\` → \`succeeded\` | \`failed\`.
+
+### Flow C — Public story feed (no pipeline)
+
+1. **GET** \`/stories?limit=20\` with \`news:read\`.
+2. Use \`nextCursor\` from the response as \`?cursor=\` for the next page.
+3. **GET** \`/stories/{id}\` for full body content of one story.
+
+Stories come from successful briefings and published community content; they are **not** created via a separate POST on the public API.
+
+### Flow D — Newsletters
+
+1. **POST** \`/newsletters\` with schedule, scope, categories, etc. (see OpenAPI \`NewsletterCreate\`).
+2. Digests send to the **Clerk primary email** on the same account as the API key.
+3. **PATCH** to change settings; **POST** \`…/pause\` or \`…/resume\`; **DELETE** to remove.
+4. **GET** \`/newsletters/{id}\` includes recent delivery records.
+
+Newsletter POSTs are **synchronous** (201 immediately) but **scheduled sends** still run on background workers — same as the web UI.
+
 ## Async jobs
 
 Briefings and research reports take from under a minute to a few minutes, so their \`POST\` answers **202 Accepted** with a **job** and a \`Location\` header pointing at \`GET /jobs/{id}\`.
@@ -167,6 +263,18 @@ Briefings and research reports take from under a minute to a few minutes, so the
 | Exactly the same parameters as an existing briefing | \`200\` with that briefing's job, \`"deduplicated": true\`, no quota used |
 | Same date/scope/location, different parameters | \`409 conflict\` with \`details.existingBriefingId\` |
 | Same slot, but the earlier briefing failed | \`202\`, the briefing is retried |
+
+**Job object fields (mental model)**
+
+- \`id\` — use for polling \`GET /jobs/{id}\` and for webhook \`X-DS-Delivery\`.
+- \`status\` — always reflects the underlying briefing or report row (not a cached snapshot).
+- \`resource\` — when succeeded, \`resource.url\` is a **path** under \`/api/v1\` you can GET with the same Bearer token.
+- \`deduplicated\` — \`true\` on **200** briefing responses when we returned an existing job for identical parameters.
+- \`webhook\` — delivery state when you passed \`webhookUrl\` (\`pending\`, \`delivered\`, \`failed\`, \`expired\`).
+
+**Research vs briefing on \`GET /jobs/{id}\`**
+
+The job id is opaque. If you call \`GET /jobs/{id}\` without the scope for that job type, you get \`403 forbidden\`. Use the scope that matches how you created the job, or grant both read scopes on the key.
 
 ## Webhooks
 
@@ -229,6 +337,21 @@ ${errorsTable()}
 
 Switch on \`code\`, not on \`message\`; messages may be reworded.
 
+**Common mistakes**
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| \`401 unauthorized\` | Wrong token, revoked key, expired key | Create a new key; check \`Authorization: Bearer\` spelling |
+| \`403 plan_required\` | Account not on Pro | Upgrade at \`/pricing\` |
+| \`403 forbidden\` + \`requiredScope\` | Key missing write/read scope | Recreate key with scopes from the table above |
+| \`404 not_found\` on job | Wrong id or job belongs to another account | Use the id from your POST response |
+| \`409 conflict\` on briefing | Same date/scope/location, different body | Change parameters or fetch \`details.existingBriefingId\` |
+| \`422 idempotency_key_reused\` | Same Idempotency-Key, different JSON | Use a fresh key per distinct request |
+| \`429 rate_limited\` | &gt; ${limits.requestsPerMinute} requests/min on this key | Back off using \`Retry-After\` |
+| \`429 quota_exceeded\` | Daily pipeline cap | Wait until UTC midnight (\`details.resetsAt\`) |
+| Job stuck \`pending\` long time | Local dev: Inngest worker not running | Run \`pnpm inngest:dev\` (see below) |
+| \`invalid_request\` on briefing | \`location\` missing for local/both, or set for world | Match scope rules in OpenAPI |
+
 ## Plans & limits
 
 | | Pro |
@@ -253,6 +376,35 @@ Lists return \`{ "data": [...], "nextCursor": "..." | null }\`. Pass \`nextCurso
 - the same key while the first request is still being processed answers \`409 conflict\`.
 
 Only successful responses are stored, so a request that failed (4xx/5xx) can be retried with the same key.
+
+## Local development & testing
+
+**From the browser (fastest sanity check)**
+
+1. Log in as a **Pro** user → **Settings → Developers** → create a key (copy once).
+2. Open **[\`/docs/api\`](${input.baseUrl}/docs/api)** → Authorize with \`Bearer ds_live_…\`.
+3. Run **\`GET /me\`**, then try **\`GET /instruments/search\`** or a small **\`POST /news/briefings\`**.
+
+**From curl / your app**
+
+Point \`DS_API_KEY\` at your local or deployed origin, e.g. \`http://localhost:3000\` during \`pnpm dev\`. All paths remain \`/api/v1/…\`.
+
+**Background jobs on localhost**
+
+Briefings and research **do not complete** unless **Inngest** is processing events:
+
+- Terminal 1: \`pnpm dev\` (Next.js).
+- Terminal 2: \`pnpm inngest:dev\` (dev server + connect to your app).
+
+In **production**, set Inngest Cloud env vars (\`INNGEST_SIGNING_KEY\`, \`INNGEST_EVENT_KEY\`, etc. — see \`.env.example\`) so workers run without a local dev daemon.
+
+**Webhooks on localhost**
+
+Public \`https\` URLs are required. Use a tunnel (ngrok, Cloudflare Tunnel) and paste the HTTPS URL into \`webhookUrl\`. Verify signatures with the **Webhook signing secret** on the Developers page.
+
+**Logs**
+
+Send \`X-Request-Id: your-correlation-id\` on requests; error JSON includes the same \`requestId\` for support.
 
 ## Versioning
 

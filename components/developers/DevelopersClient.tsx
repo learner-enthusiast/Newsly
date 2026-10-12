@@ -167,8 +167,13 @@ export function DevelopersClient({
             </div>
             <h1 className="font-display text-3xl tracking-tight">Developers</h1>
             <p className="max-w-2xl text-muted-foreground">
-              Use the Dainik Samachar API to call briefings, research, instrument
-              search and newsletters from your own code.
+              REST API at{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">/api/v1</code>
+              — same briefings, research, instruments and newsletters as the app.
+              Long work returns a job: poll{" "}
+              <code className="text-xs">GET /jobs/&#123;id&#125;</code> or use
+              webhooks. Full walkthroughs, endpoint map and troubleshooting are in
+              the docs.
             </p>
           </div>
           <Link

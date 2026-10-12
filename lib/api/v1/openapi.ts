@@ -25,13 +25,41 @@ type JsonSchema = Record<string, unknown>;
 type Io = "input" | "output";
 
 export const TAGS: { name: string; description: string }[] = [
-  { name: "Account", description: "The calling key and its account." },
-  { name: "Stories", description: "Public stories from successful briefings and published community stories." },
-  { name: "Briefings", description: "Your news briefings. Creating one is an async job." },
-  { name: "Research", description: "Stock, ETF and mutual fund research reports. Creating one is an async job." },
-  { name: "Jobs", description: "Status of async briefing and research requests." },
-  { name: "Instruments", description: "Search Indian listed stocks, ETFs and mutual funds." },
-  { name: "Newsletters", description: "Scheduled email digests sent to your account's email." },
+  {
+    name: "Account",
+    description:
+      "Start here: GET /me returns plan (Pro required), rate-limit and pipeline quotas, and which scopes the key has. No scope required.",
+  },
+  {
+    name: "Stories",
+    description:
+      "Read-only public feed. Stories are ordered by publishedAt (newest first). Use news:read. Does not consume pipeline quota.",
+  },
+  {
+    name: "Briefings",
+    description:
+      "List and fetch your briefings (news:read). POST creates an async pipeline job (news:write, counts toward daily quota unless deduplicated 200).",
+  },
+  {
+    name: "Research",
+    description:
+      "List and fetch markdown research reports (research:read). POST starts async analysis for one instrumentKey (research:write, pipeline quota).",
+  },
+  {
+    name: "Jobs",
+    description:
+      "Poll GET /jobs/{id} after a 202 from briefing or research POST. Scope must match job type (news:read vs research:read). Status is live from the backing resource.",
+  },
+  {
+    name: "Instruments",
+    description:
+      "Search NSE/BSE stocks, ETFs and mutual funds by name or symbol (instruments:read). Copy instrumentKey into POST /research/reports.",
+  },
+  {
+    name: "Newsletters",
+    description:
+      "CRUD and pause/resume for email digests to the account primary email. Synchronous HTTP; scheduled sends run in the background. Shared limit with the web app.",
+  },
 ];
 
 const ERROR_EXAMPLE_MESSAGES: Record<ApiErrorCode, string> = {
