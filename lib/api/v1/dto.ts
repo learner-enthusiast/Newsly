@@ -33,7 +33,9 @@ type NewsletterDto = z.input<typeof newsletterSchema>;
 
 export function appBaseUrl(): string {
   const raw = process.env.APP_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
-  return raw.replace(/\/+$/, "");
+  // Tolerate APP_URL without a scheme ("example.com").
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return withScheme.replace(/\/+$/, "");
 }
 
 export function storyWebUrl(id: string): string {

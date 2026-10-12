@@ -1,6 +1,7 @@
 "use client";
 
 import { CreateApiKeyDialog } from "@/components/developers/CreateApiKeyDialog";
+import { WebhookSecretCard } from "@/components/developers/WebhookSecretCard";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -239,6 +240,8 @@ export function DevelopersClient({
             </CardContent>
           </Card>
         ) : null}
+
+        {isPro ? <WebhookSecretCard /> : null}
 
         {children}
       </div>

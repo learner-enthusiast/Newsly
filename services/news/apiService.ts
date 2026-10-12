@@ -42,7 +42,7 @@ import {
 import { findUserNewsRequest } from "@/repositories/user";
 import { z } from "zod";
 import { resolveCoordsFromNewsMetroLocation } from "@/services/news/metroLocation";
-import { runWorkflow, WORKFLOWS, type WorkflowRef } from "@/lib/observability";
+import { runWorkflow, WORKFLOWS, type RunSource, type WorkflowRef } from "@/lib/observability";
 
 export const requestNewsBodySchema = newsGenerationRequestSchema;
 
@@ -215,19 +215,28 @@ async function loadStoriesIfReady(
   );
 }
 
+/** Who started a pipeline, for the trace. Defaults to the web app. */
+export type PipelineTraceOptions = {
+  source?: RunSource;
+  /** Extra trace metadata (public API: apiKeyId, requestId, plan). */
+  metadata?: Record<string, unknown>;
+};
+
 async function triggerNewsPipeline(params: {
   userId: string;
   /** Clerk user id, the trace's end user. */
   endUserId: string;
   newsRequestId: string;
   config: NewsGenerationConfig;
+  trace?: PipelineTraceOptions;
 }) {
   await runWorkflow(
     WORKFLOWS.news,
     {
       endUserId: params.endUserId,
       userId: params.userId,
-      source: "web",
+      source: params.trace?.source ?? "web",
+      metadata: params.trace?.metadata,
       input: { newsRequestId: params.newsRequestId, config: params.config },
     },
     (trace) => sendNewsPipelineEvent(params, trace),
@@ -302,6 +311,7 @@ export async function requestNews(
   userId: string,
   body: RequestNewsBody,
   endUserId: string,
+  trace?: PipelineTraceOptions,
 ) {
   let input = body;
   const needsLocation = body.scope === "local" || body.scope === "both";
@@ -355,6 +365,7 @@ export async function requestNews(
         endUserId,
         newsRequestId: existing.id,
         config,
+        trace,
       });
       const updated = await getNewsRequestByIdForUser(existing.id, userId);
       return {
@@ -388,6 +399,7 @@ export async function requestNews(
     endUserId,
     newsRequestId: newsRequest.id,
     config,
+    trace,
   });
 
   return {

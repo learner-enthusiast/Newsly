@@ -22,6 +22,7 @@ model ApiKey {
 
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   requestLogs ApiRequestLog[]
+  jobs        ApiJob[]
 
   @@index([userId, revokedAt])
   @@map("api_keys")
@@ -86,4 +87,51 @@ model ApiIdempotencyKey {
   @@unique([userId, key])
   @@index([createdAt])
   @@map("api_idempotency_keys")
+}
+
+/// An async pipeline request accepted (or deduplicated) by the API. Status is
+/// never stored here: it is read live from the underlying record.
+model ApiJob {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId   String @map("user_id")
+  apiKeyId String @map("api_key_id") @db.Uuid
+
+  /// `briefing` | `research`
+  type       String
+  /// `NewsRequest.id` (briefing) or `StockResearch.id` (research).
+  resourceId String @map("resource_id")
+
+  /// SHA-256 of the canonical request body.
+  requestHash  String  @map("request_hash")
+  /// True when the request matched an existing briefing (no new pipeline, no quota).
+  deduplicated Boolean @default(false)
+
+  webhookUrl         String?   @map("webhook_url")
+  /// `pending` | `delivered` | `failed` | `expired`; null without a webhook.
+  webhookStatus      String?   @map("webhook_status")
+  webhookAttempts    Int       @default(0) @map("webhook_attempts")
+  webhookDeliveredAt DateTime? @map("webhook_delivered_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([type, resourceId])
+  @@map("api_jobs")
+}
+
+/// Per-user HMAC secret for signing webhooks. Shown and rotated on the
+/// Developers page; stored in clear because it is needed to sign.
+model ApiWebhookSecret {
+  userId    String   @id @map("user_id")
+  secret    String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  rotatedAt DateTime? @map("rotated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_webhook_secrets")
 }

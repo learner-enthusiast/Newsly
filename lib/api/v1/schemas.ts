@@ -597,3 +597,133 @@ export const newsletterParamsSchema = z.strictObject({ id: cuidParam("Newsletter
 export const deletedSchema = z
   .object({ id: z.string(), deleted: z.literal(true) })
   .meta({ id: "Deleted", examples: [{ id: "cmg7n6e5w0002abc", deleted: true }] });
+
+// ── Async jobs ──
+
+export const JOB_TYPES = ["briefing", "research"] as const;
+export const JOB_STATUSES = ["pending", "running", "succeeded", "failed"] as const;
+export const BRIEFING_MAX_STORIES = 12;
+
+const webhookUrlField = z
+  .string()
+  .max(2048)
+  .meta({
+    description:
+      "Optional https URL called once when the job succeeds or fails (signed, see Webhooks). Private and loopback addresses are rejected.",
+  });
+
+export const jobSchema = z
+  .object({
+    id: z.string(),
+    type: z.enum(JOB_TYPES),
+    status: z.enum(JOB_STATUSES).meta({ description: "Read live from the underlying briefing or report." }),
+    deduplicated: z
+      .boolean()
+      .meta({ description: "True when the request matched an existing briefing: no new pipeline, no quota used." }),
+    resource: z.object({
+      type: z.enum(["briefing", "research_report"]),
+      id: z.string(),
+      url: z.string().meta({ description: "API URL of the briefing or report." }),
+    }),
+    webhook: z
+      .object({
+        url: z.string(),
+        status: z.enum(["pending", "delivered", "failed", "expired"]),
+      })
+      .nullable(),
+    createdAt: dateTime(),
+    completedAt: nullableDateTime(),
+  })
+  .meta({
+    id: "Job",
+    examples: [
+      {
+        id: "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        type: "briefing",
+        status: "pending",
+        deduplicated: false,
+        resource: {
+          type: "briefing",
+          id: "3f6c2a1b-9d8e-4f7a-b6c5-d4e3f2a1b0c9",
+          url: "https://example.com/api/v1/news/briefings/3f6c2a1b-9d8e-4f7a-b6c5-d4e3f2a1b0c9",
+        },
+        webhook: { url: "https://hooks.example.com/ds", status: "pending" },
+        createdAt: EXAMPLE_TIME,
+        completedAt: null,
+      },
+    ],
+  });
+
+export const jobParamsSchema = z.strictObject({ id: uuidParam("Job") });
+
+export const createBriefingBodySchema = z
+  .strictObject({
+    date: z.iso
+      .date()
+      .optional()
+      .meta({ description: "Briefing date `YYYY-MM-DD`; defaults to today (UTC)." }),
+    scope: z.enum(["local", "world", "both"]),
+    location: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .meta({ description: "Required for `local` and `both`; not allowed for `world`." }),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    radius: z.number().int().min(1).max(500_000).optional().meta({ description: "Meters around lat/lon." }),
+    categories: z.array(z.string().trim().min(1).max(80)).max(10).optional(),
+    customQuery: z.string().trim().min(1).max(500).optional(),
+    storyCount: z.number().int().min(1).max(BRIEFING_MAX_STORIES).default(5),
+    language: z.string().trim().min(1).max(40).optional().meta({ description: "Defaults to English." }),
+    sources: z
+      .array(z.string().trim().min(1).max(200))
+      .max(10)
+      .optional()
+      .meta({ description: "Domains to prefer, e.g. `livemint.com`." }),
+    webhookUrl: webhookUrlField.optional(),
+  })
+  .superRefine((data, ctx) => {
+    const needsLocation = data.scope === "local" || data.scope === "both";
+    if (needsLocation && !data.location) {
+      ctx.addIssue({ code: "custom", message: "location is required when scope is local or both", path: ["location"] });
+    }
+    if (data.scope === "world" && data.location) {
+      ctx.addIssue({ code: "custom", message: "location must not be set when scope is world", path: ["location"] });
+    }
+    if ((data.latitude === undefined) !== (data.longitude === undefined)) {
+      ctx.addIssue({ code: "custom", message: "latitude and longitude must be provided together", path: ["latitude"] });
+    }
+  })
+  .meta({
+    id: "BriefingCreate",
+    description:
+      "One briefing per user, date, scope and location. Repeating the same request returns the existing job (200, `deduplicated: true`); the same date/scope/location with different parameters is a 409.",
+    examples: [
+      { scope: "local", location: "Hyderabad, Telangana, India", storyCount: 5, categories: ["markets"] },
+    ],
+  });
+
+export const createResearchBodySchema = z
+  .strictObject({
+    assetType: z.enum(RESEARCH_ASSET_TYPES).default("STOCK"),
+    instrumentKey: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .meta({ description: "From `instruments.search`; must match `assetType`." }),
+    prompt: z.string().trim().min(3).max(2000).meta({ description: "What you want researched." }),
+    webhookUrl: webhookUrlField.optional(),
+  })
+  .meta({
+    id: "ResearchReportCreate",
+    examples: [
+      {
+        assetType: "STOCK",
+        instrumentKey: "NSE_EQ|INE002A01018",
+        prompt: "How are valuation and recent results?",
+      },
+    ],
+  });

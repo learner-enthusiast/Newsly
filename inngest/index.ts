@@ -154,6 +154,7 @@ import { chatPotentialStoryTopicsFunction } from "./chatPotentialStoryTopicsPipe
 import { chatStoryPipelineFunction } from "./chatstoryPipeline";
 import { stockResearchPipelineFunction } from "./stockResearch/stockResearchPipeline";
 import { apiMaintenanceFunction } from "./apiMaintenance";
+import { apiJobWebhookFunction } from "./apiWebhooks";
 import { providerUsageReconcileFunction } from "./providerUsageReconcile";
 import {
   newsletterEditionBuildFunction,
@@ -178,4 +179,5 @@ export const inngestFunctions = [
   chatPotentialStoryTopicsFunction,
   providerUsageReconcileFunction,
   apiMaintenanceFunction,
+  apiJobWebhookFunction,
 ];

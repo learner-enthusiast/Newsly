@@ -94,6 +94,8 @@ export type WorkflowOptions = {
   editionId?: string | null;
   /** Shown as the trace input. */
   input?: unknown;
+  /** Extra trace metadata, e.g. `{ apiKeyId, requestId, plan }` for public API runs. */
+  metadata?: Record<string, unknown>;
 };
 
 type ActiveSpan = { setAttribute(key: string, value: string | number | boolean | string[]): unknown };
@@ -284,6 +286,7 @@ export async function runWorkflow<T>(
       assetType: options.assetType ?? null,
       promptVersions: options.promptVersions ?? {},
       ...(options.editionId ? { editionId: options.editionId } : {}),
+      ...options.metadata,
     },
   };
   ref.metadata.runId = ref.runId;

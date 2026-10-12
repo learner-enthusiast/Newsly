@@ -20,6 +20,7 @@ import {
 } from "@/repositories/stockResearch";
 import { toJsonSafeStepOutput } from "@/services/news/normalizeArticles";
 import { runWorkflow, WORKFLOWS } from "@/lib/observability";
+import type { PipelineTraceOptions } from "@/services/news/apiService";
 import {
   RESEARCH_ASSET_CONFIG,
   STOCK_RESEARCHES_MAX_LIMIT,
@@ -104,6 +105,7 @@ function instrumentMatchesAssetType(
 export async function startStockResearch(
   user: { id: string; clerkId: string },
   body: StartStockResearchBody,
+  trace?: PipelineTraceOptions,
 ): Promise<SerializedStockResearch> {
   const userId = user.id;
   const instrument = await getInstrumentByKey(body.instrumentKey);
@@ -136,7 +138,8 @@ export async function startStockResearch(
         {
           endUserId: user.clerkId,
           userId,
-          source: "web",
+          source: trace?.source ?? "web",
+          metadata: trace?.metadata,
           market: "IN",
           assetType: body.assetType,
           promptVersions: STOCK_RESEARCH_PROMPT_VERSIONS,

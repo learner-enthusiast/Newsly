@@ -43,6 +43,8 @@ model User {
   apiKeys          ApiKey[]
   apiRequestLogs   ApiRequestLog[]
   apiIdempotencyKeys ApiIdempotencyKey[]
+  apiJobs          ApiJob[]
+  apiWebhookSecret ApiWebhookSecret?
   providerUsage    ProviderUsage[]
 
   @@map("users")
