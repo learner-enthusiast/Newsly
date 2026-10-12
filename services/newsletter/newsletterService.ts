@@ -15,6 +15,11 @@ import {
 } from "@/services/newsletter/newsletterSchemas";
 import { enqueueNewsletterTestRun } from "@/inngest/newsletterPipeline";
 
+/** Over the per-user newsletter cap. */
+export class NewsletterLimitError extends Error {}
+/** Cross-field rule broken after merging a PATCH with the saved row. */
+export class NewsletterInputError extends Error {}
+
 export async function listNewsletters(userId: string) {
   const rows = await listNewslettersForUser(userId);
   return rows.map(serializeNewsletter);
@@ -68,7 +73,7 @@ export async function createNewsletterForUser(
   const parsed = createNewsletterSchema.parse(body);
   const count = await countNewslettersForUser(userId);
   if (count >= MAX_NEWSLETTERS_PER_USER) {
-    throw new Error(`Maximum ${MAX_NEWSLETTERS_PER_USER} newsletters per user`);
+    throw new NewsletterLimitError(`Maximum ${MAX_NEWSLETTERS_PER_USER} newsletters per user`);
   }
 
   const normalized = normalizeParams({
@@ -148,13 +153,13 @@ export async function updateNewsletterForUser(
   const dayOfMonth = frequency === "MONTHLY" ? keep(parsed.dayOfMonth, existing.dayOfMonth) : null;
 
   if (needsLocation && !location) {
-    throw new Error("location is required when scope is local or both");
+    throw new NewsletterInputError("location is required when scope is local or both");
   }
   if (frequency === "WEEKLY" && dayOfWeek == null) {
-    throw new Error("dayOfWeek is required for WEEKLY");
+    throw new NewsletterInputError("dayOfWeek is required for WEEKLY");
   }
   if (frequency === "MONTHLY" && dayOfMonth == null) {
-    throw new Error("dayOfMonth is required for MONTHLY");
+    throw new NewsletterInputError("dayOfMonth is required for MONTHLY");
   }
 
   const merged = {

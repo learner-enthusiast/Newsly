@@ -51,3 +51,39 @@ model ApiRequestLog {
   @@index([userId, createdAt])
   @@map("api_request_logs")
 }
+
+/// Sliding-window rate limiter buckets (`PostgresRateLimiter`). One row per
+/// key per minute; rows older than 2 days are deleted by a daily cron.
+model ApiRateLimitWindow {
+  bucket      String
+  windowStart DateTime @map("window_start") @db.Timestamptz(6)
+  count       Int      @default(0)
+
+  @@id([bucket, windowStart])
+  @@index([windowStart])
+  @@map("api_rate_limit_windows")
+}
+
+/// `Idempotency-Key` records for pipeline POSTs, kept 24h.
+model ApiIdempotencyKey {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId      String @map("user_id")
+  key         String
+  method      String
+  path        String
+  /// SHA-256 of method + path + canonical JSON body.
+  requestHash String @map("request_hash")
+
+  /// Null while the first request is still running.
+  responseStatus Int?  @map("response_status")
+  responseBody   Json? @map("response_body")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([createdAt])
+  @@map("api_idempotency_keys")
+}

@@ -42,6 +42,7 @@ model User {
   newsletters      Newsletter[]
   apiKeys          ApiKey[]
   apiRequestLogs   ApiRequestLog[]
+  apiIdempotencyKeys ApiIdempotencyKey[]
   providerUsage    ProviderUsage[]
 
   @@map("users")
