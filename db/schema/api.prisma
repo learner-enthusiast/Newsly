@@ -1,0 +1,53 @@
+/// Public REST API (v1) keys. Only the SHA-256 of the full key is stored.
+model ApiKey {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id")
+
+  /// User-given label, e.g. "Trading bot".
+  name String
+
+  /// First 12 chars of the key (`ds_live_xxxx`), shown in the UI.
+  prefix String @unique
+
+  /// Hex SHA-256 of the full key; the full key is never stored.
+  hashedKey String @unique @map("hashed_key")
+
+  scopes String[] @default([])
+
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestLogs ApiRequestLog[]
+
+  @@index([userId, revokedAt])
+  @@map("api_keys")
+}
+
+/// One row per v1 request: usage page, quotas and debugging.
+model ApiRequestLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  apiKeyId String @map("api_key_id") @db.Uuid
+  userId   String @map("user_id")
+
+  method     String
+  path       String
+  status     Int
+  durationMs Int    @map("duration_ms")
+  /// `read` | `search` | `pipeline`
+  costClass  String @map("cost_class")
+  requestId  String @map("request_id")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt])
+  @@index([userId, createdAt])
+  @@map("api_request_logs")
+}

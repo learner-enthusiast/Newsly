@@ -40,6 +40,8 @@ model User {
   payments         Payment[]
   stockResearches  StockResearch[]
   newsletters      Newsletter[]
+  apiKeys          ApiKey[]
+  apiRequestLogs   ApiRequestLog[]
 
   @@map("users")
 }

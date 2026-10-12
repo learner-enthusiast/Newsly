@@ -7,6 +7,7 @@ import { ProGatedSidebarLink } from "@/components/nav/ProGatedSidebarLink";
 import { SIGNED_IN_APP_NAV } from "@/components/nav/signedInAppNav";
 import {
   Bookmark,
+  Code,
   Files,
   Home,
   Layers,
@@ -40,6 +41,13 @@ const SIDEBAR_EXTRA = [
     label: "Pro & billing",
     icon: Settings,
     match: (p: string) => p === "/pricing" || p.startsWith("/pricing/"),
+  },
+  {
+    href: "/settings/developers",
+    label: "Developers",
+    icon: Code,
+    match: (p: string) =>
+      p === "/settings/developers" || p.startsWith("/settings/developers/"),
   },
 ] as const;
 

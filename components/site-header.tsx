@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ProGatedNavLink } from "@/components/nav/ProGatedNavLink";
 import { SIGNED_IN_APP_NAV } from "@/components/nav/signedInAppNav";
+import { Code } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -74,7 +75,15 @@ export function SiteHeader() {
           </Show>
           <Show when="signed-in">
             <NotificationBell />
-            <UserButton />
+            <UserButton>
+              <UserButton.MenuItems>
+                <UserButton.Link
+                  label="Developers"
+                  href="/settings/developers"
+                  labelIcon={<Code className="size-4" />}
+                />
+              </UserButton.MenuItems>
+            </UserButton>
           </Show>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { prisma } from "@/db";
+import { invalidateUserPlan } from "@/lib/billing/plan";
 import type { UserPlan } from "@/db/generated/client";
 
 export type { UserPlan };
@@ -57,6 +58,7 @@ export async function reconcileExpiredProSubscription(
       });
     }
   });
+  invalidateUserPlan(userId);
 
   return "FREE";
 }

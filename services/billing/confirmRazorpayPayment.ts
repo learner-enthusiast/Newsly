@@ -1,5 +1,6 @@
 import { prisma } from "@/db";
 import type { Payment, Subscription, User } from "@/db/generated/client";
+import { invalidateUserPlan } from "@/lib/billing/plan";
 import { getBillingProduct } from "@/services/billing/pricing";
 import { getRazorpayClient } from "@/services/billing/razorpayClient";
 
@@ -221,6 +222,8 @@ export async function confirmRazorpayPayment(
 
     return { alreadyProcessed: false as const, user, payment, subscription };
   });
+
+  invalidateUserPlan(result.user.id);
 
   return {
     ok: true,
