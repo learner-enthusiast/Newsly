@@ -16,6 +16,7 @@ import type {
   storySummarySchema,
   RESEARCH_STATUSES,
 } from "@/lib/api/v1/schemas";
+import { appBaseUrl } from "@/lib/api/v1/baseUrl";
 import type { PublicStoryRow } from "@/repositories/publicApi";
 import type { SerializedNewsletter } from "@/services/newsletter/newsletterService";
 import type {
@@ -31,12 +32,8 @@ type ResearchSummaryDto = z.input<typeof researchReportSummarySchema>;
 type ResearchDto = z.input<typeof researchReportSchema>;
 type NewsletterDto = z.input<typeof newsletterSchema>;
 
-export function appBaseUrl(): string {
-  const raw = process.env.APP_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
-  // Tolerate APP_URL without a scheme ("example.com").
-  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  return withScheme.replace(/\/+$/, "");
-}
+
+export { appBaseUrl };
 
 export function storyWebUrl(id: string): string {
   return `${appBaseUrl()}/newsStory/${id}`;
