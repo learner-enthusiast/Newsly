@@ -13,11 +13,14 @@ import {
 } from "@/repositories/chatSession";
 import { listNewsSourcesByIdsForStory } from "@/repositories/newsSource";
 import { getNewsStoryById } from "@/repositories/newsStory";
+import { runWorkflow, WORKFLOWS } from "@/lib/observability";
 import { z } from "zod";
 
 export const startNewChatInputSchema = z
   .object({
     userId: z.string().min(1),
+    /** Clerk user id: the trace's end user. */
+    endUserId: z.string().min(1),
     newsStoryId: z.uuid().optional(),
     newsSourceIds: z.array(z.uuid()).optional(),
     /** User-visible research question; defaults to the standard deep-research prompt. */
@@ -116,24 +119,36 @@ export async function startNewChat(input: StartNewChatInput) {
     content: researchRequest,
   });
 
-  if (parsed.newsStoryId) {
-    await inngest.send({
-      name: CHAT_PIPELINE_EVENT,
-      data: {
-        userId: parsed.userId,
-        chatSessionId: chatSession.id,
-        userMessageId: userMessage.id,
-      },
-    });
-  } else {
-    await inngest.send({
-      name: MESSAGE_CHAT_PIPELINE_EVENT,
-      data: {
-        chatSessionId: chatSession.id,
-        chatMessageId: userMessage.id,
-      },
-    });
-  }
+  // Carry the run ref so the pipeline's spend is attributed to this user.
+  await runWorkflow(
+    WORKFLOWS.chat,
+    {
+      endUserId: parsed.endUserId,
+      userId: parsed.userId,
+      sessionId: chatSession.id,
+      source: "chat",
+      input: { chatSessionId: chatSession.id, chatMessageId: userMessage.id },
+    },
+    (trace) =>
+      parsed.newsStoryId
+        ? inngest.send({
+            name: CHAT_PIPELINE_EVENT,
+            data: {
+              userId: parsed.userId,
+              chatSessionId: chatSession.id,
+              userMessageId: userMessage.id,
+              trace,
+            },
+          })
+        : inngest.send({
+            name: MESSAGE_CHAT_PIPELINE_EVENT,
+            data: {
+              chatSessionId: chatSession.id,
+              chatMessageId: userMessage.id,
+              trace,
+            },
+          }),
+  );
 
   return {
     chatSession: {

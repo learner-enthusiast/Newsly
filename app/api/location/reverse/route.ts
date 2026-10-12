@@ -1,4 +1,6 @@
 import { resolveUserLocationFromCoordinates } from "@/services/location/resolveUserLocation";
+import { requireAuthenticatedUser } from "@/lib/auth";
+import { withUserProviderUsage } from "@/lib/usage/requestUsage";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -8,6 +10,12 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  // Spends SerpApi credits: signed-in users only.
+  const user = await requireAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let json: unknown;
   try {
     json = await request.json();
@@ -24,9 +32,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const location = await resolveUserLocationFromCoordinates(
-      parsed.data.latitude,
-      parsed.data.longitude,
+    const location = await withUserProviderUsage(
+      { userId: user.id, workflow: "Location reverse geocode" },
+      () =>
+        resolveUserLocationFromCoordinates(
+          parsed.data.latitude,
+          parsed.data.longitude,
+        ),
     );
     return NextResponse.json({ location });
   } catch (error) {

@@ -6,6 +6,8 @@
  * Covers `onFailure` handlers too (their event wraps the original in
  * `data.event`). Events without a `trace` ref run untraced at the step level;
  * their agent / tool spans then start their own traces.
+ *
+ * Every step (traced or not) also flushes buffered provider-usage rows.
  */
 
 import { Middleware } from "inngest";
@@ -13,6 +15,7 @@ import {
   continueWorkflow,
   workflowRefFromEvent,
 } from "@/lib/observability/neatlogs";
+import { flushProviderUsage } from "@/lib/usage/recorder";
 
 export class NeatlogsInngestMiddleware extends Middleware.BaseMiddleware {
   readonly id = "neatlogs";
@@ -23,9 +26,13 @@ export class NeatlogsInngestMiddleware extends Middleware.BaseMiddleware {
     stepInfo,
   }: Middleware.WrapStepHandlerArgs): Promise<unknown> {
     const ref = stepInfo.stepType === "run" ? workflowRefFromEvent(ctx.event) : null;
-    if (!ref) {
-      return next();
+    try {
+      if (!ref) {
+        return await next();
+      }
+      return await continueWorkflow(ref, stepInfo.options.id, () => next());
+    } finally {
+      await flushProviderUsage();
     }
-    return continueWorkflow(ref, stepInfo.options.id, () => next());
   }
 }

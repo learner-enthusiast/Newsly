@@ -1,5 +1,7 @@
 import { fetchLocationAutocompleteCached } from "@/services/location/autocompleteServerCache";
 import { MIN_AUTOCOMPLETE_QUERY_LENGTH } from "@/services/location/autocompleteQuery";
+import { requireAuthenticatedUser } from "@/lib/auth";
+import { withUserProviderUsage } from "@/lib/usage/requestUsage";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -11,6 +13,12 @@ const querySchema = z.object({
 });
 
 export async function GET(request: Request) {
+  // Spends SerpApi credits: signed-in users only.
+  const user = await requireAuthenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const parsed = querySchema.safeParse({
     q: searchParams.get("q") ?? "",
@@ -41,12 +49,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const suggestions = await fetchLocationAutocompleteCached({
-      q,
-      latitude,
-      longitude,
-      cp,
-    });
+    const suggestions = await withUserProviderUsage(
+      { userId: user.id, workflow: "Location autocomplete" },
+      () => fetchLocationAutocompleteCached({ q, latitude, longitude, cp }),
+    );
     return NextResponse.json({ suggestions });
   } catch (error) {
     const message =

@@ -173,7 +173,8 @@ export const newsletterEditionBuildFunction = inngest.createFunction(
     await step.invoke("run-pipeline", {
       function: newsPipelineFunction,
       data: {
-        ...traceField(event),
+        // Provider spend for this build belongs to the shared edition.
+        ...traceField(event, { editionId }),
         userId: systemUserId,
         newsRequestId: editionNewsRequestId,
         date: input.date,

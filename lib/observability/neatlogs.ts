@@ -51,7 +51,15 @@ export type WorkflowName = (typeof WORKFLOWS)[keyof typeof WORKFLOWS];
 /** `endUserId` for runs with no signed-in user (cron, newsletter editions). */
 export const SYSTEM_END_USER_ID = "system";
 
-export type RunSource = "web" | "chat" | "newsletter" | "eval" | "batch" | "cron";
+export type RunSource =
+  | "web"
+  | "chat"
+  | "api"
+  | "newsletter"
+  | "eval"
+  | "batch"
+  | "cron"
+  | "script";
 
 /**
  * Plain-JSON handle on a running workflow, stored in Inngest event data as
@@ -82,6 +90,8 @@ export type WorkflowOptions = {
   assetType?: string | null;
   /** Prompt versions of the agents this workflow runs, for before/after comparisons. */
   promptVersions?: Record<string, string>;
+  /** Shared newsletter edition this run builds (provider spend goes to the edition). */
+  editionId?: string | null;
   /** Shown as the trace input. */
   input?: unknown;
 };
@@ -121,10 +131,58 @@ export function workflowRefFromEvent(event: unknown): WorkflowRef | null {
   return parsed.success ? parsed.data : null;
 }
 
-/** `{ trace }` to spread into a follow-up event so it joins the same run. */
-export function traceField(event: unknown): { trace?: WorkflowRef } {
+/**
+ * `{ trace }` to spread into a follow-up event so it joins the same run.
+ * `metadata` is merged into the ref (e.g. `{ editionId }`) for that branch only.
+ */
+export function traceField(
+  event: unknown,
+  metadata?: Record<string, unknown>,
+): { trace?: WorkflowRef } {
   const ref = workflowRefFromEvent(event);
-  return ref ? { trace: ref } : {};
+  if (!ref) {
+    return {};
+  }
+  return { trace: metadata ? { ...ref, metadata: { ...ref.metadata, ...metadata } } : ref };
+}
+
+// ── Run context: who a unit of work runs for, read by provider usage tracking ──
+
+export type RunContext = {
+  runId: string | null;
+  workflow: string | null;
+  /** `users.id`; null = system. */
+  userId: string | null;
+  source: string;
+  editionId: string | null;
+  /** Salted hash of the caller's IP, for signed-out requests. */
+  ipHash: string | null;
+};
+
+const runContexts = new AsyncLocalStorage<RunContext>();
+
+/** The run the current code executes for, or null outside any run. */
+export function currentRunContext(): RunContext | null {
+  return runContexts.getStore() ?? null;
+}
+
+/** Bind a run context for work that isn't a workflow (e.g. a plain API route). */
+export function withRunContext<T>(context: RunContext, fn: () => Promise<T>): Promise<T> {
+  return runContexts.run(context, fn);
+}
+
+function runContextFromRef(ref: WorkflowRef): RunContext {
+  const meta = ref.metadata;
+  const editionId = typeof meta.editionId === "string" ? meta.editionId : null;
+  return {
+    runId: ref.runId,
+    workflow: ref.workflow,
+    // Edition spend belongs to the shared edition, never to one subscriber.
+    userId: editionId ? null : typeof meta.userId === "string" ? meta.userId : null,
+    source: typeof meta.source === "string" ? meta.source : "script",
+    editionId,
+    ipHash: null,
+  };
 }
 
 // ── LLM usage: AIClient reports each call; summed onto the enclosing root / step ──
@@ -225,6 +283,7 @@ export async function runWorkflow<T>(
       market: options.market ?? null,
       assetType: options.assetType ?? null,
       promptVersions: options.promptVersions ?? {},
+      ...(options.editionId ? { editionId: options.editionId } : {}),
     },
   };
   ref.metadata.runId = ref.runId;
@@ -250,7 +309,7 @@ export async function runWorkflow<T>(
       withUsage(async (totals) => {
         if (active) ref.carrier = traceCarrier();
         try {
-          return await fn(ref);
+          return await runContexts.run(runContextFromRef(ref), () => fn(ref));
         } finally {
           setUsage(active, totals, Date.now() - startedAt);
         }
@@ -298,7 +357,7 @@ export async function continueWorkflow<T>(
       (active) =>
         withUsage(async (totals) => {
           try {
-            return await fn();
+            return await runContexts.run(runContextFromRef(ref), fn);
           } finally {
             setUsage(active, totals, Date.now() - startedAt);
           }

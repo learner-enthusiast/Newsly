@@ -7,6 +7,7 @@ import {
 } from "serpapi";
 import { z } from "zod";
 import { tool } from "@/lib/observability";
+import { trackSerpArchive, trackSerpSearch } from "@/lib/usage/providerUsage";
 
 const serpEnvSchema = z.object({
   apiKey: z.string().min(1, "SERPAPI_API_KEY is required"),
@@ -73,11 +74,13 @@ export function createSerpClient(options: SerpClientOptions = {}) {
     serpSearchParamsSchema.parse(params);
     const requestTimeout =
       typeof params.timeout === "number" ? params.timeout : timeout;
-    const json = await getJson({
-      ...params,
-      api_key: apiKey,
-      timeout: requestTimeout,
-    });
+    const json = await trackSerpSearch(params, () =>
+      getJson({
+        ...params,
+        api_key: apiKey,
+        timeout: requestTimeout,
+      }),
+    );
 
     return responseSchema ? responseSchema.parse(json) : (json as T);
   }
@@ -87,10 +90,13 @@ export function createSerpClient(options: SerpClientOptions = {}) {
     responseSchema?: z.ZodType<T>,
   ): Promise<T> {
     const { apiKey, timeout } = resolveCredentials();
-    const json = await getJsonBySearchId(serpSearchIdSchema.parse(searchId), {
-      api_key: apiKey,
-      timeout,
-    });
+    const id = serpSearchIdSchema.parse(searchId);
+    const json = await trackSerpArchive(() =>
+      getJsonBySearchId(id, {
+        api_key: apiKey,
+        timeout,
+      }),
+    );
 
     return responseSchema ? responseSchema.parse(json) : (json as T);
   }
