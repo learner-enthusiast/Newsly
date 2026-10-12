@@ -178,6 +178,16 @@ const looksLikeEtf: W = {
   ),
 };
 
+/** `(name ILIKE '%ETF%' OR short_name ILIKE '%ETF%')` (+ BEES), fund-unit rows only. */
+const etfMarkerInNameOrShort: W = {
+  OR: ETF_MARKERS.flatMap((marker) => [
+    { name: { contains: marker, mode: ci } },
+    { shortName: { contains: marker, mode: ci } },
+  ]),
+};
+
+const ETF_NAME_SHORT_FIELDS = ["name", "shortName"] as const satisfies readonly TextField[];
+
 /**
  * Negation of looksLikeEtf that keeps rows with a NULL shortName (plain NOT would drop them).
  * Only `shortName` is nullable; a `{ name: null }` filter is rejected by Prisma.
@@ -359,25 +369,27 @@ export async function searchInstrumentsByNameOrShortName(
   );
 }
 
-/** ETFs: fund-unit ISIN + "ETF"/"BEES" marker. Searches name, short name and symbol. */
+/**
+ * ETFs: INF fund units where name or short_name contains ETF/BEES, and the query
+ * matches name or short_name (prefix matches ranked first, then word contains).
+ *
+ * Equivalent to:
+ *   (name ILIKE '%ETF%' OR short_name ILIKE '%ETF%' …)
+ *   AND (name ILIKE '%query%' OR short_name ILIKE '%query%' …)
+ */
 export async function searchEtfsByNameOrShortName(input: EtfNameSearchInput) {
   const parsed = fundSearchSchema.parse(input);
   return searchPrefixThenWords(
-    { AND: [fundUnitWhere(parsed.segment), looksLikeEtf] },
-    parsed.query,
+    { AND: [fundUnitWhere(parsed.segment), etfMarkerInNameOrShort] },
+    parsed.query.trim(),
     parsed.limit ?? 25,
+    ETF_NAME_SHORT_FIELDS,
   );
 }
 
-/** ETFs by `name` only. */
+/** @deprecated alias — searches name and short_name (same as {@link searchEtfsByNameOrShortName}). */
 export async function searchEtfsByName(input: EtfNameSearchInput) {
-  const parsed = fundSearchSchema.parse(input);
-  return searchPrefixThenWords(
-    { AND: [fundUnitWhere(parsed.segment), looksLikeEtf] },
-    parsed.query,
-    parsed.limit ?? 25,
-    ["name"],
-  );
+  return searchEtfsByNameOrShortName(input);
 }
 
 /** Mutual funds: fund-unit ISIN, "fund"/"mutual fund" in name or short name, and not an ETF. */

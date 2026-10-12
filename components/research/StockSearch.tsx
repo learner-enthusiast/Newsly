@@ -14,6 +14,9 @@ type StockSearchProps = {
   onSelect?: (instrument: InstrumentSuggestion) => void;
   /** Called when the user edits the text after picking a stock. */
   onClear?: () => void;
+  /** Initial search text; remount (change `key`) to apply a new one. */
+  defaultQuery?: string;
+  autoFocus?: boolean;
 };
 
 export function StockSearch({
@@ -21,9 +24,11 @@ export function StockSearch({
   onClear,
   endpoint = "/api/instruments/suggest?segment=NSE_EQ",
   placeholder = "Search a stock by name or symbol…",
+  defaultQuery = "",
+  autoFocus = false,
 }: StockSearchProps) {
   const listId = useId();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(defaultQuery);
   const [suggestions, setSuggestions] = useState<InstrumentSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -100,6 +105,7 @@ export function StockSearch({
         aria-controls={listId}
         aria-autocomplete="list"
         placeholder={placeholder}
+        autoFocus={autoFocus}
         value={query}
         onChange={(event) => {
           const value = event.target.value;

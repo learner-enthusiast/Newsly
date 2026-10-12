@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import type { InstrumentSuggestion } from "@/app/api/instruments/suggest/route";
 import { requireAuthenticatedUser } from "@/lib/auth";
-import { ETF_EQ_SEGMENTS, searchEtfsByName } from "@/repositories/instrument";
+import {
+  ETF_EQ_SEGMENTS,
+  searchEtfsByNameOrShortName,
+} from "@/repositories/instrument";
 
 const SUGGESTION_LIMIT = 10;
 
@@ -31,7 +34,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const instruments = await searchEtfsByName({
+  const instruments = await searchEtfsByNameOrShortName({
     query: parsed.data.q,
     segment: parsed.data.segment,
     limit: SUGGESTION_LIMIT,
