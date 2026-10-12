@@ -103,7 +103,14 @@ function formatRelative(iso: string | null): string {
   return formatDate(iso);
 }
 
-export function DevelopersClient({ initial }: { initial: DevelopersPayload }) {
+export function DevelopersClient({
+  initial,
+  children,
+}: {
+  initial: DevelopersPayload;
+  /** Server-rendered sections shown below the keys (e.g. research activity). */
+  children?: React.ReactNode;
+}) {
   const [data, setData] = useState(initial);
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<SerializedApiKey | null>(null);
@@ -232,6 +239,8 @@ export function DevelopersClient({ initial }: { initial: DevelopersPayload }) {
             </CardContent>
           </Card>
         ) : null}
+
+        {children}
       </div>
 
       <CreateApiKeyDialog

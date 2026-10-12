@@ -153,6 +153,7 @@ import { researchSourceDescriptionFunction } from "./researchSourceDescriptionPi
 import { chatPotentialStoryTopicsFunction } from "./chatPotentialStoryTopicsPipeline";
 import { chatStoryPipelineFunction } from "./chatstoryPipeline";
 import { stockResearchPipelineFunction } from "./stockResearch/stockResearchPipeline";
+import { providerUsageReconcileFunction } from "./providerUsageReconcile";
 import {
   newsletterEditionBuildFunction,
   newsletterEditionCleanupFunction,
@@ -174,4 +175,5 @@ export const inngestFunctions = [
   researchSourceDescriptionFunction,
   chatMessageEmbeddingFunction,
   chatPotentialStoryTopicsFunction,
+  providerUsageReconcileFunction,
 ];

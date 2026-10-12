@@ -47,6 +47,16 @@ export function createFirecrawlClient(options: FirecrawlClientOptions = {}) {
 
   return {
     scrape: tool("firecrawl.scrape", scrape),
+
+    /** Remaining credits and current billing period (free; used by reconcile). */
+    creditUsage() {
+      return resolveClient().getCreditUsage();
+    },
+
+    /** Credits used per billing period (free; used by reconcile). */
+    creditUsageHistorical() {
+      return resolveClient().getCreditUsageHistorical();
+    },
   };
 }
 
