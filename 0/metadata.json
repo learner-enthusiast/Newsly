@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M5HQ74G3WS913K143ATX5W0Y",
+  "session_id": "f7a369b8-4f0f-498a-9c44-9911725cd51f",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T11:51:23.178996536Z",
+  "branch": "feat/video-script",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Agents/video/genPrompter/genPrompter.test.ts",
+    "Agents/video/genPrompter/index.ts",
+    "Agents/video/genPrompter/prompt.ts",
+    "Agents/video/genPrompter/schema.ts",
+    "Agents/video/imageFinder/imageFinder.test.ts",
+    "Agents/video/imageFinder/index.ts",
+    "Agents/video/imageFinder/prompt.ts",
+    "Agents/video/imageFinder/schema.ts",
+    "components/videoScript/BeatMediaView.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "9d30d2ae93c2",
+  "checkpoint_transcript_start": 1015,
+  "transcript_lines_at_start": 1015,
+  "compact_transcript_start": 136,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 34870,
+    "cache_read_tokens": 4204182,
+    "output_tokens": 28962,
+    "api_call_count": 13
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-22T11:51:23.091420643Z",
+    "agent_lines": 942,
+    "agent_removed": 0,
+    "human_added": 137,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1079,
+    "total_lines_changed": 1083,
+    "agent_percentage": 86.98060941828255,
+    "metric_version": 2
+  }
+}
