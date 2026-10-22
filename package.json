@@ -17,7 +17,7 @@
     "test:story-votes": "node --import tsx --test services/news/storyVoteLogic.test.ts",
     "test:news-generation": "node --import tsx --test services/news/newsGenerationRequest.test.ts services/news/newsSearchPlanning.test.ts services/news/newsRequestProgress.test.ts services/news/newsRequestPollingLogic.test.ts services/news/normalizeArticles.test.ts services/news/newsBriefingStages.test.ts",
     "test:newsletter": "node --import tsx --test services/newsletter/newsletterLifecycle.test.ts",
-    "test:video-script": "node --import tsx --test services/videoScript/videoScriptTypes.test.ts",
+    "test:video-script": "node --import tsx --test services/videoScript/*.test.ts Agents/video/*/*.test.ts clients/callTool.test.ts",
     "test:billing": "node --import tsx --test services/billing/razorpaySignature.test.ts",
     "judges:commits": "node --import tsx scripts/judgesCommits.ts",
     "api:check": "node --import tsx scripts/checkOpenApi.ts",

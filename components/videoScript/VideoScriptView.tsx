@@ -8,11 +8,37 @@ import {
 } from "@/components/videoScript/videoScriptApi";
 import { VideoScriptOptionsPopover } from "@/components/videoScript/VideoScriptOptionsPopover";
 import { VideoScriptStepper } from "@/components/videoScript/VideoScriptStepper";
-import { isTerminalVideoScriptStatus } from "@/services/videoScript/videoScriptTypes";
+import { factCheckSchema } from "@/Agents/video/factChecker/schema";
+import { factSheetSchema } from "@/Agents/video/researchBuilder/schema";
+import { scriptOutputSchema } from "@/Agents/video/scriptWriter/schema";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FactSheetTab, factAnchorId } from "@/components/videoScript/FactSheetTab";
+import { formatSeconds } from "@/components/videoScript/format";
+import { ScriptTab } from "@/components/videoScript/ScriptTab";
+import {
+  isTerminalVideoScriptStatus,
+  type VideoScriptPayload,
+} from "@/services/videoScript/videoScriptTypes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+
+/** Stored JSON → typed sections; anything that fails to parse is treated as absent. */
+function useParsedSections(videoScript: VideoScriptPayload | null) {
+  return useMemo(() => {
+    const parse = <T,>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T } }, value: unknown) => {
+      const result = schema.safeParse(value);
+      return result.success ? (result.data as T) : null;
+    };
+    return {
+      factSheet: parse(factSheetSchema, videoScript?.research),
+      script: parse(scriptOutputSchema, videoScript?.script),
+      factCheck: parse(factCheckSchema, videoScript?.factCheck),
+    };
+  }, [videoScript]);
+}
 
 const POLL_MS = 2_000;
 
@@ -37,6 +63,17 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
   });
 
   const videoScript = query.data?.videoScript ?? null;
+  const { factSheet, script, factCheck } = useParsedSections(videoScript);
+  const [tab, setTab] = useState("script");
+  const [highlightFactId, setHighlightFactId] = useState<string | null>(null);
+
+  const showFact = (factId: string) => {
+    setHighlightFactId(factId);
+    setTab("facts");
+    requestAnimationFrame(() =>
+      document.getElementById(factAnchorId(factId))?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    );
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
@@ -68,6 +105,14 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
             {videoScript.language === "hi" ? "Hindi" : "English"} ·{" "}
             {videoScript.pace} pace · {videoScript.aspectRatio} · up to{" "}
             {formatSeconds(videoScript.maxSec)}
+          </p>
+        ) : null}
+        {videoScript?.estimatedSec != null ? (
+          <p className="text-sm">
+            <span className="font-medium">≈ {formatSeconds(videoScript.estimatedSec)}</span>
+            {videoScript.lengthReason ? (
+              <span className="text-muted-foreground"> · {videoScript.lengthReason}</span>
+            ) : null}
           </p>
         ) : null}
       </header>
@@ -102,14 +147,37 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
               </p>
             </div>
           ) : null}
+          {script || factSheet ? (
+            <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
+              <TabsList>
+                <TabsTrigger value="script" disabled={!script}>
+                  Script
+                </TabsTrigger>
+                <TabsTrigger value="facts" disabled={!factSheet}>
+                  Fact sheet
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="script" className="pt-4">
+                {script ? (
+                  <ScriptTab
+                    script={script}
+                    factSheet={factSheet}
+                    factCheck={factCheck}
+                    onFactClick={showFact}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">Writing the script…</p>
+                )}
+              </TabsContent>
+              <TabsContent value="facts" className="pt-4">
+                {factSheet ? (
+                  <FactSheetTab factSheet={factSheet} highlightFactId={highlightFactId} />
+                ) : null}
+              </TabsContent>
+            </Tabs>
+          ) : null}
         </>
       )}
     </div>
   );
-}
-
-function formatSeconds(totalSec: number) {
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = totalSec % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }

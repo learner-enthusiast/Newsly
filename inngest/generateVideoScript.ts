@@ -8,12 +8,17 @@
  * researching → scripting → fact_checking → directing → finding_images →
  * prompting → packaging → building → done
  *
- * Phase 1: stages are stubs that only advance the status (with a short pause so
- * the stepper is visible). Agents land in later phases.
+ * researching   → researchBuilder (FactSheet)
+ * scripting     → scriptWriter
+ * fact_checking → factChecker (final script)
+ * Later stages are placeholders that only advance the status.
+ *
+ * An agent returning `failed` stops the run (NonRetriableError → onFailure).
  *
  * onFailure marks the row `failed` with the error message.
  */
 
+import { NonRetriableError } from "inngest";
 import { createPipelineLogger } from "@/clients/pipelineLogger";
 import { inngest } from "@/clients/inngestClient";
 import {
@@ -21,7 +26,13 @@ import {
   markVideoScriptFailed,
   setVideoScriptStatus,
 } from "@/repositories/videoScript";
-import { VIDEO_SCRIPT_STAGES } from "@/services/videoScript/videoScriptTypes";
+import {
+  runFactCheckStage,
+  runResearchStage,
+  runScriptStage,
+  type StageResult,
+} from "@/services/videoScript/pipelineStages";
+import type { VideoScriptStatus } from "@/services/videoScript/videoScriptTypes";
 import { z } from "zod";
 
 export const VIDEO_SCRIPT_REQUESTED_EVENT = "video/script.requested" as const;
@@ -36,8 +47,14 @@ export type VideoScriptRequestedEventData = z.infer<
 
 const pipelineLog = createPipelineLogger("[video-script-pipeline]");
 
-/** Phase 1 only: lets the stepper show each stage before agents exist. */
-const STUB_STAGE_PAUSE = "1.5s";
+/** Stages without an agent yet; they only advance the status. */
+const PLACEHOLDER_STAGES: VideoScriptStatus[] = [
+  "directing",
+  "finding_images",
+  "prompting",
+  "packaging",
+  "building",
+];
 
 export function enqueueVideoScriptPipeline(data: VideoScriptRequestedEventData) {
   return inngest.send({
@@ -80,13 +97,30 @@ export const generateVideoScriptFunction = inngest.createFunction(
       return { scriptId, status: "done" };
     }
 
-    for (const stage of VIDEO_SCRIPT_STAGES) {
-      await step.run(`stage-${stage.status}`, async () => {
-        pipelineLog(`stage-${stage.status}`, "start", { scriptId });
-        await setVideoScriptStatus(scriptId, stage.status);
-        return { status: stage.status };
+    const runStage = async <T extends Record<string, unknown>>(
+      status: VideoScriptStatus,
+      run: (id: string) => Promise<StageResult<T>>,
+    ) =>
+      step.run(`stage-${status}`, async () => {
+        pipelineLog(`stage-${status}`, "start", { scriptId });
+        await setVideoScriptStatus(scriptId, status);
+        const result = await run(scriptId);
+        if (!result.ok) {
+          throw new NonRetriableError(result.reason);
+        }
+        pipelineLog(`stage-${status}`, "done", { scriptId, ...result });
+        return result;
       });
-      await step.sleep(`stub-pause-${stage.status}`, STUB_STAGE_PAUSE);
+
+    await runStage("researching", runResearchStage);
+    await runStage("scripting", runScriptStage);
+    await runStage("fact_checking", runFactCheckStage);
+
+    for (const status of PLACEHOLDER_STAGES) {
+      await step.run(`stage-${status}`, async () => {
+        await setVideoScriptStatus(scriptId, status);
+        return { status };
+      });
     }
 
     await step.run("mark-video-script-done", async () => {
