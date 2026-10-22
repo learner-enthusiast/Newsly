@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M5HPMRWBT7GVG2C50FWM2GRD",
+  "strategy": "manual-commit",
+  "branch": "feat/video-script",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Agents/video/factChecker/factChecker.test.ts",
+    "Agents/video/factChecker/index.ts",
+    "Agents/video/factChecker/prompt.ts",
+    "Agents/video/factChecker/schema.ts",
+    "Agents/video/researchBuilder/index.ts",
+    "Agents/video/researchBuilder/prompt.ts",
+    "Agents/video/researchBuilder/researchBuilder.test.ts",
+    "Agents/video/researchBuilder/schema.ts",
+    "Agents/video/scriptWriter/index.ts",
+    "Agents/video/scriptWriter/prompt.ts",
+    "Agents/video/scriptWriter/schema.ts",
+    "Agents/video/scriptWriter/scriptWriter.test.ts",
+    "Agents/video/shared/numbers.test.ts",
+    "Agents/video/shared/numbers.ts",
+    "clients/callTool.test.ts",
+    "clients/callTool.ts",
+    "clients/pexelsClient.ts",
+    "components/videoScript/FactSheetTab.tsx",
+    "components/videoScript/ScriptTab.tsx",
+    "services/videoScript/pipelineStages.ts",
+    "services/videoScript/videoTools.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 144,
+    "cache_creation_tokens": 156954,
+    "cache_read_tokens": 15504632,
+    "output_tokens": 105468,
+    "api_call_count": 72
+  }
+}
