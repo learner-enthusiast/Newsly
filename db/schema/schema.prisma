@@ -33,6 +33,7 @@ model User {
   newsRequests     NewsRequest[]
   chatSessions     ChatSession[]
   scripts          Script[]
+  videoScripts     VideoScript[]
   newsStoryVotes   NewsStoryVote[]
   notifications    Notification[]
   ownedNewsStories NewsStory[]
@@ -165,6 +166,7 @@ model NewsStory {
   sources           NewsSource[]
   chatSessions      ChatSession[]   @relation("ChatSessionLinkedStory")
   votes             NewsStoryVote[]
+  videoScripts      VideoScript[]
 
   @@unique([newsRequestId, slug])
   @@index([newsRequestId])

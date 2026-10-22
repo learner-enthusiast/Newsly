@@ -17,6 +17,7 @@ import {
 } from "@/components/news/results/NewsStoryStatusPanel";
 import { NewsStorySignInBanner } from "@/components/news/results/NewsStorySignInBanner";
 import { Button } from "@/components/ui/button";
+import { CreateVideoScriptButton } from "@/components/videoScript/CreateVideoScriptButton";
 import {
   Sheet,
   SheetContent,
@@ -166,6 +167,12 @@ export function NewsStoryDetailView({
         ) : null}
 
         <div className="min-w-0 flex-1 space-y-6">
+          {isSignedIn && showFullBody ? (
+            <div className="flex justify-end">
+              <CreateVideoScriptButton storyId={story.id} />
+            </div>
+          ) : null}
+
           <NewsStoryPageHeader
             story={story}
             canViewFullBriefing={canViewFullBriefing}

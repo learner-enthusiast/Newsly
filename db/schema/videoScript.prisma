@@ -1,0 +1,70 @@
+// Talking-head video scripts generated from a single NewsStory.
+// Pipeline: inngest/generateVideoScript.ts (event `video/script.requested`).
+
+model VideoScript {
+  id             String   @id @default(cuid())
+  newsId         String   @map("news_id") @db.Uuid
+  userId         String   @map("user_id")
+  /// queued | researching | scripting | fact_checking | directing | finding_images | prompting | packaging | building | done | failed
+  status         String   @default("queued")
+  error          String?  @db.Text
+  /// "hi" | "en"
+  language       String
+  minSec         Int      @default(60) @map("min_sec")
+  /// Soft limit (±10%).
+  maxSec         Int      @default(140) @map("max_sec")
+  /// slow | normal | fast
+  pace           String   @default("normal")
+  /// "9:16" | "16:9"
+  aspectRatio    String   @default("9:16") @map("aspect_ratio")
+  estimatedSec   Int?     @map("estimated_sec")
+  lengthReason   String?  @map("length_reason") @db.Text
+  /// FactSheet
+  research       Json?
+  /// ScriptOutput
+  script         Json?
+  factCheck      Json?    @map("fact_check")
+  /// CreativeDirection
+  direction      Json?
+  /// PublishingKit
+  publishing     Json?
+  editPack       Json?    @map("edit_pack")
+  /// Markdown
+  recordingBrief String?  @map("recording_brief") @db.Text
+  /// Markdown (tool-neutral body)
+  renderPrompt   String?  @map("render_prompt") @db.Text
+  /// { agentName: version }
+  promptVersions Json?    @map("prompt_versions")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  newsStory NewsStory     @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets    VisualAsset[]
+
+  @@index([newsId])
+  @@index([newsId, userId, createdAt])
+  @@map("video_scripts")
+}
+
+model VisualAsset {
+  id         String  @id @default(cuid())
+  scriptId   String  @map("script_id")
+  beatIndex  Int     @map("beat_index")
+  /// image | video | ai_image_prompt | ai_video_prompt
+  kind       String
+  /// google_images | google_images_light | bing_images | pexels | wikimedia
+  source     String?
+  url        String? @db.Text
+  previewUrl String? @map("preview_url") @db.Text
+  pageUrl    String? @map("page_url") @db.Text
+  title      String? @db.Text
+  prompt     String? @db.Text
+  meta       Json?
+  rank       Int
+
+  script VideoScript @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  @@index([scriptId, beatIndex])
+  @@map("visual_assets")
+}

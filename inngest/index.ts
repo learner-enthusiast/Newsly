@@ -65,6 +65,12 @@
  *   Outcome: Prompt enhancer → tool determiner → Upstox + Serp → link selector →
  *   Firecrawl → `StockResearchResource` rows → Markdown report, status COMPLETED.
  *
+ * generateVideoScriptFunction (`generateVideoScript.ts`)
+ *   Event: `video/script.requested`
+ *   Enqueue: `POST /api/news/stories/[storyId]/script` (creates queued `VideoScript`)
+ *   Outcome: Talking-head video script + direction, images, publishing kit and edit
+ *   pack for one `NewsStory`; status `done`. Idempotent per `scriptId`.
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  * Typical chat flow (general session)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -144,6 +150,14 @@ export {
   type StockResearchPipelineEventData,
 } from "./stockResearch/stockResearchPipeline";
 
+export {
+  VIDEO_SCRIPT_REQUESTED_EVENT,
+  videoScriptRequestedEventDataSchema,
+  generateVideoScriptFunction,
+  enqueueVideoScriptPipeline,
+  type VideoScriptRequestedEventData,
+} from "./generateVideoScript";
+
 import { chatPipelineFunction } from "./newsNewchatPipeline";
 import { chatMessageEmbeddingFunction } from "./chatMessageEmbeddingPipeline";
 import { messageChatPipelineFunction } from "./chatPipeline";
@@ -153,6 +167,7 @@ import { researchSourceDescriptionFunction } from "./researchSourceDescriptionPi
 import { chatPotentialStoryTopicsFunction } from "./chatPotentialStoryTopicsPipeline";
 import { chatStoryPipelineFunction } from "./chatstoryPipeline";
 import { stockResearchPipelineFunction } from "./stockResearch/stockResearchPipeline";
+import { generateVideoScriptFunction } from "./generateVideoScript";
 import { apiMaintenanceFunction } from "./apiMaintenance";
 import { apiJobWebhookFunction } from "./apiWebhooks";
 import { providerUsageReconcileFunction } from "./providerUsageReconcile";
@@ -174,6 +189,7 @@ export const inngestFunctions = [
   messageChatPipelineFunction,
   chatStoryPipelineFunction,
   stockResearchPipelineFunction,
+  generateVideoScriptFunction,
   researchSourceDescriptionFunction,
   chatMessageEmbeddingFunction,
   chatPotentialStoryTopicsFunction,
