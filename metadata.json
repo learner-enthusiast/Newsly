@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M5HPVFRXAMAC6JHSEMZ500C8",
+  "strategy": "manual-commit",
+  "branch": "feat/video-script",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Agents/video/creativeDirector/index.ts",
+    "Agents/video/creativeDirector/prompt.ts",
+    "Agents/video/creativeDirector/schema.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 17772,
+    "cache_read_tokens": 2055924,
+    "output_tokens": 15132,
+    "api_call_count": 7
+  }
+}
