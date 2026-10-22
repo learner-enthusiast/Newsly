@@ -22,6 +22,7 @@ const factSheet: FactSheet = {
   sources: [],
   searchQueries: [],
   droppedUngroundedFacts: 0,
+    droppedFacts: [],
 };
 
 const texts = [

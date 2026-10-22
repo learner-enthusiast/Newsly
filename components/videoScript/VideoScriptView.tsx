@@ -9,6 +9,7 @@ import {
 import { VideoScriptOptionsPopover } from "@/components/videoScript/VideoScriptOptionsPopover";
 import { VideoScriptStepper } from "@/components/videoScript/VideoScriptStepper";
 import { creativeDirectionSchema } from "@/Agents/video/creativeDirector/schema";
+import { publishingKitSchema } from "@/Agents/video/publishingKit/schema";
 import { factCheckSchema } from "@/Agents/video/factChecker/schema";
 import { factSheetSchema } from "@/Agents/video/researchBuilder/schema";
 import { scriptOutputSchema } from "@/Agents/video/scriptWriter/schema";
@@ -16,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BeatMediaView } from "@/components/videoScript/BeatMediaView";
 import { BeatDirectionView, GlobalDirectionCard } from "@/components/videoScript/DirectionViews";
 import { FactSheetTab, factAnchorId } from "@/components/videoScript/FactSheetTab";
+import { PublishingKitTab } from "@/components/videoScript/PublishingKitTab";
 import { formatSeconds } from "@/components/videoScript/format";
 import { ScriptTab } from "@/components/videoScript/ScriptTab";
 import {
@@ -40,6 +42,7 @@ function useParsedSections(videoScript: VideoScriptPayload | null) {
       script: parse(scriptOutputSchema, videoScript?.script),
       factCheck: parse(factCheckSchema, videoScript?.factCheck),
       direction: parse(creativeDirectionSchema, videoScript?.direction),
+      publishing: parse(publishingKitSchema, videoScript?.publishing),
     };
   }, [videoScript]);
 }
@@ -67,7 +70,7 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
   });
 
   const videoScript = query.data?.videoScript ?? null;
-  const { factSheet, script, factCheck, direction } = useParsedSections(videoScript);
+  const { factSheet, script, factCheck, direction, publishing } = useParsedSections(videoScript);
   const directionByIndex = new Map(direction?.beats.map((beat) => [beat.index, beat]) ?? []);
   const [tab, setTab] = useState("script");
   const [highlightFactId, setHighlightFactId] = useState<string | null>(null);
@@ -161,6 +164,9 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
                 <TabsTrigger value="facts" disabled={!factSheet}>
                   Fact sheet
                 </TabsTrigger>
+                <TabsTrigger value="publishing" disabled={!publishing}>
+                  Publishing kit
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="script" className="pt-4">
                 {script ? (
@@ -186,6 +192,11 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
                 ) : (
                   <p className="text-sm text-muted-foreground">Writing the script…</p>
                 )}
+              </TabsContent>
+              <TabsContent value="publishing" className="pt-4">
+                {publishing && script ? (
+                  <PublishingKitTab kit={publishing} hookOptions={script.hookOptions} />
+                ) : null}
               </TabsContent>
               <TabsContent value="facts" className="pt-4">
                 {factSheet ? (

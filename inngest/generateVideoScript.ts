@@ -14,7 +14,8 @@
  * directing     → creativeDirector
  * finding_images → imageFinder (VisualAsset image/video rows)
  * prompting     → genPrompter (optional ai_*_prompt rows)
- * Later stages are placeholders that only advance the status.
+ * packaging     → publishingKit
+ * building      → placeholder until the edit pack (phase 6)
  *
  * An agent returning `failed` stops the run (NonRetriableError → onFailure).
  *
@@ -34,6 +35,7 @@ import {
   runFactCheckStage,
   runImageStage,
   runPromptStage,
+  runPublishingStage,
   runResearchStage,
   runScriptStage,
   type StageResult,
@@ -54,10 +56,7 @@ export type VideoScriptRequestedEventData = z.infer<
 const pipelineLog = createPipelineLogger("[video-script-pipeline]");
 
 /** Stages without an agent yet; they only advance the status. */
-const PLACEHOLDER_STAGES: VideoScriptStatus[] = [
-  "packaging",
-  "building",
-];
+const PLACEHOLDER_STAGES: VideoScriptStatus[] = ["building"];
 
 export function enqueueVideoScriptPipeline(data: VideoScriptRequestedEventData) {
   return inngest.send({
@@ -121,6 +120,7 @@ export const generateVideoScriptFunction = inngest.createFunction(
     await runStage("directing", runDirectionStage);
     await runStage("finding_images", runImageStage);
     await runStage("prompting", runPromptStage);
+    await runStage("packaging", runPublishingStage);
 
     for (const status of PLACEHOLDER_STAGES) {
       await step.run(`stage-${status}`, async () => {

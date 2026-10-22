@@ -1,5 +1,5 @@
 /** Bump whenever either system prompt below changes. */
-export const PROMPT_VERSION = "v3";
+export const PROMPT_VERSION = "v4";
 
 export const AUDIT_SYSTEM_PROMPT = [
   "You are a strict fact checker for a news video script. The fact sheet is the ONLY truth.",
@@ -24,7 +24,8 @@ export function buildRewriteSystemPrompt(language: "hi" | "en"): string {
     "You fix sentences in a talking-head news video script that failed fact checking.",
     "Rewrite each given beat so every claim is supported by the fact sheet. Use ONLY facts from the fact sheet;",
     "never add new facts, numbers, names or background. If a claim cannot be supported, remove it.",
-    "Keep the beat's role, length and conversational tone. Write numbers as digits, exactly as in the facts.",
+    "Keep the beat's role and conversational tone, and keep it the same length or shorter — never add sentences.",
+    "Write numbers as digits, exactly as in the facts.",
     language === "hi"
       ? "Write in conversational Hindi (Devanagari), like the original."
       : "Write in conversational English, like the original.",

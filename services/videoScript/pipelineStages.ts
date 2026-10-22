@@ -34,6 +34,10 @@ import {
   PROMPT_VERSION as GEN_PROMPTER_VERSION,
   runGenPrompter,
 } from "@/Agents/video/genPrompter";
+import {
+  PROMPT_VERSION as PUBLISHING_KIT_VERSION,
+  runPublishingKit,
+} from "@/Agents/video/publishingKit";
 import { creativeDirectionSchema } from "@/Agents/video/creativeDirector/schema";
 import type { Prisma } from "@/db/generated/client";
 import {
@@ -270,4 +274,22 @@ export async function runPromptStage(scriptId: string): Promise<StageResult<{ be
   await replaceVisualAssets(scriptId, PROMPT_ASSET_KINDS, assets);
   await recordPromptVersions(scriptId, { genPrompter: GEN_PROMPTER_VERSION });
   return { ok: true, beatsWithPrompts: result.data.beats.length, prompts: assets.length };
+}
+
+export async function runPublishingStage(scriptId: string): Promise<StageResult<{ titles: number; dropped: number }>> {
+  const row = await loadRow(scriptId);
+  const options = scriptOptions(row);
+  const result = await runPublishingKit({
+    script: scriptOutputSchema.parse(row.script),
+    factSheet: factSheetSchema.parse(row.research),
+    direction: creativeDirectionSchema.parse(row.direction),
+    language: options.language,
+    aspectRatio: options.aspectRatio,
+  });
+  if (result.status === "failed") {
+    return { ok: false, reason: result.reason };
+  }
+  await patchVideoScript(scriptId, { publishing: json(result.data) });
+  await recordPromptVersions(scriptId, { publishingKit: PUBLISHING_KIT_VERSION });
+  return { ok: true, titles: result.data.titles.length, dropped: result.data.dropped.length };
 }

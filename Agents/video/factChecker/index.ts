@@ -16,6 +16,7 @@ import {
   type VideoGenerate,
 } from "@/Agents/video/shared/llm";
 import {
+  countWords,
   extractNumbers,
   extractQuotedSpans,
   normaliseQuoteText,
@@ -47,6 +48,9 @@ export function factSheetNumbers(factSheet: FactSheet): NumberToken[] {
 }
 
 type Issue = { span: string | null; problem: string };
+
+/** A rewritten beat may be at most this much longer than the original. */
+export const MAX_REWRITE_GROWTH = 1.3;
 
 /** Rewrite indexes ≥ this are the title (base) and hook options (base + 1…). */
 const EXTRA_INDEX_BASE = 1_000;
@@ -211,6 +215,10 @@ export function createFactChecker(deps: FactCheckerDeps = {}) {
             }
             const original = failing.find((beat) => beat.originalIndex === row.index);
             if (!original || !row.spokenText.trim()) {
+              continue;
+            }
+            // A fix must not pad the beat; longer rewrites fall back to claim removal.
+            if (countWords(row.spokenText) > countWords(original.spokenText) * MAX_REWRITE_GROWTH) {
               continue;
             }
             const onScreen = row.onScreenText?.trim();

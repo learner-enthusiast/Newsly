@@ -20,13 +20,19 @@ import {
   totalWords,
   wordsPerSecond,
 } from "@/Agents/video/shared/timing";
-import { countWords } from "@/Agents/video/shared/numbers";
+import { countWords, splitSentences } from "@/Agents/video/shared/numbers";
 import type { FactSheet } from "@/Agents/video/researchBuilder/schema";
-import { buildLengthRetryPrompt, buildScriptWriterSystemPrompt, PROMPT_VERSION } from "./prompt";
+import {
+  buildLengthRetryPrompt,
+  buildScriptWriterSystemPrompt,
+  buildShortHookPrompt,
+  PROMPT_VERSION,
+} from "./prompt";
 import {
   FINANCE_DISCLAIMER,
   scriptDraftSchema,
   scriptOutputSchema,
+  shortHooksSchema,
   scriptWriterInputSchema,
   type Beat,
   type ScriptDraft,
@@ -125,10 +131,19 @@ export function finaliseScript(
   const hookLimitWords = Math.floor(HOOK_MAX_SEC * wps);
   if (beats[0] && countWords(beats[0].spokenText) > hookLimitWords) {
     const fitting = hookOptions.findIndex((hook) => hook && countWords(hook) <= hookLimitWords);
+    const [firstSentence, ...rest] = splitSentences(beats[0].spokenText);
     if (fitting >= 0) {
       const longHook = beats[0].spokenText;
       beats[0] = { ...beats[0], spokenText: hookOptions[fitting] };
       hookOptions = hookOptions.map((hook, i) => (i === fitting ? longHook : hook));
+    } else if (rest.length > 0 && countWords(firstSentence) <= hookLimitWords && beats.length < MAX_BEATS) {
+      // Keep the first sentence as the hook; the rest becomes the next beat.
+      beats.splice(0, 1, { ...beats[0], spokenText: firstSentence }, {
+        ...beats[0],
+        spokenText: rest.join(" "),
+        onScreenText: undefined,
+        priority: "core",
+      });
     }
   }
 
@@ -248,6 +263,31 @@ export function createScriptWriter(deps: ScriptWriterDeps = {}) {
             break;
           }
           draft = retry;
+        }
+
+        // Hook over HOOK_MAX_SEC with no short option or short first sentence → ask once for short hooks.
+        const hookLimitWords = Math.floor(HOOK_MAX_SEC * wps);
+        const fits = (text: string) => Boolean(text) && countWords(text) <= hookLimitWords;
+        const hook = draft.beats[0]?.spokenText ?? "";
+        if (hook && !fits(hook) && !draft.hookOptions.some(fits) && !fits(splitSentences(hook)[0] ?? "")) {
+          try {
+            const short = await generate({
+              model: resolveVideoModel(deps.model),
+              system,
+              prompt: buildShortHookPrompt(hookLimitWords, options.language),
+              extraContext: { ...extraContext, currentHook: hook, draftBeats: draft.beats.map((b) => b.spokenText) },
+              schemaName: "VideoShortHooks",
+              schemaDescription: "Three short alternative hooks.",
+              output: shortHooksSchema,
+              temperature: 0.5,
+              maxOutputTokens: 800,
+            });
+            if (short.hooks.length === 3 && short.hooks.every((h) => typeof h === "string")) {
+              draft = { ...draft, hookOptions: short.hooks };
+            }
+          } catch (error) {
+            console.warn("[scriptWriter] short hook request failed; keeping long hook", error);
+          }
         }
 
         return finaliseScript(draft, factSheet, options, plan);

@@ -61,3 +61,12 @@ export function buildLengthRetryPrompt(input: {
     "Keep every other rule. Do not repeat points and do not add anything that is not in the fact sheet.",
   ].join(" ");
 }
+
+export function buildShortHookPrompt(maxWords: number, language: "hi" | "en"): string {
+  return [
+    `The hook (first beat) is too long. Write exactly 3 alternative hooks of at most ${maxWords} words each`,
+    language === "hi" ? "in conversational Hindi (Devanagari)" : "in conversational English",
+    "— a surprising number, a question, or the consequence for the viewer — using only facts from the fact sheet,",
+    "numbers copied exactly as digits. The current hook and draft are in context.",
+  ].join(" ");
+}

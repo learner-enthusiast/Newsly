@@ -24,6 +24,7 @@ function factSheet(strongFacts: number, isFinance = false): FactSheet {
     sources: [],
     searchQueries: [],
     droppedUngroundedFacts: 0,
+    droppedFacts: [],
   };
 }
 
@@ -47,7 +48,10 @@ function draft(beatWords: number[], optional: number[] = []): ScriptDraft {
   };
 }
 
-const gen = (output: unknown): VideoGenerate => (async () => output) as unknown as VideoGenerate;
+/** Answers draft requests with `output`; short-hook requests with hooks too long to swap in. */
+const gen = (output: unknown): VideoGenerate =>
+  (async (params: { schemaName?: string }) =>
+    params.schemaName === "VideoShortHooks" ? { hooks: [words(50), words(50), words(50)] } : output) as unknown as VideoGenerate;
 
 describe("planLength", () => {
   it("bands by strong fact count and clamps to maxSec", () => {
@@ -105,7 +109,10 @@ describe("scriptWriter", () => {
 describe("scriptWriter length retry", () => {
   it("asks once for a longer draft when the first is too short", async () => {
     const calls: string[] = [];
-    const generate = (async (params: { prompt: string }) => {
+    const generate = (async (params: { prompt: string; schemaName?: string }) => {
+      if (params.schemaName === "VideoShortHooks") {
+        return { hooks: [words(50), words(50), words(50)] };
+      }
       calls.push(params.prompt);
       return calls.length === 1 ? draft(Array(8).fill(10)) : draft(Array(10).fill(25));
     }) as unknown as VideoGenerate;
@@ -127,5 +134,37 @@ describe("hook length", () => {
     if (result.status !== "ok") return;
     assert.equal(result.data.beats[0].spokenText, "short punchy hook");
     assert.equal(result.data.hookOptions[1], words(20));
+  });
+});
+
+describe("hook split", () => {
+  it("splits a long hook after its first sentence when no option fits", async () => {
+    const d = draft([12, 24, 24, 24, 24, 24, 24, 10]);
+    d.beats[0].spokenText = `Short opener here. ${words(30)}.`;
+    const run = createScriptWriter({ generate: gen(d) });
+    const result = await run({ factSheet: factSheet(4), story: { title: "S", category: "x" }, options });
+    assert.equal(result.status, "ok");
+    if (result.status !== "ok") return;
+    assert.equal(result.data.beats[0].spokenText, "Short opener here.");
+    assert.equal(result.data.beats[1].spokenText, `${words(30)}.`);
+    assert.equal(result.data.beats.length, 9);
+  });
+});
+
+describe("short hook request", () => {
+  it("asks for short hooks when nothing fits, then swaps one in", async () => {
+    const d = draft([30, 24, 24, 24, 24, 24, 24, 10]);
+    const prompts: string[] = [];
+    const generate = (async (params: { prompt: string; schemaName?: string }) => {
+      prompts.push(params.schemaName ?? "");
+      return params.schemaName === "VideoShortHooks" ? { hooks: ["Big news today", words(20), "Why now?"] } : d;
+    }) as unknown as VideoGenerate;
+    const run = createScriptWriter({ generate });
+    const result = await run({ factSheet: factSheet(4), story: { title: "S", category: "x" }, options });
+    assert.equal(result.status, "ok");
+    if (result.status !== "ok") return;
+    assert.deepEqual(prompts, ["VideoScriptDraft", "VideoShortHooks"]);
+    assert.equal(result.data.beats[0].spokenText, "Big news today");
+    assert.equal(result.data.hookOptions[0], words(30));
   });
 });

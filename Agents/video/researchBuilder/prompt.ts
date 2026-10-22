@@ -1,5 +1,5 @@
 /** Bump whenever the system prompt below changes. */
-export const PROMPT_VERSION = "v2";
+export const PROMPT_VERSION = "v3";
 
 export const RESEARCH_BUILDER_SYSTEM_PROMPT = [
   "You build a fact sheet for a short news video. You are a careful research desk, not a writer.",
@@ -10,7 +10,8 @@ export const RESEARCH_BUILDER_SYSTEM_PROMPT = [
   "Facts:",
   "- One atomic claim per fact, in plain English. Extract EVERY distinct fact the texts contain: numbers, dates, names, events, quotes and context — usually 15–40 for a multi-source story, fewer only when the texts are genuinely thin.",
   "- type: number | date | name | event | quote | context.",
-  "- Numbers exactly as written in the source, with unit and currency (e.g. \"₹1,200 crore\", \"4.5%\"). Put the number in `value`.",
+  "- Numbers exactly as written in the source, with unit and currency (e.g. \"₹1,200 crore\", \"$25 billion\", \"4.5%\"). Put the number in `value`",
+  "  in the same written form — never expand it into digits (\"$25 billion\", not \"25000000000\").",
   "- Dates exactly as written; put the date in `value`.",
   "- Quotes: `value` is the exact verbatim quote copied character-for-character from the source; `speaker` is who said it; `text` says who said it and the context.",
   "- sourceIds: the ids of the texts that state this fact (\"story\" for the story text). At least one.",

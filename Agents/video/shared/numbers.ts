@@ -41,6 +41,10 @@ const SCALE_ALIASES: Record<string, NumberScale> = {
   billion: "billion",
   billions: "billion",
   "अरब": "billion",
+  "बिलियन": "billion",
+  "मिलियन": "million",
+  "ट्रिलियन": "trillion",
+  "परसेंट": "percent",
   tn: "trillion",
   trillion: "trillion",
   "%": "percent",
@@ -68,7 +72,7 @@ export function toAsciiDigits(text: string): string {
 
 // Latin scale words must end at a word boundary ("5 km" is not "5 k").
 const NUMBER_PATTERN =
-  /(\d+(?:,\d+)*(?:\.\d+)?)(?:\s*(%|per cent|percent|crores?|cr\.?(?![a-z])|lakhs?(?![a-z])|lac(?![a-z])|millions?|mn(?![a-z])|billions?|bn(?![a-z])|trillion|tn(?![a-z])|thousand|k(?![a-z])|करोड़|करोड|लाख|अरब|हज़ार|हजार|प्रतिशत|फ़ीसदी|फीसदी))?/gi;
+  /(\d+(?:,\d+)*(?:\.\d+)?)(?:\s*(%|per cent|percent|crores?|cr\.?(?![a-z])|lakhs?(?![a-z])|lac(?![a-z])|millions?|mn(?![a-z])|billions?|bn(?![a-z])|trillion|tn(?![a-z])|thousand|k(?![a-z])|करोड़|करोड|लाख|अरब|बिलियन|मिलियन|ट्रिलियन|हज़ार|हजार|प्रतिशत|परसेंट|फ़ीसदी|फीसदी))?/gi;
 
 export function extractNumbers(text: string): NumberToken[] {
   const ascii = toAsciiDigits(text);
@@ -106,15 +110,18 @@ function nearlyEqual(a: number, b: number): boolean {
   return Math.abs(a - b) <= Math.max(1e-9, Math.abs(a) * 1e-9);
 }
 
-/** Same value (and compatible scale), or same absolute amount (120 bn = 12,000 cr). */
+/**
+ * Same value (and compatible scale), or same absolute amount — across scales
+ * (120 bn = 12,000 cr) or against a written-out number (25000000000 = 25 bn).
+ */
 export function numbersMatch(script: NumberToken, fact: NumberToken): boolean {
   if (nearlyEqual(script.value, fact.value)) {
     return (
       script.scale == null || fact.scale == null || script.scale === fact.scale
     );
   }
-  const a = absoluteValue(script);
-  const b = absoluteValue(fact);
+  const a = absoluteValue(script) ?? (script.scale == null ? script.value : null);
+  const b = absoluteValue(fact) ?? (fact.scale == null ? fact.value : null);
   return a != null && b != null && nearlyEqual(a, b);
 }
 

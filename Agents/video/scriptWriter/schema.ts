@@ -70,3 +70,5 @@ export const scriptDraftSchema = z.object({
 });
 
 export type ScriptDraft = z.infer<typeof scriptDraftSchema>;
+
+export const shortHooksSchema = z.object({ hooks: z.array(z.string()).min(3).max(3) });

@@ -67,6 +67,7 @@ export const factSheetSchema = z.object({
   searchQueries: z.array(z.string()),
   /** Extracted facts dropped because no source supported their numbers/quote. */
   droppedUngroundedFacts: z.number().int().default(0),
+  droppedFacts: z.array(z.object({ text: z.string(), reason: z.string() })).default([]),
 });
 
 export type Fact = z.infer<typeof factSchema>;

@@ -19,6 +19,13 @@ describe("extractNumbers", () => {
     }
   });
 
+  it("reads transliterated Hindi scales", () => {
+    assert.deepEqual(
+      extractNumbers("43 मिलियन और $25 बिलियन").map((t) => [t.value, t.scale]),
+      [[43, "million"], [25, "billion"]],
+    );
+  });
+
   it("reads percents in English and Hindi", () => {
     assert.equal(extractNumbers("up 4.5%")[0].scale, "percent");
     assert.equal(extractNumbers("4.5 प्रतिशत")[0].scale, "percent");
@@ -43,6 +50,12 @@ describe("numbersMatch", () => {
       numbersMatch(extractNumbers("1200 lakh")[0], fact),
       false,
     );
+  });
+
+  it("matches written-out numbers against scaled ones", () => {
+    assert.equal(numbersMatch(extractNumbers("25000000000")[0], extractNumbers("$25 billion")[0]), true);
+    assert.equal(numbersMatch(extractNumbers("$25 billion")[0], extractNumbers("25,000,000,000")[0]), true);
+    assert.equal(numbersMatch(extractNumbers("43 million")[0], extractNumbers("43,899,725")[0]), false);
   });
 
   it("matches the same amount across scales", () => {

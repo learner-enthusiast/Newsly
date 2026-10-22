@@ -174,26 +174,26 @@ async function collectSources(
 export function groundFacts(
   extraction: FactExtraction,
   sources: Array<{ id: string; url: string; text: string | null; origin: string }>,
-): { facts: Fact[]; conflicts: FactSheet["conflicts"]; dropped: number } {
+): { facts: Fact[]; conflicts: FactSheet["conflicts"]; dropped: FactSheet["droppedFacts"] } {
   const usable = sources.filter((s) => s.text);
   const byId = new Map(usable.map((s) => [s.id, s]));
   const numbersById = new Map(usable.map((s) => [s.id, extractNumbers(s.text!)]));
   const quoteTextById = new Map(usable.map((s) => [s.id, normaliseQuoteText(s.text!)]));
   const keptIdByPosition = new Map<number, string>();
   const facts: Fact[] = [];
-  let dropped = 0;
+  const dropped: FactSheet["droppedFacts"] = [];
 
   extraction.facts.forEach((raw, index) => {
     const sourceIds = [...new Set(raw.sourceIds)].filter((id) => byId.has(id));
     if (sourceIds.length === 0 || !raw.text.trim()) {
-      dropped += 1;
+      dropped.push({ text: raw.text, reason: "cites no known source" });
       return;
     }
 
     // A number missing from the cited texts may still be in another source:
     // cite that source too (mis-citation), otherwise the fact is ungrounded.
     const claimText = `${raw.text} ${raw.value ?? ""}`;
-    let grounded = true;
+    let failure: string | null = null;
     for (const token of extractNumbers(claimText)) {
       const cites = (id: string) =>
         unsupportedNumbers(token.raw, numbersById.get(id) ?? []).length === 0;
@@ -202,12 +202,12 @@ export function groundFacts(
       }
       const other = usable.find((source) => cites(source.id));
       if (!other) {
-        grounded = false;
+        failure = `number "${token.raw}" is in no source`;
         break;
       }
       sourceIds.push(other.id);
     }
-    if (grounded && raw.type === "quote") {
+    if (!failure && raw.type === "quote") {
       const quote = raw.value ? normaliseQuoteText(raw.value) : "";
       const has = (id: string) => Boolean(quote) && (quoteTextById.get(id) ?? "").includes(quote);
       if (!sourceIds.some(has)) {
@@ -215,12 +215,12 @@ export function groundFacts(
         if (other) {
           sourceIds.push(other.id);
         } else {
-          grounded = false;
+          failure = "quote is not verbatim in any source";
         }
       }
     }
-    if (!grounded) {
-      dropped += 1;
+    if (failure) {
+      dropped.push({ text: raw.text, reason: failure });
       return;
     }
 
@@ -306,7 +306,8 @@ export function createResearchBuilder(deps: ResearchBuilderDeps = {}) {
           isFinance: extraction.isFinance || FINANCE_CATEGORY.test(input.story.category),
           sources: usable.map(({ id, url, title, origin }) => ({ id, url, title, origin })),
           searchQueries,
-          droppedUngroundedFacts: dropped,
+          droppedUngroundedFacts: dropped.length,
+          droppedFacts: dropped,
         };
       },
     );

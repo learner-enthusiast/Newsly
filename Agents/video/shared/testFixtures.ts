@@ -23,6 +23,7 @@ export function fixtureFactSheet(overrides: Partial<FactSheet> = {}): FactSheet 
     ],
     searchQueries: [],
     droppedUngroundedFacts: 0,
+    droppedFacts: [],
     ...overrides,
   };
 }
