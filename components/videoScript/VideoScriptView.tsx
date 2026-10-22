@@ -8,10 +8,12 @@ import {
 } from "@/components/videoScript/videoScriptApi";
 import { VideoScriptOptionsPopover } from "@/components/videoScript/VideoScriptOptionsPopover";
 import { VideoScriptStepper } from "@/components/videoScript/VideoScriptStepper";
+import { creativeDirectionSchema } from "@/Agents/video/creativeDirector/schema";
 import { factCheckSchema } from "@/Agents/video/factChecker/schema";
 import { factSheetSchema } from "@/Agents/video/researchBuilder/schema";
 import { scriptOutputSchema } from "@/Agents/video/scriptWriter/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BeatDirectionView, GlobalDirectionCard } from "@/components/videoScript/DirectionViews";
 import { FactSheetTab, factAnchorId } from "@/components/videoScript/FactSheetTab";
 import { formatSeconds } from "@/components/videoScript/format";
 import { ScriptTab } from "@/components/videoScript/ScriptTab";
@@ -36,6 +38,7 @@ function useParsedSections(videoScript: VideoScriptPayload | null) {
       factSheet: parse(factSheetSchema, videoScript?.research),
       script: parse(scriptOutputSchema, videoScript?.script),
       factCheck: parse(factCheckSchema, videoScript?.factCheck),
+      direction: parse(creativeDirectionSchema, videoScript?.direction),
     };
   }, [videoScript]);
 }
@@ -63,7 +66,8 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
   });
 
   const videoScript = query.data?.videoScript ?? null;
-  const { factSheet, script, factCheck } = useParsedSections(videoScript);
+  const { factSheet, script, factCheck, direction } = useParsedSections(videoScript);
+  const directionByIndex = new Map(direction?.beats.map((beat) => [beat.index, beat]) ?? []);
   const [tab, setTab] = useState("script");
   const [highlightFactId, setHighlightFactId] = useState<string | null>(null);
 
@@ -159,12 +163,19 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
               </TabsList>
               <TabsContent value="script" className="pt-4">
                 {script ? (
-                  <ScriptTab
-                    script={script}
-                    factSheet={factSheet}
-                    factCheck={factCheck}
-                    onFactClick={showFact}
-                  />
+                  <div className="flex flex-col gap-5">
+                    {direction ? <GlobalDirectionCard direction={direction} /> : null}
+                    <ScriptTab
+                      script={script}
+                      factSheet={factSheet}
+                      factCheck={factCheck}
+                      onFactClick={showFact}
+                      renderBeatExtras={(beat) => {
+                        const beatDirection = directionByIndex.get(beat.index);
+                        return beatDirection ? <BeatDirectionView direction={beatDirection} /> : null;
+                      }}
+                    />
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">Writing the script…</p>
                 )}

@@ -22,6 +22,10 @@ import {
   PROMPT_VERSION as FACT_CHECKER_VERSION,
   runFactChecker,
 } from "@/Agents/video/factChecker";
+import {
+  PROMPT_VERSION as CREATIVE_DIRECTOR_VERSION,
+  runCreativeDirector,
+} from "@/Agents/video/creativeDirector";
 import type { Prisma } from "@/db/generated/client";
 import {
   getVideoScriptWithStory,
@@ -125,4 +129,25 @@ export async function runFactCheckStage(scriptId: string): Promise<StageResult<{
   });
   await recordPromptVersions(scriptId, { factChecker: FACT_CHECKER_VERSION });
   return { ok: true, passed: result.data.factCheck.passed, estimatedSec: result.data.script.estimatedSec };
+}
+
+export async function runDirectionStage(scriptId: string): Promise<StageResult<{ beatsWithVisual: number; beats: number }>> {
+  const row = await loadRow(scriptId);
+  const options = scriptOptions(row);
+  const result = await runCreativeDirector({
+    script: scriptOutputSchema.parse(row.script),
+    factSheet: factSheetSchema.parse(row.research),
+    aspectRatio: options.aspectRatio,
+    language: options.language,
+  });
+  if (result.status === "failed") {
+    return { ok: false, reason: result.reason };
+  }
+  await patchVideoScript(scriptId, { direction: json(result.data) });
+  await recordPromptVersions(scriptId, { creativeDirector: CREATIVE_DIRECTOR_VERSION });
+  return {
+    ok: true,
+    beats: result.data.beats.length,
+    beatsWithVisual: result.data.beats.filter((beat) => beat.needsVisual).length,
+  };
 }

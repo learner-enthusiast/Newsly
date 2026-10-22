@@ -11,6 +11,7 @@
  * researching   → researchBuilder (FactSheet)
  * scripting     → scriptWriter
  * fact_checking → factChecker (final script)
+ * directing     → creativeDirector
  * Later stages are placeholders that only advance the status.
  *
  * An agent returning `failed` stops the run (NonRetriableError → onFailure).
@@ -27,6 +28,7 @@ import {
   setVideoScriptStatus,
 } from "@/repositories/videoScript";
 import {
+  runDirectionStage,
   runFactCheckStage,
   runResearchStage,
   runScriptStage,
@@ -49,7 +51,6 @@ const pipelineLog = createPipelineLogger("[video-script-pipeline]");
 
 /** Stages without an agent yet; they only advance the status. */
 const PLACEHOLDER_STAGES: VideoScriptStatus[] = [
-  "directing",
   "finding_images",
   "prompting",
   "packaging",
@@ -115,6 +116,7 @@ export const generateVideoScriptFunction = inngest.createFunction(
     await runStage("researching", runResearchStage);
     await runStage("scripting", runScriptStage);
     await runStage("fact_checking", runFactCheckStage);
+    await runStage("directing", runDirectionStage);
 
     for (const status of PLACEHOLDER_STAGES) {
       await step.run(`stage-${status}`, async () => {
