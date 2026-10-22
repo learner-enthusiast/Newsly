@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M5HQW2B4KDTKQWC47Q8RSHKK",
+  "session_id": "f7a369b8-4f0f-498a-9c44-9911725cd51f",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T12:02:49.153808372Z",
+  "branch": "feat/video-script",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Agents/video/publishingKit/index.ts",
+    "Agents/video/publishingKit/prompt.ts",
+    "Agents/video/publishingKit/publishingKit.test.ts",
+    "Agents/video/publishingKit/schema.ts",
+    "components/videoScript/PublishingKitTab.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "9d30d2ae93c2",
+  "checkpoint_transcript_start": 1134,
+  "transcript_lines_at_start": 1134,
+  "compact_transcript_start": 149,
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 46990,
+    "cache_read_tokens": 8006020,
+    "output_tokens": 35791,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-22T12:02:49.057263664Z",
+    "agent_lines": 578,
+    "agent_removed": 0,
+    "human_added": 185,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 763,
+    "total_lines_changed": 791,
+    "agent_percentage": 73.07206068268015,
+    "metric_version": 2
+  }
+}
