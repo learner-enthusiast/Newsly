@@ -26,11 +26,22 @@ import {
   PROMPT_VERSION as CREATIVE_DIRECTOR_VERSION,
   runCreativeDirector,
 } from "@/Agents/video/creativeDirector";
+import {
+  PROMPT_VERSION as IMAGE_FINDER_VERSION,
+  runImageFinder,
+} from "@/Agents/video/imageFinder";
+import {
+  PROMPT_VERSION as GEN_PROMPTER_VERSION,
+  runGenPrompter,
+} from "@/Agents/video/genPrompter";
+import { creativeDirectionSchema } from "@/Agents/video/creativeDirector/schema";
 import type { Prisma } from "@/db/generated/client";
 import {
   getVideoScriptWithStory,
+  listVisualAssets,
   patchVideoScript,
   recordPromptVersions,
+  replaceVisualAssets,
 } from "@/repositories/videoScript";
 
 export type StageResult<T extends Record<string, unknown> = Record<string, unknown>> =
@@ -150,4 +161,113 @@ export async function runDirectionStage(scriptId: string): Promise<StageResult<{
     beats: result.data.beats.length,
     beatsWithVisual: result.data.beats.filter((beat) => beat.needsVisual).length,
   };
+}
+
+export const MEDIA_ASSET_KINDS = ["image", "video"];
+export const PROMPT_ASSET_KINDS = ["ai_image_prompt", "ai_video_prompt"];
+
+export async function runImageStage(scriptId: string): Promise<StageResult<{ beatsSearched: number; assets: number }>> {
+  const row = await loadRow(scriptId);
+  const script = scriptOutputSchema.parse(row.script);
+  const direction = creativeDirectionSchema.parse(row.direction);
+  const scriptBeats = new Map(script.beats.map((beat) => [beat.index, beat]));
+
+  const result = await runImageFinder({
+    aspectRatio: scriptOptions(row).aspectRatio,
+    beats: direction.beats
+      .filter((beat) => beat.needsVisual)
+      .map((beat) => ({
+        index: beat.index,
+        overlayType: beat.overlayType,
+        searchQueries: beat.searchQueries,
+        spokenText: scriptBeats.get(beat.index)?.spokenText ?? "",
+        onScreenText: scriptBeats.get(beat.index)?.onScreenText,
+      })),
+  });
+  if (result.status === "failed") {
+    return { ok: false, reason: result.reason };
+  }
+
+  const assets = result.data.beats.flatMap((beat) =>
+    beat.candidates.map((candidate) => ({
+      beatIndex: beat.index,
+      kind: candidate.kind,
+      source: candidate.source,
+      url: candidate.url,
+      previewUrl: candidate.previewUrl,
+      pageUrl: candidate.pageUrl,
+      title: candidate.title,
+      rank: candidate.rank,
+      meta: json({
+        relevance: candidate.relevance,
+        site: candidate.site,
+        width: candidate.width,
+        height: candidate.height,
+        durationSec: candidate.durationSec,
+        query: candidate.query,
+        overlayType: beat.overlayType,
+      }),
+    })),
+  );
+  await replaceVisualAssets(scriptId, MEDIA_ASSET_KINDS, assets);
+  await recordPromptVersions(scriptId, { imageFinder: IMAGE_FINDER_VERSION });
+  return { ok: true, beatsSearched: result.data.beats.length, assets: assets.length };
+}
+
+/** Beat indexes with at least one media candidate that is not rated low. */
+async function beatsWithGoodMedia(scriptId: string): Promise<Set<number>> {
+  const assets = await listVisualAssets(scriptId);
+  const good = new Set<number>();
+  for (const asset of assets) {
+    const relevance = (asset.meta as { relevance?: string } | null)?.relevance;
+    if (MEDIA_ASSET_KINDS.includes(asset.kind) && relevance !== "low") {
+      good.add(asset.beatIndex);
+    }
+  }
+  return good;
+}
+
+export async function runPromptStage(scriptId: string): Promise<StageResult<{ beatsWithPrompts: number; prompts: number }>> {
+  const row = await loadRow(scriptId);
+  const script = scriptOutputSchema.parse(row.script);
+  const direction = creativeDirectionSchema.parse(row.direction);
+  const scriptBeats = new Map(script.beats.map((beat) => [beat.index, beat]));
+  const good = await beatsWithGoodMedia(scriptId);
+
+  const result = await runGenPrompter({
+    aspectRatio: scriptOptions(row).aspectRatio,
+    factSheet: factSheetSchema.parse(row.research),
+    beats: direction.beats.map((beat) => ({
+      index: beat.index,
+      overlayType: beat.overlayType,
+      needsVisual: beat.needsVisual,
+      preferGenerative: beat.preferGenerative,
+      goodResult: good.has(beat.index),
+      spokenText: scriptBeats.get(beat.index)?.spokenText ?? "",
+      editorNote: beat.editorNote,
+    })),
+  });
+  if (result.status === "failed") {
+    return { ok: false, reason: result.reason };
+  }
+
+  const assets = result.data.beats.flatMap((beat) =>
+    beat.prompts.map((prompt, rank) => ({
+      beatIndex: beat.index,
+      kind: prompt.kind === "image" ? "ai_image_prompt" : "ai_video_prompt",
+      prompt: prompt.prompt,
+      rank,
+      meta: json({
+        negativePrompt: prompt.negativePrompt ?? null,
+        style: prompt.style,
+        aspectRatio: prompt.aspectRatio,
+        durationSec: prompt.durationSec ?? null,
+        cameraMove: prompt.cameraMove ?? null,
+        notes: prompt.notes,
+      }),
+    })),
+  );
+  await replaceVisualAssets(scriptId, PROMPT_ASSET_KINDS, assets);
+  await recordPromptVersions(scriptId, { genPrompter: GEN_PROMPTER_VERSION });
+  return { ok: true, beatsWithPrompts: result.data.beats.length, prompts: assets.length };
 }

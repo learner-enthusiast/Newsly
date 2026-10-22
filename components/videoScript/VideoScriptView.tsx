@@ -13,6 +13,7 @@ import { factCheckSchema } from "@/Agents/video/factChecker/schema";
 import { factSheetSchema } from "@/Agents/video/researchBuilder/schema";
 import { scriptOutputSchema } from "@/Agents/video/scriptWriter/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BeatMediaView } from "@/components/videoScript/BeatMediaView";
 import { BeatDirectionView, GlobalDirectionCard } from "@/components/videoScript/DirectionViews";
 import { FactSheetTab, factAnchorId } from "@/components/videoScript/FactSheetTab";
 import { formatSeconds } from "@/components/videoScript/format";
@@ -172,7 +173,13 @@ export function VideoScriptView({ storyId }: { storyId: string }) {
                       onFactClick={showFact}
                       renderBeatExtras={(beat) => {
                         const beatDirection = directionByIndex.get(beat.index);
-                        return beatDirection ? <BeatDirectionView direction={beatDirection} /> : null;
+                        const assets = videoScript?.assetsByBeat[String(beat.index)] ?? [];
+                        return (
+                          <>
+                            {beatDirection ? <BeatDirectionView direction={beatDirection} /> : null}
+                            <BeatMediaView assets={assets} />
+                          </>
+                        );
                       }}
                     />
                   </div>

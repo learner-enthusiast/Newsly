@@ -1,5 +1,5 @@
 /** Bump whenever the system prompt below changes. */
-export const PROMPT_VERSION = "v2";
+export const PROMPT_VERSION = "v3";
 
 export function buildCreativeDirectorSystemPrompt(aspectRatio: "9:16" | "16:9"): string {
   const layout =
@@ -29,6 +29,8 @@ export function buildCreativeDirectorSystemPrompt(aspectRatio: "9:16" | "16:9"):
     "sfx (e.g. \"whoosh\", \"pop\", or null), musicCue (e.g. \"drop\", \"swell\", or null).",
     "editorNote: one or two practical sentences for the editor (what to show, timing, what to avoid). Any figure you mention must be copied exactly from the beat.",
     "global: pacing, hookTreatment, subtitleStyle (font weight, case, highlight colour, words per line), colorTreatment, musicMood.",
+    "Text cards and callouts use words from the beat itself (its onScreenText or spokenText). Never present a paraphrase as a quote:",
+    "only words in quotation marks in the beat may appear in quotation marks on screen.",
     "Never put real people's faces into generated visuals, never invent documents or headlines.",
   ].join("\n");
 }

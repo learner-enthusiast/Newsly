@@ -12,6 +12,8 @@
  * scripting     → scriptWriter
  * fact_checking → factChecker (final script)
  * directing     → creativeDirector
+ * finding_images → imageFinder (VisualAsset image/video rows)
+ * prompting     → genPrompter (optional ai_*_prompt rows)
  * Later stages are placeholders that only advance the status.
  *
  * An agent returning `failed` stops the run (NonRetriableError → onFailure).
@@ -30,6 +32,8 @@ import {
 import {
   runDirectionStage,
   runFactCheckStage,
+  runImageStage,
+  runPromptStage,
   runResearchStage,
   runScriptStage,
   type StageResult,
@@ -51,8 +55,6 @@ const pipelineLog = createPipelineLogger("[video-script-pipeline]");
 
 /** Stages without an agent yet; they only advance the status. */
 const PLACEHOLDER_STAGES: VideoScriptStatus[] = [
-  "finding_images",
-  "prompting",
   "packaging",
   "building",
 ];
@@ -117,6 +119,8 @@ export const generateVideoScriptFunction = inngest.createFunction(
     await runStage("scripting", runScriptStage);
     await runStage("fact_checking", runFactCheckStage);
     await runStage("directing", runDirectionStage);
+    await runStage("finding_images", runImageStage);
+    await runStage("prompting", runPromptStage);
 
     for (const status of PLACEHOLDER_STAGES) {
       await step.run(`stage-${status}`, async () => {
