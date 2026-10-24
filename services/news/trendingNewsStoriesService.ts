@@ -42,10 +42,19 @@ export async function getTrendingNewsStories(): Promise<
   since.setUTCDate(since.getUTCDate() - TRENDING_NEWS_WINDOW_DAYS);
   since.setUTCHours(0, 0, 0, 0);
 
-  const rows = await listTrendingNewsStories({
+  const recent = await listTrendingNewsStories({
     since,
     limit: TRENDING_NEWS_LIMIT,
   });
 
-  return rows.map(serializeTrendingStory);
+  // Top up with all-time top-voted stories so the section is never empty while public stories exist.
+  const fill =
+    recent.length < TRENDING_NEWS_LIMIT
+      ? await listTrendingNewsStories({
+          limit: TRENDING_NEWS_LIMIT - recent.length,
+          excludeIds: recent.map((story) => story.id),
+        })
+      : [];
+
+  return [...recent, ...fill].map(serializeTrendingStory);
 }

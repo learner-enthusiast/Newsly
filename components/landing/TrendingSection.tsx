@@ -97,7 +97,7 @@ export function TrendingSection() {
               Stories people are opening.
             </h2>
             <p className="mt-4 max-w-xl text-muted-foreground">
-              Public stories from the last seven days, ordered by upvotes. These are real briefings, not sample cards.
+              Top-voted public stories, with the last seven days first. These are real briefings, not sample cards.
             </p>
           </div>
           <Link

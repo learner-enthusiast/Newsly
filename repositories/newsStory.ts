@@ -603,9 +603,15 @@ export async function listPublishedNewsStoriesPaginated(input: {
   };
 }
 
+/**
+ * Public stories ranked by votes. `since` filters on when the story was generated
+ * (not the source article's date); omit it for all-time. `excludeIds` skips rows
+ * already shown.
+ */
 export async function listTrendingNewsStories(input: {
-  since: Date;
+  since?: Date;
   limit: number;
+  excludeIds?: string[];
 }) {
   const limit = Math.min(Math.max(1, input.limit), 20);
 
@@ -613,15 +619,8 @@ export async function listTrendingNewsStories(input: {
     where: {
       AND: [
         publicNewsStoryWhere,
-        {
-          OR: [
-            { publishedAt: { gte: input.since } },
-            {
-              publishedAt: null,
-              createdAt: { gte: input.since },
-            },
-          ],
-        },
+        ...(input.since ? [{ createdAt: { gte: input.since } }] : []),
+        ...(input.excludeIds?.length ? [{ id: { notIn: input.excludeIds } }] : []),
       ],
     },
     orderBy: [
