@@ -1,7 +1,7 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emailImageUrl } from "@/services/newsletter/newsletterRun";
+import { emailImageUrl, newsletterStoryLinks } from "@/services/newsletter/newsletterRun";
 
 const APP = "https://newsly.example/";
 
@@ -23,4 +23,16 @@ test("emailImageUrl drops missing and unusable values", () => {
   assert.equal(emailImageUrl("//cdn.x/a.jpg", APP), null);
   assert.equal(emailImageUrl("data:image/png;base64,AAA", APP), null);
   assert.equal(emailImageUrl("relative/a.jpg", APP), null);
+});
+
+test("newsletterStoryLinks points at the in-app story page and its create-script variant", () => {
+  const id = "8f0c6a3e-1b2d-4c5e-9f00-112233445566";
+  assert.deepEqual(newsletterStoryLinks("https://newsly.example/", id), {
+    storyUrl: `https://newsly.example/newsStory/${id}`,
+    scriptUrl: `https://newsly.example/newsStory/${id}?createScript=1`,
+  });
+  assert.equal(
+    newsletterStoryLinks("https://newsly.example", id).storyUrl,
+    `https://newsly.example/newsStory/${id}`,
+  );
 });

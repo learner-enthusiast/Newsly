@@ -7,13 +7,20 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 /** Story-page entry point: pick options → POST → `/newsStory/[storyId]/script`. */
-export function CreateVideoScriptButton({ storyId }: { storyId: string }) {
+export function CreateVideoScriptButton({
+  storyId,
+  defaultOpen = false,
+}: {
+  storyId: string;
+  defaultOpen?: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   return (
     <VideoScriptOptionsPopover
       busy={busy}
+      defaultOpen={defaultOpen}
       triggerLabel="Create video script"
       submitLabel="Create script"
       onSubmit={async (options) => {

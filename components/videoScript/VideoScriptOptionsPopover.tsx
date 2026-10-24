@@ -86,6 +86,8 @@ function OptionRow<T extends string | number>({
 
 type VideoScriptOptionsPopoverProps = {
   busy?: boolean;
+  /** Start open (e.g. arriving from a newsletter "Create video script" link). */
+  defaultOpen?: boolean;
   triggerLabel: string;
   triggerVariant?: "default" | "outline";
   submitLabel: string;
@@ -95,12 +97,13 @@ type VideoScriptOptionsPopoverProps = {
 /** Language / pace / length / aspect picker shared by "Create" and "Regenerate". */
 export function VideoScriptOptionsPopover({
   busy = false,
+  defaultOpen = false,
   triggerLabel,
   triggerVariant = "default",
   submitLabel,
   onSubmit,
 }: VideoScriptOptionsPopoverProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [options, setOptions] = useState<Options>(DEFAULT_OPTIONS);
 
   return (

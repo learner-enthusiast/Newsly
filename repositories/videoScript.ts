@@ -43,6 +43,49 @@ export async function findLatestVideoScriptForUser(
   });
 }
 
+/** Max cards on the scripts page (one per story). */
+export const VIDEO_SCRIPT_LIST_LIMIT = 100;
+
+/**
+ * The user's latest script per story, newest first — the same row the story's
+ * script page shows. Story fields are what the list card renders.
+ */
+export async function listLatestVideoScriptsForUser(userId: string) {
+  const rows = await prisma.videoScript.findMany({
+    where: { userId: userIdSchema.parse(userId) },
+    orderBy: { createdAt: "desc" },
+    distinct: ["newsId"],
+    select: {
+      id: true,
+      newsId: true,
+      status: true,
+      error: true,
+      language: true,
+      pace: true,
+      aspectRatio: true,
+      maxSec: true,
+      estimatedSec: true,
+      script: true,
+      createdAt: true,
+      updatedAt: true,
+      newsStory: {
+        select: {
+          title: true,
+          description: true,
+          category: true,
+          location: true,
+          imageUrl: true,
+        },
+      },
+    },
+  });
+  return rows.slice(0, VIDEO_SCRIPT_LIST_LIMIT);
+}
+
+export type VideoScriptListRow = Awaited<
+  ReturnType<typeof listLatestVideoScriptsForUser>
+>[number];
+
 export async function getVideoScriptById(scriptId: string) {
   return prisma.videoScript.findUnique({
     where: { id: scriptIdSchema.parse(scriptId) },

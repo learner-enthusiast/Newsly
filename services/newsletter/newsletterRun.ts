@@ -10,6 +10,7 @@
 import type { NewsletterFrequency, NewsScope } from "@/db/generated/client";
 import { fingerprint, normalizeParams } from "@/lib/newsletter/fingerprint";
 import { newsWindow } from "@/lib/newsletter/schedule";
+import { storyCreateScriptPath } from "@/services/videoScript/videoScriptTypes";
 import { getNewsletterById } from "@/repositories/newsletter";
 import {
   patchNewsletterDeliveryIfExists,
@@ -102,6 +103,21 @@ export async function checkBeforeSend(
 /** The edition may hold more stories than this newsletter wants. */
 export function selectStoriesForSend<T>(stories: T[], storyCount: number): T[] {
   return stories.slice(0, storyCount);
+}
+
+/**
+ * Email links for one story: the full story page in the app, and the same page
+ * with the video-script options open.
+ */
+export function newsletterStoryLinks(
+  appUrl: string,
+  storyId: string,
+): { storyUrl: string; scriptUrl: string } {
+  const base = appUrl.replace(/\/+$/, "");
+  return {
+    storyUrl: `${base}/newsStory/${storyId}`,
+    scriptUrl: `${base}${storyCreateScriptPath(storyId)}`,
+  };
 }
 
 /**

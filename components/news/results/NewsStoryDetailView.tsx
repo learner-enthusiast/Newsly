@@ -48,6 +48,8 @@ type NewsStoryDetailViewProps = {
   photoUploadBusy?: boolean;
   onUploadStoryPhoto?: (file: File) => Promise<void>;
   onStoryUpdated?: (payload: NewsStoryPagePayload) => void;
+  /** Open the video-script options on mount (newsletter "Create video script" link). */
+  autoOpenVideoScript?: boolean;
 };
 
 export function NewsStoryDetailView({
@@ -67,6 +69,7 @@ export function NewsStoryDetailView({
   photoUploadBusy = false,
   onUploadStoryPhoto,
   onStoryUpdated,
+  autoOpenVideoScript = false,
 }: NewsStoryDetailViewProps) {
   const { story, newsRequest, canViewFullBriefing } = data;
   const generationProgress = useChatAsyncJobProgress(
@@ -169,7 +172,10 @@ export function NewsStoryDetailView({
         <div className="min-w-0 flex-1 space-y-6">
           {isSignedIn && showFullBody ? (
             <div className="flex justify-end">
-              <CreateVideoScriptButton storyId={story.id} />
+              <CreateVideoScriptButton
+                storyId={story.id}
+                defaultOpen={autoOpenVideoScript}
+              />
             </div>
           ) : null}
 

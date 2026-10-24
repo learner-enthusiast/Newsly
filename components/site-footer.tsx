@@ -1,7 +1,9 @@
 import {
   LANDING_FOOTER_LINKS,
   LANDING_SOCIAL_LABELS,
+  SIGNED_IN_FOOTER_LINKS,
 } from "@/components/landing/LandingFooter";
+import { Show } from "@clerk/nextjs";
 import Link from "next/link";
 
 export function SiteFooter() {
@@ -27,6 +29,17 @@ export function SiteFooter() {
                 {link.label}
               </Link>
             ))}
+            <Show when="signed-in">
+              {SIGNED_IN_FOOTER_LINKS.map((link) => (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </Show>
           </nav>
           <div
             className="flex flex-wrap gap-3 text-sm text-muted-foreground"

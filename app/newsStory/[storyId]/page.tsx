@@ -14,9 +14,10 @@ import {
   resolveVoteCounterDelta,
   resolveVoteMutation,
 } from "@/services/news/storyVoteLogic";
-import { useAuth } from "@clerk/nextjs";
-import { useParams, useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { CREATE_SCRIPT_QUERY_PARAM } from "@/services/videoScript/videoScriptTypes";
+import { useAuth, useClerk } from "@clerk/nextjs";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const storyPageMainClassName =
@@ -32,6 +33,24 @@ export default function NewsStoryPage() {
         : undefined;
   const router = useRouter();
   const { isSignedIn, isLoaded } = useAuth();
+  const clerk = useClerk();
+  const searchParams = useSearchParams();
+  // Captured once: the intent survives the loading state and sign-in round trip.
+  const [wantsVideoScript] = useState(
+    () => searchParams.get(CREATE_SCRIPT_QUERY_PARAM) === "1",
+  );
+
+  // Newsletter "Create video script" links need an account: sign in, then come back here.
+  useEffect(() => {
+    if (!wantsVideoScript || !isLoaded || isSignedIn) {
+      return;
+    }
+    const returnTo = window.location.href;
+    clerk.openSignIn({
+      forceRedirectUrl: returnTo,
+      signUpForceRedirectUrl: returnTo,
+    });
+  }, [wantsVideoScript, isLoaded, isSignedIn, clerk]);
 
   const voteLockRef = useRef<Set<string>>(new Set());
   const saveLockRef = useRef<Set<string>>(new Set());
@@ -398,6 +417,7 @@ export default function NewsStoryPage() {
       photoUploadBusy={photoUploadBusy}
       onUploadStoryPhoto={onUploadStoryPhoto}
       onStoryUpdated={(payload) => setData(payload)}
+      autoOpenVideoScript={wantsVideoScript}
       />
     </main>
   );

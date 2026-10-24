@@ -25,6 +25,16 @@ export const videoScriptAspectRatioSchema = z.enum(["9:16", "16:9"]);
 export const VIDEO_SCRIPT_DEFAULT_MIN_SEC = 60;
 export const VIDEO_SCRIPT_DEFAULT_MAX_SEC = 140;
 
+/**
+ * `/newsStory/[storyId]?createScript=1` opens the story with the video-script
+ * options already open (newsletter "Create video script" links).
+ */
+export const CREATE_SCRIPT_QUERY_PARAM = "createScript";
+
+export function storyCreateScriptPath(storyId: string): string {
+  return `/newsStory/${storyId}?${CREATE_SCRIPT_QUERY_PARAM}=1`;
+}
+
 /** Body of `POST /api/news/stories/[storyId]/script`. */
 export const createVideoScriptBodySchema = z.object({
   language: videoScriptLanguageSchema.default("en"),

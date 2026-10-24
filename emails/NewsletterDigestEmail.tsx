@@ -16,7 +16,10 @@ export type NewsletterDigestStory = {
   title: string;
   summary: string;
   sourceLabel: string;
+  /** Full story page in the app. */
   storyUrl: string;
+  /** Story page with the video-script options open. */
+  scriptUrl: string;
   /** Absolute http(s) URL; the story renders text-only when null. */
   imageUrl: string | null;
 };
@@ -64,6 +67,14 @@ export function NewsletterDigestEmail({
               </Heading>
               <Text style={source}>{story.sourceLabel}</Text>
               <Text style={paragraph}>{story.summary}</Text>
+              <Text style={actions}>
+                <Link href={story.storyUrl} style={primaryAction}>
+                  Read full story
+                </Link>
+                <Link href={story.scriptUrl} style={secondaryAction}>
+                  Create video script
+                </Link>
+              </Text>
             </Section>
           ))}
           <Hr style={hr} />
@@ -97,6 +108,26 @@ const meta = { color: "#666", fontSize: "14px", margin: "0 0 16px" };
 const source = { color: "#888", fontSize: "12px", margin: "0 0 8px" };
 const paragraph = { fontSize: "14px", lineHeight: "22px", margin: "0 0 16px" };
 const storyBlock = { marginBottom: "20px" };
+const actions = { margin: "0 0 8px", lineHeight: "36px" };
+const actionBase = {
+  display: "inline-block",
+  padding: "0 14px",
+  borderRadius: "6px",
+  fontSize: "13px",
+  fontWeight: "600",
+  textDecoration: "none",
+  marginRight: "8px",
+};
+const primaryAction = {
+  ...actionBase,
+  backgroundColor: "#111",
+  color: "#fff",
+};
+const secondaryAction = {
+  ...actionBase,
+  border: "1px solid #c85d3f",
+  color: "#c85d3f",
+};
 const storyImage = {
   display: "block",
   width: "100%",
