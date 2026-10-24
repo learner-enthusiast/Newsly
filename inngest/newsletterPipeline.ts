@@ -3,6 +3,10 @@ import { inngest } from "@/clients/inngestClient";
 import { sendEmail } from "@/lib/email/sendEmail";
 import { getAppUrl } from "@/lib/email/resendClient";
 import { computeNextRun } from "@/lib/newsletter/schedule";
+import {
+  isNewsletterEmailStopped,
+  NEWSLETTER_STOPPED_RESULT,
+} from "@/lib/newsletter/stopSwitch";
 import { resolveSystemUserId } from "@/lib/newsletter/systemUser";
 import { signNewsletterUnsubscribeToken } from "@/lib/newsletter/unsubscribeToken";
 import { newsPipelineFunction } from "@/inngest/newsPipeline";
@@ -36,6 +40,7 @@ import {
   selectStoriesForSend,
   testRunScheduledFor,
 } from "@/services/newsletter/newsletterRun";
+import { NonRetriableError } from "inngest";
 import { z } from "zod";
 import {
   runWorkflow,
@@ -85,6 +90,10 @@ export const newsletterEditionBuildFunction = inngest.createFunction(
     },
   },
   async ({ event, step }) => {
+    // Throws rather than returning so the invoking run gets no editionId to send.
+    if (isNewsletterEmailStopped()) {
+      throw new NonRetriableError("STOP_NEWSLETTER_EMAIL is set");
+    }
     const input = editionBuildEventSchema.parse(event.data);
     const systemUserId = await step.run("resolve-system-user", () =>
       resolveSystemUserId(),
@@ -224,6 +233,9 @@ export const newsletterSchedulerFunction = inngest.createFunction(
     triggers: [{ cron: NEWSLETTER_SCHEDULER_CRON }],
   },
   async ({ step }) => {
+    if (isNewsletterEmailStopped()) {
+      return NEWSLETTER_STOPPED_RESULT;
+    }
     const due = await step.run("load-due", () => listDueNewsletters(new Date()));
     // One Neatlogs run per delivery, opened inside a step so replays reuse it.
     const traces = await step.run("open-run-traces", () =>
@@ -263,6 +275,9 @@ export const newsletterRunFunction = inngest.createFunction(
     triggers: [{ event: NEWSLETTER_RUN_EVENT }],
   },
   async ({ event, step }) => {
+    if (isNewsletterEmailStopped()) {
+      return NEWSLETTER_STOPPED_RESULT;
+    }
     const input = runEventSchema.parse(event.data);
     const scheduledFor = new Date(input.scheduledFor);
     const testRun = input.testRun === true;
@@ -451,6 +466,9 @@ export const newsletterEditionCleanupFunction = inngest.createFunction(
     triggers: [{ cron: NEWSLETTER_EDITION_CLEANUP_CRON }],
   },
   async ({ step }) => {
+    if (isNewsletterEmailStopped()) {
+      return NEWSLETTER_STOPPED_RESULT;
+    }
     const result = await step.run("delete-old-editions", () =>
       cleanupOldEditions(),
     );
