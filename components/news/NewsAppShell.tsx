@@ -65,7 +65,7 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
           href="/news"
           className="font-brand border-b border-border/40 px-4 py-4 text-xl leading-tight text-foreground"
         >
-          Dainik Samachar
+          Newsly
         </Link>
         <div className="flex flex-col gap-1 p-3">
           {SIGNED_IN_APP_NAV.map((item) => {
@@ -137,7 +137,7 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
             href="/news"
             className="font-brand text-xl whitespace-nowrap text-foreground"
           >
-            Dainik Samachar
+            Newsly
           </Link>
           {/* <div className="relative mx-auto hidden w-full max-w-xl lg:block">
             <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground" />

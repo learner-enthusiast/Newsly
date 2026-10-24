@@ -91,7 +91,7 @@ export function TrendingSection() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-[0.75rem] font-medium tracking-[0.2em] text-[#c85d3f] uppercase">
-              Already on Dainik Samachar
+              Already on Newsly
             </p>
             <h2 className="font-display mt-5 text-4xl font-normal tracking-tight sm:text-5xl">
               Stories people are opening.

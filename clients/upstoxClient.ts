@@ -5,7 +5,7 @@
  * exposed (or not complete) in the installed `upstox-js-sdk`. Prefer the SDK via
  * `services/upstox/upstoxSdk.ts` for all other calls.
  *
- * No business logic — use services/upstox/* for Dainik Samachar-facing APIs.
+ * No business logic — use services/upstox/* for Newsly-facing APIs.
  */
 
 import { traceLog } from "@/lib/observability";

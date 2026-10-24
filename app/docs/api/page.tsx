@@ -3,9 +3,9 @@ import { ApiReference } from "@/components/docs/ApiReference";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "API reference · Dainik Samachar",
+  title: "API reference · Newsly",
   description:
-    "Dainik Samachar REST API (Pro): news briefings, stock research, instrument search and newsletters.",
+    "Newsly REST API (Pro): news briefings, stock research, instrument search and newsletters.",
 };
 
 export default function ApiDocsPage() {

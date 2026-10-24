@@ -3,7 +3,7 @@ import { requireProSubscriber } from "@/lib/requireProSubscriber";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "ETF research — Dainik Samachar",
+  title: "ETF research — Newsly",
   description: "Pro ETF research workspace.",
 };
 

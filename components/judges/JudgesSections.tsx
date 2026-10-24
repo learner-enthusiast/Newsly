@@ -390,7 +390,7 @@ export function DemoSection() {
         {PENDING.demoVideoId ? (
           <iframe
             src={`https://www.youtube-nocookie.com/embed/${PENDING.demoVideoId}`}
-            title="Dainik Samachar demo"
+            title="Newsly demo"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             className="h-full w-full"

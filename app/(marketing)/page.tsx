@@ -2,7 +2,7 @@ import { ScrollHero } from "@/components/landing/ScrollHero";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Dainik Samachar — Know it first",
+  title: "Newsly — Know it first",
   description:
     "AI-ranked news for India, the world and your city, plus stock, ETF and mutual fund research.",
 };

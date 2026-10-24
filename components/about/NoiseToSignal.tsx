@@ -43,7 +43,7 @@ function NoiseToSignalDesktop() {
       <line x1="480" y1="70" x2="480" y2="340" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1" />
       <line x1="720" y1="70" x2="720" y2="340" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1" />
       <text x="600" y="24" textAnchor="middle" fill={ACCENT} fontSize="11" letterSpacing="1.4">
-        DAINIK SAMACHAR
+        NEWSLY
       </text>
       {NOISE_STEPS.map((step, i) => (
         <g key={step}>
@@ -126,7 +126,7 @@ export function NoiseToSignal() {
           </div>
           <div className="border-l pl-6" style={{ borderColor: ACCENT }}>
             <p className="text-[0.7rem] tracking-[0.2em] uppercase" style={{ color: ACCENT }}>
-              Dainik Samachar
+              Newsly
             </p>
             <ol className="mt-4 space-y-2 text-sm tracking-[0.12em] text-foreground/80 uppercase">
               {NOISE_STEPS.map((step) => (

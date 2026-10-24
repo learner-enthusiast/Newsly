@@ -2,7 +2,7 @@ import { NewsRequestsListView } from "@/components/news/NewsRequestsListView";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "News requests — Dainik Samachar",
+  title: "News requests — Newsly",
   description: "Browse and open your generated news briefings.",
 };
 

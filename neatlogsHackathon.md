@@ -1,6 +1,6 @@
-# Dainik Samachar — neatHack 2026 submission
+# Newsly — neatHack 2026 submission
 
-**An AI agent that reads the news for you.** Dainik Samachar plans the searches, scrapes and cleans the
+**An AI agent that reads the news for you.** Newsly plans the searches, scrapes and cleans the
 sources, ranks headlines by impact and writes cited briefings and stock research for Indian investors.
 Every story keeps its sources attached.
 
@@ -40,7 +40,7 @@ flowchart LR
 
 ### What I asked Ari, and why
 
-Every Dainik Samachar request fans out into paid calls: SerpApi searches, Firecrawl scrapes, Upstox market
+Every Newsly request fans out into paid calls: SerpApi searches, Firecrawl scrapes, Upstox market
 data and several LLM calls. If one request costs more than the user pays, growth only makes the loss bigger,
 so the cost of an agent run is the main business risk.
 
@@ -181,7 +181,7 @@ flowchart LR
 
 ```mermaid
 timeline
-  title Dainik Samachar, 10-12 Oct 2026, 40 commits
+  title Newsly, 10-12 Oct 2026, 40 commits
   10 Oct : Scaffold and news pipeline
          : Neatlogs SDK added (712fad5)
          : Upstox instruments and stock research (53f2d33)

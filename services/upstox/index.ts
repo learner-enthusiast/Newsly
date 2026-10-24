@@ -88,7 +88,7 @@ function defineUpstoxApi<
 }
 
 /**
- * Catalog of Dainik Samachar Upstox read-only APIs (Analytics Token / GET).
+ * Catalog of Newsly Upstox read-only APIs (Analytics Token / GET).
  * Each entry includes metadata for agents, docs, and programmatic dispatch.
  */
 export const upstoxApis = {

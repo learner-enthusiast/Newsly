@@ -20,7 +20,7 @@ export function FeatureRequestPageContent() {
     <StaticMarketingPage
       eyebrow="Product"
       title="Feature requests"
-      lead="Dainik Samachar is built in the open. Tell us what would make research and briefings better for you."
+      lead="Newsly is built in the open. Tell us what would make research and briefings better for you."
       className="max-w-2xl"
     >
       <StaticProseSection title="Request on GitHub">
@@ -30,7 +30,7 @@ export function FeatureRequestPageContent() {
         </p>
         <ul>
           <li>Describe the problem you&apos;re trying to solve</li>
-          <li>Share how you&apos;d expect it to work in Dainik Samachar</li>
+          <li>Share how you&apos;d expect it to work in Newsly</li>
           <li>Note if it&apos;s about news briefings, chat research, or stories</li>
         </ul>
       </StaticProseSection>

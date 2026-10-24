@@ -24,7 +24,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 shrink-0 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="landing-section flex items-center gap-3 py-3 sm:gap-4 sm:py-4">
         <Link href="/" className="font-brand shrink-0 text-xl whitespace-nowrap text-foreground sm:text-2xl">
-          Dainik Samachar
+          Newsly
         </Link>
 
         <Show when="signed-in">

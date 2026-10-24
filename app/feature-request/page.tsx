@@ -2,8 +2,8 @@ import { FeatureRequestPageContent } from "@/components/marketing/FeatureRequest
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Feature requests — Dainik Samachar",
-  description: "Suggest features and improvements for Dainik Samachar on GitHub.",
+  title: "Feature requests — Newsly",
+  description: "Suggest features and improvements for Newsly on GitHub.",
 };
 
 export default function FeatureRequestPage() {

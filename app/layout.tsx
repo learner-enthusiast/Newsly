@@ -19,7 +19,7 @@ import { SyncLocalUser } from "./sync-local-user";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dainik Samachar",
+  title: "Newsly",
   description: "Generate and explore daily news briefings.",
 };
 

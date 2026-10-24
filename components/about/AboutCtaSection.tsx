@@ -17,7 +17,7 @@ export function AboutCtaSection() {
         </p>
         <div className="mt-11 flex flex-wrap items-center justify-center gap-3">
           <Button variant="brand" nativeButton={false} render={<Link href="/news" />}>
-            Explore Dainik Samachar
+            Explore Newsly
             <ArrowRight data-icon="inline-end" />
           </Button>
           <GetStartedButton label="Start researching" />

@@ -37,7 +37,7 @@ export const ROUTES = {
 // Sign-in / sign-up are Clerk modals (SignInButton / SignUpButton), not routes.
 
 export const NAV_LINKS = [
-  { label: "Dainik Samachar", href: ROUTES.landing, active: true },
+  { label: "Newsly", href: ROUTES.landing, active: true },
   { label: "News", href: ROUTES.news, active: false },
   { label: "Research", href: ROUTES.research, active: false },
   { label: "Chat", href: ROUTES.chat, active: false },
@@ -71,7 +71,7 @@ export const HERO_MISSION = {
 } as const;
 
 export const HERO_CTA = {
-  eyebrow: "Dainik Samachar | दैनिक समाचार",
+  eyebrow: "Newsly",
   titleLines: ["Read less,", "know more."],
   cta: "Get the daily briefing",
 } as const;

@@ -127,7 +127,7 @@ export function UnsubscribeNewsletterClient({
               nativeButton={false}
               render={<Link href="/" />}
             >
-              Back to Dainik Samachar
+              Back to Newsly
             </Button>
           </CardContent>
         </Card>

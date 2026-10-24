@@ -2,7 +2,7 @@
  * Stock research guardrails (scope + safety classifier)
  *
  * Role:
- * Decide whether a user prompt belongs in Dainik Samachar’s stock/market/economy research product.
+ * Decide whether a user prompt belongs in Newsly’s stock/market/economy research product.
  * This is **not** an answerability or fact-check gate — only topic fit and basic safety.
  *
  * Called from:

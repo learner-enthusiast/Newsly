@@ -17,7 +17,7 @@
     "kind": "trail_prompt"
   },
   "prompt": {
-    "template": "You summarize code changes for reviewers of Dainik Samachar (finance/markets briefings, research chat, chat→story, Razorpay Pro, Upstox). Analyze branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD`, then write a short Problem -> Solution summary in Markdown. Start with the `**Problem:**` line and include a `**Solution:**` line. Name the mode the diff touches (briefing, rerun, chat, deep dive, chat→story, billing, stock/MF/ETF research, or shared infrastructure) and whether evidence storage, Inngest steps, Prisma/pgvector, or auth/billing changed. Return Markdown only."
+    "template": "You summarize code changes for reviewers of Newsly (finance/markets briefings, research chat, chat→story, Razorpay Pro, Upstox). Analyze branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD`, then write a short Problem -> Solution summary in Markdown. Start with the `**Problem:**` line and include a `**Solution:**` line. Name the mode the diff touches (briefing, rerun, chat, deep dive, chat→story, billing, stock/MF/ETF research, or shared infrastructure) and whether evidence storage, Inngest steps, Prisma/pgvector, or auth/billing changed. Return Markdown only."
   },
   "select": {
     "trigger_types": [

@@ -11,9 +11,9 @@ import {
 } from "@/components/judges/JudgesSections";
 import type { Metadata } from "next";
 
-const title = "For neatHack judges — Dainik Samachar";
+const title = "For neatHack judges — Newsly";
 const description =
-  "Every Dainik Samachar claim for neatHack 2026, linked to a commit on Entire, a neatlogs trace screenshot, or the cfo.ai model.";
+  "Every Newsly claim for neatHack 2026, linked to a commit on Entire, a neatlogs trace screenshot, or the cfo.ai model.";
 
 export const metadata: Metadata = {
   title,

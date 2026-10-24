@@ -14,9 +14,9 @@ import { StoryFlowSection } from "@/components/about/StoryFlowSection";
 import { VectorSection } from "@/components/about/VectorSection";
 import type { Metadata } from "next";
 
-const title = "How Dainik Samachar works — Dainik Samachar";
+const title = "How Newsly works — Newsly";
 const description =
-  "How Dainik Samachar turns search, scraped sources, and session research into briefings, chat answers, and stories you own — with the sources still attached.";
+  "How Newsly turns search, scraped sources, and session research into briefings, chat answers, and stories you own — with the sources still attached.";
 
 export const metadata: Metadata = {
   title,

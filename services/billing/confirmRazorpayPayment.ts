@@ -5,7 +5,7 @@ import { getBillingProduct } from "@/services/billing/pricing";
 import { getRazorpayClient } from "@/services/billing/razorpayClient";
 
 export type ConfirmRazorpayPaymentInput = {
-  /** When set, payment must belong to this Dainik Samachar user (checkout verify). */
+  /** When set, payment must belong to this Newsly user (checkout verify). */
   expectedUserId?: string;
   providerOrderId: string;
   providerPaymentId: string;
@@ -44,7 +44,7 @@ export async function confirmRazorpayPayment(
     return {
       ok: false,
       code: "payment_not_found",
-      message: "No Dainik Samachar payment record for this order.",
+      message: "No Newsly payment record for this order.",
     };
   }
 
@@ -130,7 +130,7 @@ export async function confirmRazorpayPayment(
     return {
       ok: false,
       code: "amount_mismatch",
-      message: "Payment amount does not match the Dainik Samachar order.",
+      message: "Payment amount does not match the Newsly order.",
     };
   }
 
@@ -138,7 +138,7 @@ export async function confirmRazorpayPayment(
     return {
       ok: false,
       code: "currency_mismatch",
-      message: "Payment currency does not match the Dainik Samachar order.",
+      message: "Payment currency does not match the Newsly order.",
     };
   }
 

@@ -8,8 +8,8 @@ import { getUserFeatureUsage } from "@/lib/usage/queries";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Developers — Dainik Samachar",
-  description: "API keys and usage for the Dainik Samachar API.",
+  title: "Developers — Newsly",
+  description: "API keys and usage for the Newsly API.",
 };
 
 export default async function DevelopersPage() {

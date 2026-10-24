@@ -2,7 +2,7 @@ import { NewsStoriesListView } from "@/components/news/results/NewsStoriesListVi
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Bookmarked stories — Dainik Samachar",
+  title: "Bookmarked stories — Newsly",
   description: "Community stories you saved for later.",
 };
 

@@ -1,4 +1,4 @@
-# Upstox provider layer (Dainik Samachar)
+# Upstox provider layer (Newsly)
 
 Server-only integration for **general market and financial research** using an Upstox **Analytics Token**. This layer does not connect end-user Upstox accounts, does not use OAuth, and does not call portfolio, orders, payments, or trading APIs.
 
@@ -17,7 +17,7 @@ pnpm upstox:test
 ## Architecture
 
 ```
-Dainik Samachar research / agents
+Newsly research / agents
         ↓
 services/upstox/*
         ↓
@@ -60,8 +60,8 @@ Official docs: [Upstox Developer API](https://upstox.com/developer/api-documenta
 | --- | --- |
 | **Margins** (`POST /v2/charges/margin`) | Analytics Token is **read-only (GET-only)**. See `services/upstox/margins.ts`. |
 | User, portfolio, orders, GTT, payments, MF account, P&amp;L | Account-specific; not general research. |
-| News `category=positions` / `holdings` | User-specific; Dainik Samachar uses `instrument_keys` only. |
-| OAuth / user access tokens | Out of scope for Dainik Samachar Analytics Token integration. |
+| News `category=positions` / `holdings` | User-specific; Newsly uses `instrument_keys` only. |
+| OAuth / user access tokens | Out of scope for Newsly Analytics Token integration. |
 
 ## WebSocket (Market Data Feed V3)
 
@@ -69,7 +69,7 @@ Official docs: [Upstox Developer API](https://upstox.com/developer/api-documenta
 2. Connect with `UpstoxMarketDataFeedClient`, which wraps the SDK’s **`MarketDataStreamerV3`** (connect, subscribe, protobuf decode, reconnect).
 3. Subscribe with JSON control messages (`sub`, `unsub`, `change_mode`); live payloads are **binary protobuf** decoded inside the SDK.
 
-Official schema (reference only, not used by Dainik Samachar at runtime): [MarketDataFeed.proto](https://assets.upstox.com/feed/market-data-feed/v3/MarketDataFeed.proto).
+Official schema (reference only, not used by Newsly at runtime): [MarketDataFeed.proto](https://assets.upstox.com/feed/market-data-feed/v3/MarketDataFeed.proto).
 
 Modes: `ltpc`, `full`, `full_d30`, `option_greeks` (per Upstox docs).
 
@@ -87,4 +87,4 @@ Tests mock HTTP/WebSocket; they do not call live Upstox APIs.
 
 ## Types
 
-Provider response shapes live in `services/upstox/types.ts` (Upstox field names and structures). Keep Dainik Samachar domain/normalized types in research-layer code, not in this folder.
+Provider response shapes live in `services/upstox/types.ts` (Upstox field names and structures). Keep Newsly domain/normalized types in research-layer code, not in this folder.

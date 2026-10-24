@@ -67,7 +67,7 @@ export function ArchitectureSection() {
   return (
     <Section id="system">
       <SectionHeading
-        eyebrow="How Dainik Samachar works"
+        eyebrow="How Newsly works"
         title={
           <>
             One system.

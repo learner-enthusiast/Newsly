@@ -13,7 +13,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Unsubscribe — Dainik Samachar",
+  title: "Unsubscribe — Newsly",
   robots: { index: false, follow: false },
 };
 

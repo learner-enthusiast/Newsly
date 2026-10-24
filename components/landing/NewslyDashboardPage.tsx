@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 /** Signed-in home: the product, not the public story. */
-export function DainikSamacharDashboardPage() {
+export function NewslyDashboardPage() {
   return (
     <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-background">
       <section className="landing-section pt-16 pb-4 sm:pt-20">

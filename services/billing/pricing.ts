@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Dainik Samachar PRO is sold via Razorpay Orders + Standard Checkout (one-time charge).
+ * Newsly PRO is sold via Razorpay Orders + Standard Checkout (one-time charge).
  * Access is granted for `accessDays` on Subscription.currentPeriodEnd.
  *
  * Recurring Razorpay Subscriptions API is not implemented yet — use Orders only.
@@ -41,7 +41,7 @@ export function getBillingProduct(productId: BillingProductId): BillingProduct {
       plan: "PRO",
       amountPaise: readProMonthlyPaise(),
       currency: "INR",
-      label: "Dainik Samachar Pro",
+      label: "Newsly Pro",
       description: "30 days of Pro access — deeper research, priority flows, and more.",
       accessDays: 30,
     };

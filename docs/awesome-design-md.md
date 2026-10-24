@@ -33,7 +33,7 @@ Then open `vendor/awesome-design-md/design-md/<brand>/preview.html` in a browser
 
 `DESIGN.md` is the visual contract (tokens, typography, motion, “never do” rules). `AGENTS.md` stays the build contract (Next.js, Prisma, Inngest, etc.). Use both when redesigning UI.
 
-## Good fits for Dainik Samachar
+## Good fits for Newsly
 
 Editorial / product-adjacent catalogs in the vendor tree:
 

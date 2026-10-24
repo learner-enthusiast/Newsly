@@ -425,7 +425,7 @@ function UpgradeCard({ data }: { data: DevelopersPayload }) {
           The API is a Pro feature
         </CardTitle>
         <CardDescription>
-          Upgrade to create API keys and call Dainik Samachar from your own
+          Upgrade to create API keys and call Newsly from your own
           scripts, bots and dashboards. The docs are open to everyone.
         </CardDescription>
       </CardHeader>

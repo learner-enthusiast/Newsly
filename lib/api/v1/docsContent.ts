@@ -68,7 +68,7 @@ export function apiDocsMarkdown(input: { baseUrl: string; limits: ApiPlanLimits 
   const api = `${input.baseUrl}/api/v1`;
   const { limits } = input;
   return `
-The **Dainik Samachar REST API** is how server-side apps, scripts and integrations call the same product features you use in the browser: **news briefings**, a **public story feed**, **Indian instrument search**, **async research reports** (stock / ETF / mutual fund), and **email newsletters**. Everything is **JSON over HTTPS**, versioned under \`/api/v1\`, and authenticated with **per-account API keys**.
+The **Newsly REST API** is how server-side apps, scripts and integrations call the same product features you use in the browser: **news briefings**, a **public story feed**, **Indian instrument search**, **async research reports** (stock / ETF / mutual fund), and **email newsletters**. Everything is **JSON over HTTPS**, versioned under \`/api/v1\`, and authenticated with **per-account API keys**.
 
 > **Requires Pro.** Every \`/api/v1\` route checks an API key tied to an account on an **active Pro plan**. Create keys at **Settings → Developers** (or \`${input.baseUrl}/settings/developers\`). If Pro lapses, keys return \`403 plan_required\` until billing is fixed — keys are **not** deleted.
 

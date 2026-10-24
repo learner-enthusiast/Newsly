@@ -35,7 +35,7 @@ export type Link = { label: string; href: string | null };
 
 export const HERO = {
   eyebrow: "neatHack 2026 · for judges",
-  title: "Check every Dainik Samachar claim in a minute.",
+  title: "Check every Newsly claim in a minute.",
   lede: "An agentic newsroom for Indian investors: it plans searches, scrapes sources, ranks headlines by impact and writes cited briefings and stock research. Every claim below links to a commit, a file, or a screenshot.",
   jumps: [
     { label: "Evidence rows", href: "#evidence" },
@@ -182,7 +182,7 @@ export const AGENT = {
     { src: "/judges/research-1.webp", alt: "Reliance Industries research report with cited figures and a progress panel", caption: "Stock research, cited" },
     { src: "/judges/news-form.webp", alt: "Generate news form with scope, location and topics", caption: "Pick scope, place, topics" },
     { src: "/judges/newsletter-form.webp", alt: "Create newsletter form with a weekday 8 AM schedule", caption: "Briefings on a schedule" },
-    { src: "/judges/api-docs.webp", alt: "OpenAPI 3.1 docs for the Dainik Samachar REST API", caption: "Open API docs" },
+    { src: "/judges/api-docs.webp", alt: "OpenAPI 3.1 docs for the Newsly REST API", caption: "Open API docs" },
   ] satisfies Shot[],
 };
 

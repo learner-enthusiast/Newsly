@@ -2,9 +2,9 @@ import { NewsStoriesListView } from "@/components/news/results/NewsStoriesListVi
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Community stories — Dainik Samachar",
+  title: "Community stories — Newsly",
   description:
-    "Browse top-voted news stories from the Dainik Samachar community, ranked by upvotes and recency.",
+    "Browse top-voted news stories from the Newsly community, ranked by upvotes and recency.",
 };
 
 type NewsStoriesPageProps = {

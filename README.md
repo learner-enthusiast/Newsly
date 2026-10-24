@@ -1,6 +1,6 @@
-# Dainik Samachar
+# Newsly
 
-Dainik Samachar is a research desk for **news, markets, and Indian instruments**. A reader configures a briefing and receives a ranked, source-backed set of stories; asks follow-up questions in a research chat that remembers what it already read; turns that chat into a story they own; and, on Pro, commissions long-form reports on NSE equities, ETFs, and mutual funds. The same research can leave the browser as a scheduled email digest, or as a **hosted agent**: a versioned HTTPS contract that invokes the identical pipelines without a session cookie.
+Newsly is a research desk for **news, markets, and Indian instruments**. A reader configures a briefing and receives a ranked, source-backed set of stories; asks follow-up questions in a research chat that remembers what it already read; turns that chat into a story they own; and, on Pro, commissions long-form reports on NSE equities, ETFs, and mutual funds. The same research can leave the browser as a scheduled email digest, or as a **hosted agent**: a versioned HTTPS contract that invokes the identical pipelines without a session cookie.
 
 Every synthesized output is written from scraped article text, YouTube transcripts, exchange market data, or previously stored research — never from search snippets or conversation history alone.
 
@@ -18,7 +18,7 @@ This document is the primary technical and product documentation for the reposit
 - [Core Features](#core-features)
 - [Hosted Agents](#hosted-agents)
 - [System Architecture](#system-architecture)
-- [How Dainik Samachar Works](#how-dainik-samachar-works)
+- [How Newsly Works](#how-newsly-works)
 - [News Pipeline](#news-pipeline)
 - [News Rerun Pipeline](#news-rerun-pipeline)
 - [Billing and Pro Subscription](#billing-and-pro-subscription)
@@ -65,7 +65,7 @@ This document is the primary technical and product documentation for the reposit
 
 ## Overview
 
-Dainik Samachar has several user-facing research modes that share one storage layer. The browser uses Clerk sessions. External programs use hosted agents (the `/api/v1` contract) with the same pipelines underneath.
+Newsly has several user-facing research modes that share one storage layer. The browser uses Clerk sessions. External programs use hosted agents (the `/api/v1` contract) with the same pipelines underneath.
 
 | Mode | What the user does | What the system produces |
 |------|--------------------|--------------------------|
@@ -95,7 +95,7 @@ What distinguishes the implementation:
 The implementation addresses these concrete problems:
 
 1. **Search returns fragments, not stories.** A single Google News query yields snippets and duplicate coverage. Building a briefing means planning multiple queries across engines, selecting which pages are worth reading, scraping them, removing page noise, and clustering the result into distinct stories. The news pipeline does exactly this.
-2. **Research context evaporates.** Ordinary chat forgets which articles it already read. Dainik Samachar persists every scraped page as a `ResearchSource` on the session and embeds a description of it, so a follow-up question can retrieve prior evidence before spending another external call.
+2. **Research context evaporates.** Ordinary chat forgets which articles it already read. Newsly persists every scraped page as a `ResearchSource` on the session and embeds a description of it, so a follow-up question can retrieve prior evidence before spending another external call.
 3. **Redundant, expensive external calls.** SerpAPI, Firecrawl, and OpenAI calls cost money and time. The determiner only searches when the existing record is insufficient; the story pipeline reuses evidence already collected by the chat; autocomplete is cached in Postgres.
 4. **Turning research into a durable artifact.** A chat answer is transient. Users need a story they own, can edit, and can publish for others to read and deep-dive. The chat → story pipeline provides this.
 5. **Long-running work does not fit in an HTTP request.** Briefings run for minutes with many external calls. Inngest runs them as durable jobs while the UI polls status.
@@ -248,7 +248,7 @@ Clerk handles sign-in/sign-up. Each authenticated request upserts a local `User`
 
 ### Pro subscription and pricing
 
-**Purpose** — Sell **Dainik Samachar Pro** as a one-time Razorpay Order (Standard Checkout), not recurring Razorpay Subscriptions API yet.
+**Purpose** — Sell **Newsly Pro** as a one-time Razorpay Order (Standard Checkout), not recurring Razorpay Subscriptions API yet.
 
 **User flow** — `/pricing` shows the catalog (`GET /api/billing/catalog`). Signed-in users click **Upgrade to Pro** → `POST /api/payments/razorpay/create-order` → Razorpay modal → `POST /api/payments/razorpay/verify` on success. The UI uses `useIsProSubscriber` (reads `/api/me`, applies grace logic client-side via `userPlanAccess.ts`).
 
@@ -454,7 +454,7 @@ SerpAPI, Firecrawl, OpenAI, Upstox, Resend, Razorpay, Clerk, Inngest. See [Exter
 
 ---
 
-## How Dainik Samachar Works
+## How Newsly Works
 
 News, chat, and chat-story still share services but do different jobs. Newsletters reuse the news path. Instrument research is its own pipeline. Hosted agents dispatch into whichever of those pipelines the contract names:
 
@@ -1459,7 +1459,7 @@ Why: autocomplete fires on every keystroke; prefix reuse and a shared persistent
 
 ## AI vs Application Logic
 
-Dainik Samachar is not "prompt → LLM → answer". The layers are explicit:
+Newsly is not "prompt → LLM → answer". The layers are explicit:
 
 **Deterministic application logic** — request validation (Zod), Clerk auth and ownership filters, event emission, step orchestration and idempotency, status derivation (`initializing`/`ready`/`failed`, `isGenerating`), canonical URL dedupe, date-window and trading-tip filters, budget formulas, vote counter math, cache lookups, notification dedupe.
 
@@ -1825,7 +1825,7 @@ Routes under `app/api` (except `app/api/v1` and a few public reads) authenticate
 
 ## Billing and Pro Subscription
 
-Dainik Samachar Pro is implemented as **Razorpay Orders + Standard Checkout** (one-time payment per period), not the Razorpay Subscriptions API. Product catalog is code-defined in `services/billing/pricing.ts` (`PRO_MONTHLY`: default **₹199** / `19900` paise, **30** access days, overridable via `BILLING_PRO_MONTHLY_PAISE`).
+Newsly Pro is implemented as **Razorpay Orders + Standard Checkout** (one-time payment per period), not the Razorpay Subscriptions API. Product catalog is code-defined in `services/billing/pricing.ts` (`PRO_MONTHLY`: default **₹199** / `19900` paise, **30** access days, overridable via `BILLING_PRO_MONTHLY_PAISE`).
 
 ### Checkout flow
 

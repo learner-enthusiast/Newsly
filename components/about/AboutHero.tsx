@@ -57,14 +57,14 @@ export function AboutHero() {
   return (
     <header className="pt-20 pb-6 sm:pt-28 lg:pt-36">
       <div className="landing-section">
-        <Eyebrow>How Dainik Samachar works</Eyebrow>
+        <Eyebrow>How Newsly works</Eyebrow>
         <h1 className="font-display mt-7 max-w-5xl text-[2.75rem] leading-[1] font-normal tracking-tight text-balance sm:text-6xl lg:text-[5.25rem]">
           From a noisy internet
           {" "}<br className="hidden sm:block" />
           to research you can trust.
         </h1>
         <p className="mt-9 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-          Dainik Samachar is a research-oriented news intelligence system for financial,
+          Newsly is a research-oriented news intelligence system for financial,
           economic, and market topics. It searches the open web, keeps the
           sources, and writes briefings, chat answers, and stories only from
           that evidence. Discovery, conversation, and publishing are different

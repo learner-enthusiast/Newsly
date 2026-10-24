@@ -12,7 +12,7 @@ export function SiteFooter() {
       <div className="landing-section flex flex-col gap-6 py-0">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <Link href="/" className="font-brand text-lg text-foreground">
-            Dainik Samachar
+            Newsly
           </Link>
           <nav
             className="flex flex-wrap gap-x-5 gap-y-2"
@@ -44,7 +44,7 @@ export function SiteFooter() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          © {year} Dainik Samachar. All rights reserved.
+          © {year} Newsly. All rights reserved.
         </p>
       </div>
     </footer>

@@ -1,93 +1,74 @@
-name: Deploy Dainik Samachar
+# SSH deploy as the SSH user (e.g. arnab): pnpm steps never use sudo.
+# Only `sudo -n systemctl …` restarts the app (passwordless for deploy user).
+#
+# Secrets: SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, DEPLOY_PATH,
+#          CF_SERVICE_TOKEN_ID, CF_SERVICE_TOKEN_SECRET
+#
+# Server: git clone at DEPLOY_PATH, .env in repo root, systemd unit `newsly`.
+
+name: Deploy
 
 on:
-  push:
-    branches:
-      - master
-      - main
   workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: dainik-samachar-production
-  cancel-in-progress: false
+  push:
+    branches: [main]
 
 jobs:
   deploy:
-    name: Deploy to EC2
     runs-on: ubuntu-latest
-    environment: production
-
     steps:
-      - name: Deploy over SSH
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+      - name: Install cloudflared
         run: |
-          set -eu
+          curl -L --fail \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
+            -o cloudflared.deb
+          sudo dpkg -i cloudflared.deb || sudo apt-get install -f -y
 
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+      - name: Configure SSH
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          CF_SERVICE_TOKEN_ID: ${{ secrets.CF_SERVICE_TOKEN_ID }}
+          CF_SERVICE_TOKEN_SECRET: ${{ secrets.CF_SERVICE_TOKEN_SECRET }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          cat > ~/.ssh/config <<EOF
+          Host homeserver
+            HostName ${SSH_HOST}
+            User ${SSH_USER}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            ProxyCommand cloudflared access ssh --hostname %h
+            StrictHostKeyChecking accept-new
+            ConnectTimeout 30
+          EOF
+          chmod 600 ~/.ssh/config
+          {
+            echo "TUNNEL_SERVICE_TOKEN_ID<<EOF"
+            echo "$CF_SERVICE_TOKEN_ID"
+            echo "EOF"
+            echo "TUNNEL_SERVICE_TOKEN_SECRET<<EOF"
+            echo "$CF_SERVICE_TOKEN_SECRET"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
 
-          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-
-          ssh \
-            -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=yes \
-            "$EC2_USER@$EC2_HOST" 'bash -se' <<'REMOTE'
-              set -Eeuo pipefail
-
-              export NVM_DIR="$HOME/.nvm"
-              source "$NVM_DIR/nvm.sh"
-
-              cd /home/ubuntu/apps/dainikSamachar
-
-              echo "Pulling latest code..."
-              git fetch origin master
-              git checkout master
-              git pull --ff-only origin master
-
-              echo "Installing dependencies..."
-              pnpm install --frozen-lockfile
-
-              echo "Applying database migrations..."
-              pnpm db:migrate:deploy
-
-              echo "Building Next.js..."
-              pnpm build
-
-              echo "Restarting application..."
-              pm2 restart dainiksamachar --update-env
-              pm2 save
-
-              echo "Waiting for application to accept connections..."
-              HEALTH_URL="http://127.0.0.1:3000/"
-              MAX_ATTEMPTS=30
-              SLEEP_SEC=2
-              attempt=1
-              while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
-                if curl --fail --silent --show-error --max-time 5 "$HEALTH_URL" -o /dev/null; then
-                  echo "Health check passed (attempt ${attempt}/${MAX_ATTEMPTS})."
-                  break
-                fi
-                if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
-                  echo "Health check failed: nothing listening on 127.0.0.1:3000 after $((MAX_ATTEMPTS * SLEEP_SEC))s."
-                  pm2 describe dainiksamachar || true
-                  pm2 logs dainiksamachar --lines 40 --nostream || true
-                  exit 1
-                fi
-                echo "Not ready yet (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${SLEEP_SEC}s..."
-                sleep "$SLEEP_SEC"
-                attempt=$((attempt + 1))
-              done
-
-              echo "Deployment completed successfully."
+      - name: Deploy on server
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          ssh homeserver "DEPLOY_PATH='${DEPLOY_PATH}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "${DEPLOY_PATH:?}"
+          git fetch origin main && git checkout main && git pull --ff-only origin main
+          pnpm install --frozen-lockfile
+          pnpm exec prisma generate
+          pnpm run db:migrate:deploy
+          pnpm run build
+          sudo -n systemctl restart newsly
+          sudo -n systemctl is-active newsly
           REMOTE

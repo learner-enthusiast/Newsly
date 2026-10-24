@@ -114,8 +114,8 @@ export function UpgradeToProButton({
           key: orderPayload.keyId!,
           amount: orderPayload.amount!,
           currency: orderPayload.currency ?? "INR",
-          name: "Dainik Samachar",
-          description: "Dainik Samachar Pro",
+          name: "Newsly",
+          description: "Newsly Pro",
           order_id: orderPayload.orderId!,
           prefill: orderPayload.prefill,
           theme: { color: "#c85d3f" },
@@ -139,7 +139,7 @@ export function UpgradeToProButton({
                 throw new Error(verifyPayload.error ?? "Verification failed");
               }
               setPhase("success");
-              toast.success("You're on Dainik Samachar Pro.");
+              toast.success("You're on Newsly Pro.");
               router.refresh();
               resolve();
             } catch (verifyErr) {

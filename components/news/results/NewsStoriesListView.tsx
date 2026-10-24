@@ -383,7 +383,7 @@ export function NewsStoriesListView({
                 ? "Stories you created from chat—drafts and published."
                 : isBookmarksFeed
                   ? "Community stories you saved for later."
-                  : "Top-voted briefings from Dainik Samachar, newest and most upvoted first."}
+                  : "Top-voted briefings from Newsly, newest and most upvoted first."}
             </p>
             </div>
             {isSignedIn ? (

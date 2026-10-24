@@ -47,7 +47,7 @@ export function ProGatedNavLink({
           className,
         )}
         aria-disabled
-        title="Dainik Samachar Pro required"
+        title="Newsly Pro required"
       >
         {item.label}
         <ProBadge />

@@ -61,7 +61,7 @@ export async function authorizeMarketDataFeed(): Promise<string> {
 }
 
 /**
- * Dainik Samachar-facing wrapper over official `MarketDataStreamerV3`.
+ * Newsly-facing wrapper over official `MarketDataStreamerV3`.
  */
 export class UpstoxMarketDataFeedClient {
   private readonly streamer: UpstoxSdkMarketDataStreamer;

@@ -72,7 +72,7 @@ export function PricingPageContent({ initialPlan }: PricingPageContentProps) {
           </CardTitle>
           <CardDescription>
             {proProduct?.description ??
-              "Deeper research workflows and Pro access across Dainik Samachar."}
+              "Deeper research workflows and Pro access across Newsly."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

@@ -311,7 +311,7 @@ export default function NewsRequestPage() {
               </p>
             </div>
             <Badge variant="outline" className="hidden sm:inline-flex">
-              Dainik Samachar
+              Newsly
             </Badge>
           </div>
         </div>

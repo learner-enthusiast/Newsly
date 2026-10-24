@@ -135,7 +135,7 @@ export async function createApiKeyForUser(
   const plan = await getUserPlan(userId);
   const limits = getApiPlanLimits(plan);
   if (!limits) {
-    throw new ApiKeyPlanError("The Dainik Samachar API requires an active Pro plan.");
+    throw new ApiKeyPlanError("The Newsly API requires an active Pro plan.");
   }
 
   const expiresAt =

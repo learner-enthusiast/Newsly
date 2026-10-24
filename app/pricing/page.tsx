@@ -4,8 +4,8 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Pricing — Dainik Samachar",
-  description: "Free and Pro plans for Dainik Samachar research and briefings.",
+  title: "Pricing — Newsly",
+  description: "Free and Pro plans for Newsly research and briefings.",
 };
 
 export default async function PricingPage() {

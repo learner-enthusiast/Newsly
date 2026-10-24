@@ -57,7 +57,7 @@ export function ProGatedSidebarLink({
           "w-full cursor-not-allowed justify-start opacity-45",
         )}
         aria-disabled
-        title="Dainik Samachar Pro required"
+        title="Newsly Pro required"
       >
         {inner}
       </span>

@@ -295,7 +295,7 @@ export function buildOpenApiDocument(baseUrl: string = appBaseUrl()): JsonSchema
     openapi: "3.1.0",
     jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema",
     info: {
-      title: "Dainik Samachar API",
+      title: "Newsly API",
       version: API_VERSION,
       summary: "News briefings, stock research, instrument search and newsletters. Requires Pro.",
       description: apiDocsMarkdown({ baseUrl, limits: getProApiLimits() }),

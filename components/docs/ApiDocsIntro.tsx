@@ -13,7 +13,7 @@ export function ApiDocsIntro() {
             Developer documentation
           </p>
           <h1 className="font-display text-2xl tracking-tight md:text-3xl">
-            Dainik Samachar REST API
+            Newsly REST API
           </h1>
           <p className="max-w-3xl text-sm text-muted-foreground md:text-base">
             Programmatic access to the same briefings, research reports, instrument
