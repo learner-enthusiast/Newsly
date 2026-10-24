@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M5Q1YZJK32G73KEHJC0JMJ6M",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "emails/NewsletterDigestEmail.tsx",
+    "inngest/newsletterPipeline.ts",
+    "services/newsletter/emailImageUrl.test.ts",
+    "services/newsletter/newsletterRun.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 13205,
+    "cache_read_tokens": 1331863,
+    "output_tokens": 5582,
+    "api_call_count": 13
+  }
+}
