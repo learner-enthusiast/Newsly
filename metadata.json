@@ -3,7 +3,7 @@
   "checkpoint_id": "01M5Q0ZPYJJSQ1A1RNWF148ZZ9",
   "strategy": "manual-commit",
   "branch": "feat/video-script",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "components/landing/DainikSamacharDashboardPage.tsx",
     "components/landing/NewslyDashboardPage.tsx"
@@ -15,13 +15,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 12,
+    "input_tokens": 94365,
     "cache_creation_tokens": 38738,
-    "cache_read_tokens": 300450,
-    "output_tokens": 3107,
-    "api_call_count": 6
+    "cache_read_tokens": 303778,
+    "output_tokens": 3255,
+    "api_call_count": 7
   }
 }
