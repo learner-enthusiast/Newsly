@@ -1,0 +1,34 @@
+i am currently on feat/video-script merge it with main
+
+---
+
+and push in github
+
+---
+
+<pasted_content id="8d14">
+Run set -euo pipefail
+Warning: Permanently added '***' (ED25519) to the list of known hosts.
+From https://github.com/learner-enthusiast/Newsly
+ * branch            main       -> FETCH_HEAD
+ + 7bf6b2b...7155a78 main       -> origin/main  (forced update)
+Already on 'main'
+Your branch and 'origin/main' have diverged,
+and have 78 and 48 different commits each, respectively.
+  (use "git pull" if you want to integrate the remote branch with yours)
+From https://github.com/learner-enthusiast/Newsly
+ * branch            main       -> FETCH_HEAD
+hint: Diverging branches can't be fast-forwarded, you need to either:
+hint:
+hint:     git merge --no-ff
+hint:
+hint: or:
+hint:
+hint:     git rebase
+hint:
+hint: Disable this message with "git config advice.diverging false"
+fatal: Not possible to fast-forward, aborting.
+Error: Process completed with exit code 128.
+</pasted_content id="8d14">
+
+ error in github action while deploying
