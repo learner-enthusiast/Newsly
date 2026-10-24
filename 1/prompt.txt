@@ -1,0 +1,28 @@
+how did i use ari few lines absed on @neatlogsHackathon.md
+
+---
+
+How did you use Entire? Add evidence links.
+
+Bonus points
+
+Checkpoints: show progress and key decisions.
+entire-graph: find code or assess risky changes.
+Open-source builds: working features or integrations on Entire’s CLI, Graph or External Agents.
+Add supporting links to your answer.
+
+---
+
+keep it short with links
+
+---
+
+and neatlogs trace debug or improve
+
+---
+
+@/home/arnab-smnta/.cursor/projects/home-arnab-smnta-ssd2-codeV2-my-app/terminals/3.txt:45-54  what is this error how to solve it
+
+---
+
+how to remove git remote
