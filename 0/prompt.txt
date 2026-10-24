@@ -1,0 +1,1 @@
+change the name from dainik samachar to newsly everywhere dont change any code functionalty all remains same just the name of the app will change to newsly
