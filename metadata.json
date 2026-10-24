@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M5Q3TBQ8F67C2WJP4CRV30YH",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".env.example",
+    "inngest/newsletterPipeline.ts",
+    "lib/newsletter/stopSwitch.test.ts",
+    "lib/newsletter/stopSwitch.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 13095,
+    "cache_read_tokens": 1418764,
+    "output_tokens": 6554,
+    "api_call_count": 12
+  }
+}

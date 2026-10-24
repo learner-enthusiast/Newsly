@@ -1,0 +1,1 @@
+add a variable stopNewletterEmail by default false if true then will not create any newltter or not run any newletter pipeline will add true in dev so that it does not send email if newsltters are created
