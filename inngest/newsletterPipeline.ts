@@ -31,6 +31,7 @@ import {
   checkBeforeSend,
   claimDeliverySlot,
   editionKeyForRun,
+  emailImageUrl,
   loadNewsletterForRun,
   selectStoriesForSend,
   testRunScheduledFor,
@@ -398,6 +399,7 @@ export const newsletterRunFunction = inngest.createFunction(
             summary: story.summary,
             sourceLabel: story.sourceUrls[0]?.domain ?? "Source",
             storyUrl: `${appUrl}/newsStory/${story.id}`,
+            imageUrl: emailImageUrl(story.imageUrl, appUrl),
           })),
         }),
       });

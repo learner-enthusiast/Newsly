@@ -105,6 +105,27 @@ export function selectStoriesForSend<T>(stories: T[], storyCount: number): T[] {
 }
 
 /**
+ * Image src for the digest email: mail clients need an absolute http(s) URL, so
+ * app-relative paths (uploaded cover photos) are resolved against the app URL.
+ */
+export function emailImageUrl(
+  imageUrl: string | null | undefined,
+  appUrl: string,
+): string | null {
+  const raw = imageUrl?.trim();
+  if (!raw) {
+    return null;
+  }
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+  if (raw.startsWith("/") && !raw.startsWith("//")) {
+    return `${appUrl.replace(/\/+$/, "")}${raw}`;
+  }
+  return null;
+}
+
+/**
  * `scheduledFor` for a test send. Real slots always fall on a whole minute
  * (seconds and ms are 0), so a test time is nudged off the minute to never share
  * a real slot's delivery row.

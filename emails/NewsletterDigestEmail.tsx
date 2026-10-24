@@ -5,6 +5,7 @@ import {
   Heading,
   Hr,
   Html,
+  Img,
   Link,
   Preview,
   Section,
@@ -16,6 +17,8 @@ export type NewsletterDigestStory = {
   summary: string;
   sourceLabel: string;
   storyUrl: string;
+  /** Absolute http(s) URL; the story renders text-only when null. */
+  imageUrl: string | null;
 };
 
 export type NewsletterDigestEmailProps = {
@@ -44,6 +47,16 @@ export function NewsletterDigestEmail({
           <Hr style={hr} />
           {stories.map((story) => (
             <Section key={story.storyUrl} style={storyBlock}>
+              {story.imageUrl ? (
+                <Link href={story.storyUrl}>
+                  <Img
+                    src={story.imageUrl}
+                    alt={story.title}
+                    width="512"
+                    style={storyImage}
+                  />
+                </Link>
+              ) : null}
               <Heading as="h2" style={h2}>
                 <Link href={story.storyUrl} style={link}>
                   {story.title}
@@ -84,6 +97,14 @@ const meta = { color: "#666", fontSize: "14px", margin: "0 0 16px" };
 const source = { color: "#888", fontSize: "12px", margin: "0 0 8px" };
 const paragraph = { fontSize: "14px", lineHeight: "22px", margin: "0 0 16px" };
 const storyBlock = { marginBottom: "20px" };
+const storyImage = {
+  display: "block",
+  width: "100%",
+  maxWidth: "512px",
+  height: "auto",
+  borderRadius: "6px",
+  margin: "0 0 12px",
+};
 const link = { color: "#111", textDecoration: "underline" };
 const hr = { borderColor: "#eee", margin: "20px 0" };
 const footer = { fontSize: "12px", color: "#666" };
