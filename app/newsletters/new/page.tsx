@@ -52,7 +52,7 @@ export default function NewNewsletterPage() {
   }
 
   return (
-    <div className="mx-auto w-full min-h-0 max-w-6xl px-4 pt-4 pb-28 md:px-6 lg:pb-10">
+    <div className="mx-auto w-full min-h-0 max-w-6xl px-4 pt-4 pb-28 max-sm:pb-14 md:px-6 lg:pb-10">
       <div className="mb-6 flex flex-col gap-1.5">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>/</span>

@@ -16,7 +16,7 @@ export function EngineeringSection() {
         lede="Long research does not live inside one HTTP request. Inngest runs the jobs and retries them. Postgres keeps the sources. Models write only after the text is in hand. The repository README is the full technical specification."
       />
 
-      <ol data-about-reveal className="mt-20 max-w-4xl lg:mt-28">
+      <ol data-about-reveal className="mt-20 max-sm:mt-10 max-w-4xl lg:mt-28">
         {ENGINEERING_LAYERS.map((row, i) => (
           <li
             key={row.layer}
@@ -42,7 +42,7 @@ export function LifecycleSection() {
       <SectionHeading eyebrow="What is kept" title="From the open web to something a person can finish." align="center" />
 
       {/* Desktop: one editorial line with seven marks */}
-      <div className="mt-20 hidden lg:block">
+      <div className="mt-20 max-sm:mt-10 hidden lg:block">
         <svg viewBox="0 0 1200 140" className="w-full text-foreground" role="img" aria-label={LIFECYCLE.join(", then ")}>
           <path data-about-draw d="M60 60 H1140" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1" fill="none" />
           {LIFECYCLE.map((label, i) => {
@@ -69,7 +69,7 @@ export function LifecycleSection() {
       </div>
 
       {/* Mobile: vertical */}
-      <ol className="mx-auto mt-16 max-w-sm lg:hidden">
+      <ol className="mx-auto mt-16 max-sm:mt-8 max-w-sm lg:hidden">
         {LIFECYCLE.map((step, i) => (
           <li key={step} className="flex items-baseline gap-5 border-t border-border/25 py-4">
             <span className="w-6 text-xs" style={{ color: ACCENT }}>

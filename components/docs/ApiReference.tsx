@@ -40,7 +40,7 @@ export function ApiReference({ specUrl }: { specUrl: string }) {
   return (
     <>
       <Script src={SCALAR_SRC} strategy="afterInteractive" onReady={() => setLoaded(true)} />
-      <div ref={target} />
+      <div ref={target} className="api-reference" />
       {!loaded ? (
         <p className="px-6 py-10 text-sm text-muted-foreground">
           Loading the API reference… The raw spec is at{" "}

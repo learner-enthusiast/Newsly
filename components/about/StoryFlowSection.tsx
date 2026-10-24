@@ -81,7 +81,7 @@ export function StoryFlowSection() {
         lede="On a general chat—not a story deep dive—the determiner can hand the research it already gathered to a one-story pipeline. Nothing is searched twice for the same evidence."
       />
 
-      <div data-about-story className="mt-20 lg:mt-28">
+      <div data-about-story className="mt-20 max-sm:mt-10 lg:mt-28">
         <Transformation />
         <p className="mt-4 flex items-center justify-between text-[0.65rem] tracking-[0.2em] text-muted-foreground uppercase sm:hidden">
           <span>Chat</span>
@@ -90,7 +90,7 @@ export function StoryFlowSection() {
         </p>
       </div>
 
-      <ol data-about-reveal className="mt-16 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-6">
+      <ol data-about-reveal className="mt-16 max-sm:mt-8 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-6">
         {STORY_FROM_CHAT.map((stage, i) => (
           <li key={stage.id} data-about-item className="border-t border-border/40 pt-4">
             <p className="text-[0.7rem] tracking-[0.18em]" style={{ color: ACCENT }}>

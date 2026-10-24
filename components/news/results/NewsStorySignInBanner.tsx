@@ -23,12 +23,12 @@ export function NewsStorySignInBanner({
 
   return (
     <Card className="border-accent/40 bg-accent/10">
-      <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-foreground">
+      <CardContent className="flex flex-col gap-3 py-4 max-sm:flex-row max-sm:items-center max-sm:py-0 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-foreground max-sm:text-xs">
           Sign in to vote, start a deep dive, and use all story tools.
         </p>
         <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
-          <Button type="button" variant="brand-accent" size="sm">
+          <Button type="button" variant="brand-accent" size="sm" className="max-sm:shrink-0">
             Sign in
           </Button>
         </SignInButton>

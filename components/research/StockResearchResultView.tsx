@@ -247,7 +247,7 @@ export function StockResearchResultView({
           </div>
         </header>
 
-        <div className="mx-auto max-w-4xl space-y-6 px-4 pt-6 pb-16 md:px-8">
+        <div className="mx-auto max-w-4xl space-y-6 px-4 pt-6 pb-16 max-sm:pb-8 md:px-8">
           {/* Below xl the side panel joins the main flow: above while running, after the report once done. */}
           {busy ? <div className="xl:hidden">{rightSidebar}</div> : null}
 

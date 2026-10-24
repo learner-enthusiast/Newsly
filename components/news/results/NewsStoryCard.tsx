@@ -185,9 +185,9 @@ export function NewsStoryCard({
     );
 
   const cardInner = (
-    <div className="flex gap-4">
+    <div className="flex gap-4 max-sm:block">
       <div
-        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background"
+        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background max-sm:absolute max-sm:top-5 max-sm:left-5 max-sm:z-10 max-sm:size-7 max-sm:text-xs max-sm:ring-2 max-sm:ring-background"
         aria-label={`Story rank ${rank}`}
       >
         {rank}
@@ -259,7 +259,7 @@ export function NewsStoryCard({
 
         {actionsVisible ? (
           <div className="flex flex-col gap-3 border-t border-border/50 pt-3">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 max-sm:gap-1 max-sm:[&_button]:px-2">
               {guestGated ? (
                 <SignInButton mode="modal" forceRedirectUrl={redirectUrl}>
                   <Button type="button" variant="ghost" size="sm">
@@ -373,7 +373,7 @@ export function NewsStoryCard({
   );
 
   const cardClassName = cn(
-    "group rounded-2xl border border-border/70 bg-card/90 p-4 shadow-paper transition-shadow hover:shadow-editorial sm:p-5",
+    "group rounded-2xl border border-border/70 bg-card/90 p-4 shadow-paper transition-shadow hover:shadow-editorial max-sm:relative max-sm:p-3 sm:p-5",
     linkBehavior === "card" && "cursor-pointer hover:border-primary/30",
     className,
   );

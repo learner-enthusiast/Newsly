@@ -85,7 +85,7 @@ function Stat({ value, label }: { value: string; label: string }) {
 
 export function JudgesHero() {
   return (
-    <section className="pt-24 pb-20 sm:pt-32">
+    <section className="pt-24 max-sm:pt-12 pb-20 max-sm:pb-10 sm:pt-32">
       <div className="landing-section">
         <Eyebrow>{HERO.eyebrow}</Eyebrow>
         <h1 className="font-display mt-6 max-w-4xl text-5xl leading-[1.04] font-normal tracking-tight text-balance sm:text-6xl lg:text-7xl">
@@ -109,7 +109,7 @@ export function JudgesHero() {
           ))}
         </nav>
 
-        <div className="mt-20 grid gap-12 lg:grid-cols-2">
+        <div className="mt-20 max-sm:mt-10 grid gap-12 lg:grid-cols-2">
           <div>
             <p className="text-[0.7rem] tracking-[0.2em] text-muted-foreground uppercase">Judges</p>
             <ul className="mt-4 divide-y divide-border/25">
@@ -152,7 +152,7 @@ export function EvidenceRowsSection() {
         title={`All ${EVIDENCE.length} evidence rows, with proof you can open.`}
         lede={EVIDENCE_NOTE}
       />
-      <ol className="mt-16 divide-y divide-border/25 border-y border-border/25">
+      <ol className="mt-16 max-sm:mt-8 divide-y divide-border/25 border-y border-border/25">
         {EVIDENCE.map((row, i) => (
           <li key={row.claim} className="grid gap-4 py-8 lg:grid-cols-[3rem_1fr_1.4fr] lg:gap-10">
             <span className="font-mono text-sm text-muted-foreground">{String(i + 1).padStart(2, "0")}</span>
@@ -192,7 +192,7 @@ export function AgentSection() {
           </div>
         ))}
       </dl>
-      <div className="mt-16 grid gap-10 md:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-16 max-sm:mt-8 grid gap-10 md:grid-cols-2 lg:grid-cols-3">
         {AGENT.shots.map((shot) => (
           <Screenshot key={shot.src} shot={shot} />
         ))}
@@ -218,7 +218,7 @@ function CommitChip({ sha }: { sha: string }) {
 export function NeatlogsSection() {
   return (
     <Section id="neatlogs">
-      <div className="grid gap-16 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
+      <div className="grid gap-16 max-sm:gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
         <div>
           <SectionHeading eyebrow="neatlogs · 25%" title={NEATLOGS.title} lede={NEATLOGS.lede} />
           <div className="mt-12 grid grid-cols-3 gap-6">
@@ -272,13 +272,13 @@ export function EntireSection() {
         <Stat value={shortDate(COMMITS[0].date)} label="first commit" />
         <Stat value={shortDate(COMMITS[COMMITS.length - 1].date)} label="latest listed commit" />
       </div>
-      <div className="mt-16 grid gap-10 md:grid-cols-2">
+      <div className="mt-16 max-sm:mt-8 grid gap-10 md:grid-cols-2">
         {ENTIRE.shots.map((shot) => (
           <Screenshot key={shot.src} shot={shot} />
         ))}
       </div>
 
-      <div className="mt-16 overflow-x-auto">
+      <div className="mt-16 max-sm:mt-8 overflow-x-auto">
         <table className="w-full min-w-[40rem] text-left text-sm">
           <thead className="text-[0.65rem] tracking-[0.2em] text-muted-foreground uppercase">
             <tr className="border-b border-border/30">
@@ -329,7 +329,7 @@ export function CfoSection() {
   const max = Math.max(...CFO.unitCosts.map((u) => u.usd));
   return (
     <Section id="cfo">
-      <div className="grid gap-16 lg:grid-cols-2 lg:gap-20">
+      <div className="grid gap-16 max-sm:gap-8 lg:grid-cols-2 lg:gap-20">
         <div>
           <SectionHeading eyebrow="cfo.ai · 25%" title={CFO.title} lede={CFO.lede} />
           {PENDING.cfoShare ? (
@@ -373,7 +373,7 @@ export function CfoSection() {
           <p className="mt-6 text-sm text-muted-foreground">{CFO.note}</p>
         </div>
       </div>
-      <div className="mt-16 grid gap-10 md:grid-cols-3">
+      <div className="mt-16 max-sm:mt-8 grid gap-10 md:grid-cols-3">
         {CFO.shots.map((shot) => (
           <Screenshot key={shot.src} shot={shot} />
         ))}

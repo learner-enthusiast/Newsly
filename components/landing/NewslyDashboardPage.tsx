@@ -6,7 +6,7 @@ import Link from "next/link";
 export function NewslyDashboardPage() {
   return (
     <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-background">
-      <section className="landing-section pt-16 pb-4 sm:pt-20">
+      <section className="landing-section pt-16 max-sm:pt-8 pb-4 sm:pt-20">
         <p className="text-[0.75rem] font-medium tracking-[0.2em] text-[#c85d3f] uppercase">
           Your desk
         </p>

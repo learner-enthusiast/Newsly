@@ -77,7 +77,7 @@ export function ArchitectureSection() {
         }
         lede="A news request becomes many stories. A chat message becomes an answer—or, on a general chat, a draft story. A deep dive starts from a story you can already open, then continues as chat."
       />
-      <div className="mt-20 lg:mt-28">
+      <div className="mt-20 max-sm:mt-10 lg:mt-28">
         <ArchitectureDesktop />
         <ol className="space-y-0 md:hidden">
           {ARCH_MOBILE.map((label, i) => (

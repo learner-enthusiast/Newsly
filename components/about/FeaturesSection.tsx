@@ -18,7 +18,7 @@ export function FeaturesSection() {
         lede="A briefing discovers many stories. Chat answers one question. Asking for a story turns that research into a document you own. Every path writes sources before it writes prose."
       />
 
-      <ol data-about-reveal className="mt-20 grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:mt-28">
+      <ol data-about-reveal className="mt-20 max-sm:mt-10 grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:mt-28">
         {PRODUCT_FEATURES.map((feature, i) => (
           <li key={feature.name} data-about-item className="border-t border-border/40 pt-5">
             <p className="text-[0.7rem] tracking-[0.18em]" style={{ color: ACCENT }}>

@@ -86,7 +86,7 @@ export function TrendingSection() {
   }, []);
 
   return (
-    <section id="stories" ref={sectionRef} className="border-t border-border/25 py-24 sm:py-28">
+    <section id="stories" ref={sectionRef} className="border-t border-border/25 py-24 max-sm:py-12 sm:py-28">
       <div className="landing-section flex flex-col gap-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>

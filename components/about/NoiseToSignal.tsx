@@ -109,7 +109,7 @@ export function NoiseToSignal() {
         lede="News discovery and chat research both pass through search, selection, scraping, and synthesis. What remains is stored separately from the words written on top of it."
       />
 
-      <div className="mt-20 lg:mt-28">
+      <div className="mt-20 max-sm:mt-10 lg:mt-28">
         <NoiseToSignalDesktop />
 
         {/* Tablet / mobile: vertical redesign, not a shrunken diagram */}

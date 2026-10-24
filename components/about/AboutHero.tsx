@@ -11,7 +11,7 @@ function HeroIllustration() {
   return (
     <svg
       viewBox="0 0 960 300"
-      className="mt-20 hidden w-full text-foreground sm:block"
+      className="mt-20 max-sm:mt-10 hidden w-full text-foreground sm:block"
       role="img"
       aria-label="Scattered points at the left settle along one line into research, evidence, and understanding"
     >
@@ -55,7 +55,7 @@ function HeroIllustration() {
 
 export function AboutHero() {
   return (
-    <header className="pt-20 pb-6 sm:pt-28 lg:pt-36">
+    <header className="pt-20 max-sm:pt-10 pb-6 sm:pt-28 lg:pt-36">
       <div className="landing-section">
         <Eyebrow>How Newsly works</Eyebrow>
         <h1 className="font-display mt-7 max-w-5xl text-[2.75rem] leading-[1] font-normal tracking-tight text-balance sm:text-6xl lg:text-[5.25rem]">

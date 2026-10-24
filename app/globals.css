@@ -384,6 +384,12 @@ body:has([data-landing-root]) [data-app-shell] {
     padding-inline: 1.5rem;
   }
 
+  @media (width < 40rem) {
+    .landing-section {
+      padding-inline: 1rem;
+    }
+  }
+
   .section-eyebrow {
     font-size: 0.6875rem;
     font-weight: 600;
@@ -1228,5 +1234,22 @@ body:has([data-landing-root]) [data-app-shell] {
     .plan-stop-dialog-media {
       width: 8.5rem;
     }
+  }
+}
+
+/* Unlayered and one class more specific than Scalar's own `.scalar-app .markdown` rules, which load later. */
+@media (width < 40rem) {
+  /* Scalar's markdown tables: scroll sideways instead of wrapping letter by letter. */
+  .api-reference .scalar-app .markdown table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .api-reference .scalar-app .markdown th,
+  .api-reference .scalar-app .markdown td {
+    min-width: 7rem;
+    word-break: normal;
+    overflow-wrap: normal;
   }
 }

@@ -6,50 +6,13 @@ import { cn } from "@/lib/utils";
 import { ProGatedSidebarLink } from "@/components/nav/ProGatedSidebarLink";
 import { SIGNED_IN_APP_NAV } from "@/components/nav/signedInAppNav";
 import {
-  Bookmark,
-  Code,
-  Files,
-  Home,
-  Layers,
-  LineChart,
-  Mail,
-  MessageSquare,
-  Newspaper,
-  PieChart,
-  Settings,
-} from "lucide-react";
+  SIGNED_IN_NAV_EXTRA as SIDEBAR_EXTRA,
+  SIGNED_IN_NAV_ICONS as SIDEBAR_ICONS,
+} from "@/components/nav/appNavLinks";
+import { Home } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
-
-const SIDEBAR_ICONS: Record<string, LucideIcon> = {
-  "/": Home,
-  "/news": Newspaper,
-  "/newsletters": Mail,
-  "/chat": MessageSquare,
-  "/stockResearch": LineChart,
-  "/MfResearch": PieChart,
-  "/etfResearch": Layers,
-  "/newsStory/saved": Files,
-  "/newsStory/bookmarks": Bookmark,
-};
-
-const SIDEBAR_EXTRA = [
-  {
-    href: "/pricing",
-    label: "Pro & billing",
-    icon: Settings,
-    match: (p: string) => p === "/pricing" || p.startsWith("/pricing/"),
-  },
-  {
-    href: "/settings/developers",
-    label: "Developers",
-    icon: Code,
-    match: (p: string) =>
-      p === "/settings/developers" || p.startsWith("/settings/developers/"),
-  },
-] as const;
 
 type NewsAppShellProps = {
   children: ReactNode;
@@ -132,7 +95,7 @@ export function NewsAppShell({ children }: NewsAppShellProps) {
       </aside>
 
       <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-0">
-        <header className="flex shrink-0 items-center gap-3 px-4 pt-2 pb-0 md:px-6 lg:hidden">
+        <header className="flex shrink-0 items-center gap-3 px-4 pt-2 pb-0 max-sm:hidden md:px-6 lg:hidden">
           <Link
             href="/news"
             className="font-brand text-xl whitespace-nowrap text-foreground"

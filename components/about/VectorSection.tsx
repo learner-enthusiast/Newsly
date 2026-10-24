@@ -62,7 +62,7 @@ export function VectorSection() {
         lede="When a chat source is saved, a short description is embedded with text-embedding-3-small and stored in pgvector. Later messages in the same session retrieve the closest rows (top 8, similarity ≥ 0.72) before spending another search."
         align="center"
       />
-      <div className="mx-auto mt-20 max-w-3xl lg:mt-24">
+      <div className="mx-auto mt-20 max-sm:mt-10 max-w-3xl lg:mt-24">
         <VectorField />
         <p className="mt-3 text-center text-xs text-muted-foreground sm:hidden">
           <span style={{ color: ACCENT }}>●</span> this question, among earlier session research

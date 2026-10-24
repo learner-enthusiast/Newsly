@@ -32,7 +32,7 @@ export function NewsPipelineSection() {
         lede="The news pipeline runs as one durable Inngest job. YouTube can support a story; it cannot replace a primary article."
       />
 
-      <div data-about-stages className="relative mt-20 lg:mt-28">
+      <div data-about-stages className="relative mt-20 max-sm:mt-10 lg:mt-28">
         {/* Timeline rule (desktop) */}
         <div className="absolute top-[1.35rem] left-0 hidden h-px w-full bg-border/50 lg:block" aria-hidden />
         <div

@@ -8,6 +8,7 @@ import {
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { MobileAppNav } from "@/components/nav/MobileAppNav";
 import { ProGatedNavLink } from "@/components/nav/ProGatedNavLink";
 import { SIGNED_IN_APP_NAV } from "@/components/nav/signedInAppNav";
 import { Code } from "lucide-react";
@@ -22,7 +23,10 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 shrink-0 border-b border-border/20 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
-      <div className="landing-section flex items-center gap-3 py-3 sm:gap-4 sm:py-4">
+      <div className="landing-section flex items-center gap-3 py-3 max-sm:gap-1.5 max-sm:py-2 sm:gap-4 sm:py-4">
+        <Show when="signed-in">
+          <MobileAppNav />
+        </Show>
         <Link href="/" className="font-brand shrink-0 text-xl whitespace-nowrap text-foreground sm:text-2xl">
           Newsly
         </Link>

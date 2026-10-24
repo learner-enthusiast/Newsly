@@ -45,7 +45,7 @@ export function ChatPipelineSection() {
         lede="Chat is narrower than a briefing. It reuses this session's research when similarity is high enough, and it searches only when the determiner says the record is not enough."
       />
 
-      <div className="mt-20 grid gap-16 lg:mt-28 lg:grid-cols-2 lg:gap-24">
+      <div className="mt-20 max-sm:mt-10 grid gap-16 max-sm:gap-8 lg:mt-28 lg:grid-cols-2 lg:gap-24">
         <ConversationFragment />
 
         <ol data-about-reveal className="relative">

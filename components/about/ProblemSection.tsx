@@ -19,7 +19,7 @@ export function ProblemSection() {
       />
 
       {/* Mobile: the same idea, composed vertically */}
-      <div className="mt-16 sm:hidden">
+      <div className="mt-16 max-sm:mt-8 sm:hidden">
         <ul className="flex flex-wrap gap-x-5 gap-y-1">
           {PROBLEM_WORDS.map((word) => (
             <li key={word.label} className="font-display text-2xl text-foreground/60">
@@ -33,7 +33,7 @@ export function ProblemSection() {
         </p>
       </div>
 
-      <div data-about-problem className="mt-20 hidden sm:block lg:mt-28">
+      <div data-about-problem className="mt-20 max-sm:mt-10 hidden sm:block lg:mt-28">
         <svg
           viewBox="0 0 960 400"
           className="w-full text-foreground"

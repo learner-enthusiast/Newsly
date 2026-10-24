@@ -5,7 +5,7 @@ import Link from "next/link";
 
 export function AboutCtaSection() {
   return (
-    <section className="border-t border-border/25 py-32 sm:py-40 lg:py-48">
+    <section className="border-t border-border/25 py-32 max-sm:py-16 sm:py-40 lg:py-48">
       <div className="landing-section text-center">
         <h2 className="font-display mx-auto max-w-3xl text-5xl leading-[1.02] font-normal tracking-tight text-balance sm:text-6xl lg:text-7xl">
           Read less noise.

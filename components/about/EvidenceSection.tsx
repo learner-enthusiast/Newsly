@@ -65,7 +65,7 @@ function EvidenceGraph() {
 export function EvidenceSection() {
   return (
     <Section id="evidence">
-      <div className="grid gap-16 lg:grid-cols-[0.8fr_1.2fr] lg:items-start lg:gap-20">
+      <div className="grid gap-16 max-sm:gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start lg:gap-20">
         <SectionHeading
           eyebrow="Evidence"
           title="The writing sits on top of stored sources."

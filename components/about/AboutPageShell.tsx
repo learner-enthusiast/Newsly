@@ -61,7 +61,7 @@ export function Section({
   return (
     <section
       id={id}
-      className={`${rule ? "border-t border-border/25" : ""} py-28 sm:py-32 lg:py-40 ${className}`}
+      className={`${rule ? "border-t border-border/25" : ""} py-28 max-sm:py-14 sm:py-32 lg:py-40 ${className}`}
     >
       <div className="landing-section">{children}</div>
     </section>
