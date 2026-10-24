@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "01M5Q7TJCFZJ55Q71NQ52JEETW",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "app/chat/page.tsx",
+    "app/globals.css",
+    "app/newsletters/new/page.tsx",
+    "components/about/AboutCtaSection.tsx",
+    "components/about/AboutHero.tsx",
+    "components/about/AboutPageShell.tsx",
+    "components/about/ArchitectureSection.tsx",
+    "components/about/ChatPipelineSection.tsx",
+    "components/about/EngineeringSection.tsx",
+    "components/about/EvidenceSection.tsx",
+    "components/about/FeaturesSection.tsx",
+    "components/about/NewsPipelineSection.tsx",
+    "components/about/NoiseToSignal.tsx",
+    "components/about/ProblemSection.tsx",
+    "components/about/StoryFlowSection.tsx",
+    "components/about/VectorSection.tsx",
+    "components/docs/ApiReference.tsx",
+    "components/judges/JudgesSections.tsx",
+    "components/landing/NewslyDashboardPage.tsx",
+    "components/landing/TrendingSection.tsx",
+    "components/news/NewsAppShell.tsx",
+    "components/news/results/NewsStoryCard.tsx",
+    "components/news/results/NewsStorySignInBanner.tsx",
+    "components/newsletter/EditNewsletterClient.tsx",
+    "components/research/StockResearchResultView.tsx",
+    "components/site-footer.tsx",
+    "components/site-header.tsx",
+    "components/ui/card.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 318,
+    "cache_creation_tokens": 247955,
+    "cache_read_tokens": 26115426,
+    "output_tokens": 93861,
+    "api_call_count": 159
+  }
+}
